@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\dilshana\\\\Documents\\\\projects\\\\ellie-dashboard\\\\src\\\\app\\\\admin\\\\clients\\\\[id]\" && echo done)",
+      "Bash(Remove-Item \"c:\\\\Users\\\\dilshana\\\\Documents\\\\projects\\\\ellie-dashboard\\\\src\\\\middleware.ts\" -Force)",
+      "Bash(node -e \"const p = require\\('./node_modules/react-day-picker/package.json'\\); console.log\\(p.version\\)\")",
+      "Bash(cat node_modules/react-day-picker/src/style.css)",
+      "Bash(find node_modules/react-day-picker -name \"*.css\")",
+      "Bash(node -e \"const pkg = require\\('./node_modules/react-day-picker/package.json'\\); console.log\\(JSON.stringify\\(pkg.exports, null, 2\\)\\)\")"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\dilshana\\Documents\\projects\\ellie-dashboard\\src\\app\\admin\\clients"
+    ]
+  }
+}
