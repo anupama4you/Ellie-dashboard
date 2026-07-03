@@ -1,10 +1,8 @@
-'use client'
-
-import { useState } from 'react'
 import Link from 'next/link'
-import { PhoneIncoming, PhoneOutgoing, Globe, PhoneOff, Play, Pause, FileText } from 'lucide-react'
+import { PhoneIncoming, PhoneOutgoing, Globe, PhoneOff, FileText } from 'lucide-react'
+import WaveformPlayer from './WaveformPlayer'
 
-const COLS = '32px 1fr 160px 80px 140px 76px'
+const COLS = '32px 1fr 160px 80px 140px 40px'
 
 function TypeIcon({ type }: { type?: string }) {
   if (type === 'outboundPhoneCall') return <PhoneOutgoing size={13} style={{ color: '#60a5fa' }} />
@@ -23,6 +21,12 @@ function typeBorder(type?: string): string {
   if (type === 'outboundPhoneCall') return 'rgba(96,165,250,0.2)'
   if (type === 'webCall')           return 'rgba(167,139,250,0.2)'
   return 'rgba(52,211,153,0.2)'
+}
+
+function typeAccent(type?: string): string {
+  if (type === 'outboundPhoneCall') return '#60a5fa'
+  if (type === 'webCall')           return '#a78bfa'
+  return '#34d399'
 }
 
 export type CallRowProps = {
@@ -55,10 +59,15 @@ export default function CallRow({
   duration, badgeLabel, badgeColor, badgeBg,
   summary, recordingUrl, hasTranscript, paddingTop, paddingBottom,
 }: CallRowProps) {
-  const [audioOpen, setAudioOpen] = useState(false)
-
   return (
-    <div style={{ borderBottom: '1px solid var(--b4)' }}>
+    <div className="relative call-row" style={{ borderBottom: '1px solid var(--b4)' }}>
+      {/* Hover accent bar */}
+      <div
+        className="call-row-accent absolute left-0 top-0 bottom-0 w-0.5 rounded-r transition-opacity"
+        style={{ background: typeAccent(type) }}
+        aria-hidden
+      />
+
       {/* Main row */}
       <div
         className="grid items-center px-5 gap-4 hover-row transition-colors"
@@ -66,7 +75,7 @@ export default function CallRow({
       >
         {/* Type icon */}
         <div
-          className="w-7 h-7 rounded-lg flex items-center justify-center"
+          className="w-8 h-8 rounded-lg flex items-center justify-center"
           style={{
             background: typeBg(type),
             border: `1px solid ${typeBorder(type)}`,
@@ -75,19 +84,26 @@ export default function CallRow({
           <TypeIcon type={type} />
         </div>
 
-        {/* Caller + summary */}
-        <div className="min-w-0">
-          <div className="text-sm font-semibold tabular-nums" style={{ color: 'var(--text)' }}>
-            {customerNumber ?? '—'}
-          </div>
+        {/* Caller + summary / recording */}
+        <div className="min-w-0 flex items-center gap-3">
+          {customerNumber && (
+            <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: 'var(--text)' }}>
+              {customerNumber}
+            </span>
+          )}
+          {recordingUrl ? (
+            <WaveformPlayer src={recordingUrl} compact />
+          ) : !customerNumber ? (
+            <span className="text-sm" style={{ color: 'var(--t5)' }}>—</span>
+          ) : null}
           {summary && (
-            <div
-              className="text-xs truncate mt-0.5 leading-relaxed"
-              style={{ color: 'var(--t4)' }}
+            <span
+              className={`text-xs truncate leading-relaxed ${recordingUrl ? 'shrink-0' : 'flex-1 min-w-0'}`}
+              style={{ color: 'var(--t4)', maxWidth: recordingUrl ? 180 : undefined }}
               title={summary}
             >
               {summary}
-            </div>
+            </span>
           )}
         </div>
 
@@ -113,57 +129,31 @@ export default function CallRow({
 
         {/* Outcome badge */}
         <span
-          className="text-xs font-semibold px-2.5 py-1 rounded-full w-fit"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full w-fit"
           style={{ background: badgeBg, color: badgeColor }}
         >
+          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: badgeColor }} aria-hidden />
           {badgeLabel}
         </span>
 
         {/* Actions */}
-        <div className="flex items-center gap-1.5">
-          {recordingUrl ? (
-            <button
-              onClick={() => setAudioOpen(o => !o)}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all"
-              style={{
-                background: audioOpen ? 'rgba(167,139,250,0.2)' : 'rgba(167,139,250,0.08)',
-                border: `1px solid ${audioOpen ? 'rgba(167,139,250,0.3)' : 'rgba(167,139,250,0.15)'}`,
-                color: '#a78bfa',
-              }}
-              title={audioOpen ? 'Close player' : 'Play recording'}
-            >
-              {audioOpen
-                ? <Pause size={11} />
-                : <Play  size={11} />}
-            </button>
-          ) : <span className="w-7" />}
-
-          {hasTranscript ? (
-            <Link
-              href={`/calls/${id}`}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors btn-ghost"
-              style={{
-                background: 'rgba(100,116,139,0.07)',
-                border: '1px solid rgba(100,116,139,0.12)',
-                color: 'var(--t3)',
-              }}
-              title="View transcript"
-            >
-              <FileText size={11} />
-            </Link>
-          ) : <span className="w-7" />}
-        </div>
+        {hasTranscript ? (
+          <Link
+            href={`/calls/${id}`}
+            className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{
+              background: 'rgba(100,116,139,0.07)',
+              border: '1px solid rgba(100,116,139,0.12)',
+              color: 'var(--t3)',
+              outlineColor: 'var(--t3)',
+            }}
+            title="View transcript"
+            aria-label="View transcript"
+          >
+            <FileText size={12} />
+          </Link>
+        ) : <span className="w-8" />}
       </div>
-
-      {/* Inline audio player */}
-      {audioOpen && recordingUrl && (
-        <div className="px-5 pb-3.5 pt-1">
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <audio controls autoPlay className="w-full" style={{ height: 36 }}>
-            <source src={recordingUrl} />
-          </audio>
-        </div>
-      )}
     </div>
   )
 }

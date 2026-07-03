@@ -7,6 +7,7 @@ import {
   CheckCircle2, XCircle, Mic, FileText,
   PhoneIncoming, PhoneOutgoing, Globe,
 } from 'lucide-react'
+import WaveformPlayer from '@/components/WaveformPlayer'
 
 function fmtDuration(secs: number) {
   if (!secs || !isFinite(secs) || secs <= 0) return '—'
@@ -186,10 +187,7 @@ export default async function CallDetailPage({
                 <Mic size={14} style={{ color: '#a78bfa' }} />
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Recording</h2>
               </div>
-              {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-              <audio controls className="w-full">
-                <source src={artifact.recordingUrl} />
-              </audio>
+              <WaveformPlayer src={artifact.recordingUrl} />
             </div>
           )}
 

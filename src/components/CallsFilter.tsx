@@ -37,13 +37,22 @@ export default function CallsFilter() {
     router.push(`/calls?${next}`)
   }
 
-  function quickRange(days: number) {
+  function rangeFor(days: number) {
     const today = new Date()
     const toStr = today.toISOString().slice(0, 10)
     const start = new Date(today)
     start.setDate(start.getDate() - (days - 1))
-    update({ from: start.toISOString().slice(0, 10), to: toStr })
+    return { from: start.toISOString().slice(0, 10), to: toStr }
   }
+
+  function quickRange(days: number) {
+    update(rangeFor(days))
+  }
+
+  const activeQuickDays = QUICK.find(q => {
+    const r = rangeFor(q.days)
+    return r.from === from && r.to === to
+  })?.days
 
   const hasFilters = from || to || outcome
 
@@ -51,14 +60,22 @@ export default function CallsFilter() {
     <div className="flex items-center gap-2 flex-wrap">
 
       {/* Quick presets */}
-      {QUICK.map(q => (
-        <button key={q.label}
-          onClick={() => quickRange(q.days)}
-          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors btn-ghost"
-          style={{ color: 'var(--t3)', border: '1px solid var(--border)' }}>
-          {q.label}
-        </button>
-      ))}
+      {QUICK.map(q => {
+        const active = q.days === activeQuickDays
+        return (
+          <button key={q.label}
+            onClick={() => quickRange(q.days)}
+            aria-pressed={active}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${active ? '' : 'btn-ghost'}`}
+            style={{
+              color:      active ? 'var(--text)' : 'var(--t3)',
+              border:     `1px solid ${active ? 'rgba(167,139,250,0.35)' : 'var(--border)'}`,
+              background: active ? 'rgba(167,139,250,0.12)' : undefined,
+            }}>
+            {q.label}
+          </button>
+        )
+      })}
 
       <div className="w-px h-4 shrink-0" style={{ background: 'var(--border)' }} />
 
@@ -76,7 +93,14 @@ export default function CallsFilter() {
         value={outcome}
         onChange={e => update({ outcome: e.target.value })}
         className="admin-input admin-select"
-        style={{ width: 148, padding: '5px 10px', fontSize: 13 }}>
+        style={{
+          width: 148,
+          padding: '5px 10px',
+          fontSize: 13,
+          borderColor: outcome ? 'rgba(167,139,250,0.35)' : undefined,
+          background: outcome ? 'rgba(167,139,250,0.08)' : undefined,
+          color: outcome ? 'var(--text)' : undefined,
+        }}>
         {OUTCOMES.map(o => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}

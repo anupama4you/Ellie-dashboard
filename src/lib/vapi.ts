@@ -1,5 +1,17 @@
 const VAPI_BASE = 'https://api.vapi.ai'
 
+export class VapiError extends Error {
+  status: number
+  /** Human-readable detail from Vapi's error response body, if any */
+  detail: string
+
+  constructor(path: string, status: number, detail: string) {
+    super(`Vapi ${path} → ${status}${detail ? `: ${detail}` : ''}`)
+    this.status = status
+    this.detail = detail
+  }
+}
+
 async function vapiRequest(path: string, options?: RequestInit) {
   const res = await fetch(`${VAPI_BASE}${path}`, {
     ...options,
@@ -9,7 +21,14 @@ async function vapiRequest(path: string, options?: RequestInit) {
       ...options?.headers,
     },
   })
-  if (!res.ok) throw new Error(`Vapi ${path} → ${res.status}`)
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const body = await res.json()
+      detail = Array.isArray(body.message) ? body.message.join('; ') : (body.message ?? '')
+    } catch {}
+    throw new VapiError(path, res.status, detail)
+  }
   return res.json()
 }
 
@@ -64,7 +83,8 @@ export async function getCalls(
   if (assistantId) params.set('assistantId', assistantId)
   if (dateRange?.from) params.set('createdAtGe', `${dateRange.from}T00:00:00.000Z`)
   if (dateRange?.to)   params.set('createdAtLe', `${dateRange.to}T23:59:59.999Z`)
-  const data = await vapiRequest(`/call?${params}`)
+  // v2 endpoint — v1 (/call) rejects the page/sortOrder params with a 400
+  const data = await vapiRequest(`/v2/call?${params}`)
   return Array.isArray(data) ? data : (data.results ?? [])
 }
 

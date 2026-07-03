@@ -13,7 +13,7 @@ export default async function AnalyticsPage() {
 
   let calls: Awaited<ReturnType<typeof getCalls>> = []
   if (biz?.vapi_assistant_id) {
-    try { calls = await getCalls(biz.vapi_assistant_id, 200) } catch {}
+    try { calls = await getCalls(biz.vapi_assistant_id, 200) } catch (err) { console.error('Failed to fetch calls from Vapi:', err) }
   }
 
   return (

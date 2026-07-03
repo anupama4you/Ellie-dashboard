@@ -1,8 +1,8 @@
 import Link from 'next/link'
 import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
-import { getCalls, callDuration } from '@/lib/vapi'
-import { ChevronLeft, ChevronRight, PhoneOff, Phone, PhoneIncoming, MicOff } from 'lucide-react'
+import { getCalls, callDuration, VapiError } from '@/lib/vapi'
+import { ChevronLeft, ChevronRight, PhoneOff, Phone, PhoneIncoming, MicOff, Clock } from 'lucide-react'
 import CallRow from '@/components/CallRow'
 import CallsFilter from '@/components/CallsFilter'
 
@@ -12,6 +12,35 @@ function fmtTime(iso: string) {
     date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }),
     time: d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
   }
+}
+
+function Divider() {
+  return <div className="w-px h-4 mx-1.5" style={{ background: 'var(--b3)' }} />
+}
+
+function StatPill({
+  icon, iconBg, value, label, color,
+}: {
+  icon: React.ReactNode
+  iconBg: string
+  value: string | number
+  label: string
+  color: string
+}) {
+  return (
+    <div className="flex items-center gap-2 px-1.5 py-0.5">
+      <div
+        className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+        style={{ background: iconBg }}
+      >
+        {icon}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
+        <span className="text-xs" style={{ color: 'var(--t4)' }}>{label}</span>
+      </div>
+    </div>
+  )
 }
 
 const ERROR_BG    = 'rgba(248,113,113,0.1)'
@@ -110,8 +139,12 @@ export default async function CallsPage({
         page,
         from || to ? { from, to } : undefined,
       )
-    } catch {
-      fetchError = 'Could not reach Vapi — check your assistant ID and VAPI_PRIVATE_KEY.'
+    } catch (err) {
+      console.error('Failed to fetch calls from Vapi:', err)
+      // Vapi 400s carry user-actionable messages (e.g. date range outside the plan's retention window)
+      fetchError = err instanceof VapiError && err.status === 400 && err.detail
+        ? err.detail
+        : 'Could not reach Vapi — check your assistant ID and VAPI_PRIVATE_KEY.'
     }
   }
 
@@ -138,6 +171,13 @@ export default async function CallsPage({
   ).length
   const missed   = calls.filter(c => c.endedReason === 'customer-did-not-answer').length
   const recorded = calls.filter(c => c.artifact?.recordingUrl).length
+  const totalDuration = calls.reduce((sum, c) => sum + callDuration(c), 0)
+  const avgDurationSecs = calls.length ? Math.round(totalDuration / calls.length) : 0
+  const avgDuration = avgDurationSecs > 0
+    ? avgDurationSecs < 60
+      ? `${avgDurationSecs}s`
+      : `${Math.floor(avgDurationSecs / 60)}m ${avgDurationSecs % 60}s`
+    : '—'
 
   return (
     <div className="h-full overflow-y-auto">
@@ -151,34 +191,48 @@ export default async function CallsPage({
         {/* Summary strip */}
         {calls.length > 0 && !fetchError && (
           <div
-            className="flex items-center gap-2 px-4 py-3 rounded-xl flex-wrap"
+            className="flex items-center gap-1 px-3 py-2.5 rounded-xl flex-wrap"
             style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}
           >
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--t4)' }} />
-              <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{calls.length}</span>
-              <span className="text-xs" style={{ color: 'var(--t4)' }}>
-                {hasDateFilter ? 'calls in range' : 'calls'}
-              </span>
-            </div>
-            <div className="w-px h-3" style={{ background: 'var(--b3)' }} />
-            <div className="flex items-center gap-1.5">
-              <Phone size={11} style={{ color: '#34d399' }} />
-              <span className="text-xs font-semibold" style={{ color: '#34d399' }}>{answered}</span>
-              <span className="text-xs" style={{ color: 'var(--t4)' }}>answered</span>
-            </div>
-            <div className="w-px h-3" style={{ background: 'var(--b3)' }} />
-            <div className="flex items-center gap-1.5">
-              <PhoneOff size={11} style={{ color: '#f87171' }} />
-              <span className="text-xs font-semibold" style={{ color: '#f87171' }}>{missed}</span>
-              <span className="text-xs" style={{ color: 'var(--t4)' }}>missed</span>
-            </div>
-            <div className="w-px h-3" style={{ background: 'var(--b3)' }} />
-            <div className="flex items-center gap-1.5">
-              <MicOff size={11} style={{ color: 'var(--t3)' }} />
-              <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>{recorded}</span>
-              <span className="text-xs" style={{ color: 'var(--t4)' }}>recorded</span>
-            </div>
+            <StatPill
+              icon={<div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--violet)' }} />}
+              iconBg="rgba(167,139,250,0.1)"
+              value={calls.length}
+              label={hasDateFilter ? 'calls in range' : 'calls'}
+              color="var(--text)"
+            />
+            <Divider />
+            <StatPill
+              icon={<Phone size={12} style={{ color: '#34d399' }} />}
+              iconBg="rgba(52,211,153,0.1)"
+              value={answered}
+              label="answered"
+              color="#34d399"
+            />
+            <Divider />
+            <StatPill
+              icon={<PhoneOff size={12} style={{ color: '#f87171' }} />}
+              iconBg="rgba(248,113,113,0.1)"
+              value={missed}
+              label="missed"
+              color="#f87171"
+            />
+            <Divider />
+            <StatPill
+              icon={<MicOff size={12} style={{ color: 'var(--t3)' }} />}
+              iconBg="rgba(148,163,184,0.1)"
+              value={recorded}
+              label="recorded"
+              color="var(--text)"
+            />
+            <Divider />
+            <StatPill
+              icon={<Clock size={12} style={{ color: '#fbbf24' }} />}
+              iconBg="rgba(251,191,36,0.1)"
+              value={avgDuration}
+              label="avg. duration"
+              color="var(--text)"
+            />
           </div>
         )}
 
@@ -190,7 +244,7 @@ export default async function CallsPage({
             style={{
               color: 'var(--t4)',
               borderBottom: '1px solid var(--b3)',
-              gridTemplateColumns: '32px 1fr 160px 80px 140px 76px',
+              gridTemplateColumns: '32px 1fr 160px 80px 140px 40px',
             }}
           >
             <span />

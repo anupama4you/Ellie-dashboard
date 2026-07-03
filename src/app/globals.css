@@ -255,6 +255,10 @@ audio { color-scheme: dark; }
 /* Table row hover — safe to use in Server Components (no JS handlers) */
 .hover-row:hover { background: var(--hov); }
 
+/* Calls table row — left accent bar appears on hover, colored per call type */
+.call-row-accent { opacity: 0; }
+.call-row:hover .call-row-accent { opacity: 1; }
+
 /* Stat card — metric display block */
 .stat-card {
   border-radius: 16px;

@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Play, Pause, FileText, PhoneMissed } from 'lucide-react'
+import { AudioWaveform, FileText, PhoneMissed } from 'lucide-react'
+import WaveformPlayer from './WaveformPlayer'
 
 type Props = {
   id: string
@@ -93,24 +94,26 @@ export default function TodayCallRow({
           {recordingUrl && (
             <button
               onClick={() => setExpanded(v => !v)}
-              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all btn-ghost"
+              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all btn-ghost focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{
                 color: expanded ? '#a78bfa' : 'var(--t4)',
                 background: expanded ? 'rgba(167,139,250,0.12)' : undefined,
                 border: expanded ? '1px solid rgba(167,139,250,0.2)' : '1px solid transparent',
+                outlineColor: '#a78bfa',
               }}
-              title={expanded ? 'Close player' : 'Play recording'}
+              title={expanded ? 'Hide recording' : 'Show recording'}
+              aria-label={expanded ? 'Hide recording' : 'Show recording'}
+              aria-pressed={expanded}
             >
-              {expanded ? <Pause size={12} /> : <Play size={12} />}
+              <AudioWaveform size={13} />
             </button>
           )}
         </div>
       </div>
 
       {expanded && recordingUrl && (
-        <div className="px-4 pb-3.5" style={{ borderTop: '1px solid var(--b3)' }}>
-          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
-          <audio controls autoPlay src={recordingUrl} className="w-full mt-3" style={{ height: 36 }} />
+        <div className="px-4 pb-3.5 pt-3" style={{ borderTop: '1px solid var(--b3)' }}>
+          <WaveformPlayer src={recordingUrl} />
         </div>
       )}
     </div>

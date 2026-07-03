@@ -71,7 +71,7 @@ export default async function TodayPage() {
 
   let allCalls: Awaited<ReturnType<typeof getCalls>> = []
   if (biz?.vapi_assistant_id) {
-    try { allCalls = await getCalls(biz.vapi_assistant_id, 100) } catch {}
+    try { allCalls = await getCalls(biz.vapi_assistant_id, 100) } catch (err) { console.error('Failed to fetch calls from Vapi:', err) }
   }
   const todayCalls = allCalls.filter(c => {
     if (!c.startedAt) return false

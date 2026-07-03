@@ -9,13 +9,13 @@ function TableRowSkeleton() {
   return (
     <div className="grid items-center px-5 gap-4 py-4"
       style={{
-        gridTemplateColumns: '32px 1fr 160px 80px 140px 72px',
+        gridTemplateColumns: '32px 1fr 160px 80px 140px 40px',
         borderBottom: '1px solid rgba(255,255,255,0.04)',
       }}>
-      <Sk w={28} h={28} r={8} />
-      <div className="flex flex-col gap-2">
-        <Sk w={140} h={13} r={4} />
-        <Sk w={220} h={10} r={4} />
+      <Sk w={32} h={32} r={8} />
+      <div className="flex items-center gap-2">
+        <Sk w={24} h={24} r={999} />
+        <Sk w={160} h={18} r={6} />
       </div>
       <div className="flex flex-col gap-2">
         <Sk w={100} h={13} r={4} />
@@ -23,10 +23,7 @@ function TableRowSkeleton() {
       </div>
       <Sk w={50} h={13} r={4} />
       <Sk w={100} h={26} r={999} />
-      <div className="flex gap-1.5">
-        <Sk w={28} h={28} r={8} />
-        <Sk w={28} h={28} r={8} />
-      </div>
+      <Sk w={32} h={32} r={8} />
     </div>
   )
 }
@@ -45,7 +42,7 @@ export default function CallsLoading() {
         {/* Header */}
         <div className="grid px-5 py-3 gap-4"
           style={{
-            gridTemplateColumns: '32px 1fr 160px 80px 140px 72px',
+            gridTemplateColumns: '32px 1fr 160px 80px 140px 40px',
             borderBottom: '1px solid rgba(255,255,255,0.06)',
           }}>
           {[32, 80, 100, 50, 90, 40].map((w, i) => (

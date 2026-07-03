@@ -69,7 +69,7 @@ export default async function CalendarPage({
 
   let allCalls: Awaited<ReturnType<typeof getCalls>> = []
   if (biz?.vapi_assistant_id) {
-    try { allCalls = await getCalls(biz.vapi_assistant_id, 300) } catch {}
+    try { allCalls = await getCalls(biz.vapi_assistant_id, 300) } catch (err) { console.error('Failed to fetch calls from Vapi:', err) }
   }
 
   const monthPrefix = `${viewYear}-${String(month).padStart(2, '0')}`
