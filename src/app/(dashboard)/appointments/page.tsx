@@ -1,15 +1,61 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { CalendarDays, Clock, User, Phone, CalendarCheck, CalendarX } from 'lucide-react'
+import { CalendarDays, Clock, User, Phone, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  confirmed:   { color: '#34d399', bg: 'rgba(52,211,153,0.1)',   border: 'rgba(52,211,153,0.2)'   },
-  pending:     { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)',   border: 'rgba(251,191,36,0.2)'   },
-  cancelled:   { color: '#f87171', bg: 'rgba(248,113,113,0.1)',  border: 'rgba(248,113,113,0.2)'  },
-  completed:   { color: '#a78bfa', bg: 'rgba(167,139,250,0.1)',  border: 'rgba(167,139,250,0.2)'  },
-  rescheduled: { color: '#60a5fa', bg: 'rgba(96,165,250,0.1)',   border: 'rgba(96,165,250,0.2)'   },
+  confirmed:   { color: 'var(--signal)', bg: 'var(--signal-soft)', border: 'rgba(15,163,122,0.2)'  },
+  pending:     { color: 'var(--amber)',  bg: 'var(--amber-soft)',  border: 'rgba(217,138,11,0.2)'  },
+  cancelled:   { color: 'var(--coral)',  bg: 'var(--coral-soft)',  border: 'rgba(221,81,64,0.2)'   },
+  completed:   { color: 'var(--violet)', bg: 'var(--violet-soft)', border: 'rgba(109,74,255,0.2)'  },
+  rescheduled: { color: 'var(--violet)', bg: 'var(--violet-soft)', border: 'rgba(109,74,255,0.2)'  },
 }
 
-export default async function AppointmentsPage() {
+type Appointment = {
+  id: string
+  customer_name: string
+  customer_phone?: string
+  service?: string
+  scheduled_at: string
+  status: string
+}
+
+const DOW = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
+
+function startOfWeek(d: Date) {
+  const day  = d.getDay() // 0=Sun..6=Sat
+  const diff = day === 0 ? -6 : 1 - day
+  const monday = new Date(d)
+  monday.setDate(d.getDate() + diff)
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+
+function toDateStr(d: Date) {
+  return d.toISOString().slice(0, 10)
+}
+
+export default async function AppointmentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>
+}) {
+  const { date } = await searchParams
+  const todayStr     = toDateStr(new Date())
+  const selectedDate = date ?? todayStr
+  const selected     = new Date(selectedDate + 'T12:00:00')
+
+  const weekStart = startOfWeek(selected)
+  const weekDates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + i)
+    return d
+  })
+  const weekEnd = new Date(weekDates[6])
+  weekEnd.setHours(23, 59, 59, 999)
+
+  const prevWeekDate = new Date(selected); prevWeekDate.setDate(prevWeekDate.getDate() - 7)
+  const nextWeekDate = new Date(selected); nextWeekDate.setDate(nextWeekDate.getDate() + 7)
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data: biz } = await supabase
@@ -22,157 +68,169 @@ export default async function AppointmentsPage() {
     .from('appointments')
     .select('*')
     .eq('business_id', biz?.id)
-    .order('scheduled_at', { ascending: false })
+    .order('scheduled_at', { ascending: true })
 
-  const upcoming = appointments?.filter(a =>
-    new Date(a.scheduled_at) >= new Date() && a.status !== 'cancelled'
-  ) ?? []
+  const weekAppts = ((appointments ?? []) as Appointment[]).filter(a => {
+    const t = new Date(a.scheduled_at)
+    return t >= weekDates[0] && t <= weekEnd && a.status !== 'cancelled'
+  })
 
-  const past = appointments?.filter(a =>
-    new Date(a.scheduled_at) < new Date() || a.status === 'cancelled'
-  ) ?? []
-
-  function AppointmentRow({ appt, isLast }: { appt: Record<string, string>; isLast: boolean }) {
-    const style = STATUS_STYLE[appt.status] ?? STATUS_STYLE.pending
-    const dt    = new Date(appt.scheduled_at)
-    return (
-      <div
-        className="flex items-center justify-between px-5 py-4 gap-4 hover-row transition-colors"
-        style={{ borderBottom: isLast ? 'none' : '1px solid var(--b4)' }}
-      >
-        <div className="flex items-center gap-3 min-w-0">
-          {/* Avatar */}
-          <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.16)' }}
-          >
-            <User size={14} style={{ color: '#a78bfa' }} />
-          </div>
-
-          {/* Info */}
-          <div className="min-w-0">
-            <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
-              {appt.customer_name}
-            </div>
-            <div className="flex items-center gap-2.5 mt-0.5 flex-wrap">
-              {appt.customer_phone && (
-                <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--t4)' }}>
-                  <Phone size={10} style={{ color: 'var(--t5)' }} />
-                  {appt.customer_phone}
-                </span>
-              )}
-              {appt.service && (
-                <span
-                  className="text-xs px-2 py-0.5 rounded-full"
-                  style={{
-                    background: 'rgba(167,139,250,0.07)',
-                    color: '#a78bfa',
-                    border: '1px solid rgba(167,139,250,0.14)',
-                  }}
-                >
-                  {appt.service}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 shrink-0">
-          {/* Date/time */}
-          <div className="text-right">
-            <div className="flex items-center gap-1.5 text-sm justify-end" style={{ color: 'var(--t2)' }}>
-              <CalendarDays size={12} style={{ color: '#a78bfa' }} />
-              {dt.toLocaleDateString('en-AU', { dateStyle: 'medium' })}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs mt-0.5 justify-end" style={{ color: 'var(--t4)' }}>
-              <Clock size={10} />
-              {dt.toLocaleTimeString('en-AU', { timeStyle: 'short' })}
-            </div>
-          </div>
-
-          {/* Status badge */}
-          <span
-            className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize whitespace-nowrap"
-            style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
-          >
-            {appt.status}
-          </span>
-        </div>
-      </div>
-    )
+  const countByDay = new Map<string, number>()
+  for (const a of weekAppts) {
+    const key = a.scheduled_at.slice(0, 10)
+    countByDay.set(key, (countByDay.get(key) ?? 0) + 1)
   }
 
+  const dayAppts = weekAppts
+    .filter(a => a.scheduled_at.slice(0, 10) === selectedDate)
+    .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+
+  const dayTitle = selected.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
+
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      <main className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
+    <div className="h-full overflow-y-auto">
+      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
 
-        {/* Upcoming */}
-        <div className="card">
-          <div className="card-header">
-            <div className="w-1 h-4 rounded-full shrink-0" style={{ background: 'linear-gradient(180deg, #34d399, #6ee7b7)' }} />
-            <CalendarCheck size={14} style={{ color: '#34d399' }} />
-            <h2 className="text-sm font-semibold flex-1" style={{ color: 'var(--text)' }}>Upcoming</h2>
-            {upcoming.length > 0 && (
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-bold"
-                style={{ background: 'rgba(52,211,153,0.1)', color: '#34d399', border: '1px solid rgba(52,211,153,0.2)' }}
-              >
-                {upcoming.length}
-              </span>
-            )}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
+              Appointments
+            </h1>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Everything Ellie has booked into your calendar</p>
           </div>
-          {upcoming.length > 0
-            ? upcoming.map((a, i) => (
-                <AppointmentRow key={a.id} appt={a} isLast={i === upcoming.length - 1} />
-              ))
-            : (
-              <div className="py-14 text-center flex flex-col items-center gap-2">
-                <div
-                  className="w-10 h-10 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.1)' }}
-                >
-                  <CalendarCheck size={18} style={{ color: 'var(--t5)' }} />
-                </div>
-                <p className="text-sm" style={{ color: 'var(--t4)' }}>No upcoming appointments</p>
-              </div>
-            )
-          }
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/appointments?date=${toDateStr(prevWeekDate)}`}
+              className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
+              style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+            >
+              <ChevronLeft size={15} />
+            </Link>
+            <Link
+              href={`/appointments?date=${todayStr}`}
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold btn-ghost"
+              style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}
+            >
+              This week
+            </Link>
+            <Link
+              href={`/appointments?date=${toDateStr(nextWeekDate)}`}
+              className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
+              style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+            >
+              <ChevronRight size={15} />
+            </Link>
+          </div>
         </div>
 
-        {/* Past */}
-        <div className="card">
-          <div className="card-header">
-            <div className="w-1 h-4 rounded-full shrink-0" style={{ background: 'rgba(100,116,139,0.4)' }} />
-            <CalendarX size={14} style={{ color: 'var(--t4)' }} />
-            <h2 className="text-sm font-semibold flex-1" style={{ color: 'var(--text)' }}>Past</h2>
-            {past.length > 0 && (
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-bold"
-                style={{ background: 'var(--bg4)', color: 'var(--t3)', border: '1px solid var(--b3)' }}
+        {/* Week strip */}
+        <div className="grid grid-cols-7 gap-2.5">
+          {weekDates.map((d, i) => {
+            const dStr    = toDateStr(d)
+            const count   = countByDay.get(dStr) ?? 0
+            const isSel   = dStr === selectedDate
+            const isToday = dStr === todayStr
+            return (
+              <Link
+                key={dStr}
+                href={`/appointments?date=${dStr}`}
+                className="rounded-xl p-3 text-center transition-colors"
+                style={{
+                  background: 'var(--card)',
+                  border: isSel ? '1px solid var(--violet)' : '1px solid var(--line)',
+                  boxShadow: isSel ? '0 0 0 3px var(--violet-soft)' : 'var(--shadow)',
+                }}
               >
-                {past.length}
-              </span>
-            )}
-          </div>
-          {past.length > 0
-            ? past.map((a, i) => (
-                <AppointmentRow key={a.id} appt={a} isLast={i === past.length - 1} />
-              ))
-            : (
-              <div className="py-14 text-center flex flex-col items-center gap-2">
-                <div
-                  className="w-10 h-10 rounded-2xl flex items-center justify-center"
-                  style={{ background: 'var(--bg4)', border: '1px solid var(--b3)' }}
-                >
-                  <CalendarX size={18} style={{ color: 'var(--t5)' }} />
+                <div className="text-[0.64rem] font-bold tracking-widest" style={{ color: 'var(--ink-3)' }}>{DOW[i]}</div>
+                <div className="font-extrabold text-xl mt-0.5 mb-1" style={{ fontFamily: 'var(--font-display)', color: isToday ? 'var(--violet)' : 'var(--ink)' }}>
+                  {d.getDate()}
                 </div>
-                <p className="text-sm" style={{ color: 'var(--t4)' }}>No past appointments</p>
-              </div>
+                <span
+                  className="text-xs font-bold rounded-full px-2 py-0.5 inline-block"
+                  style={count > 0
+                    ? { color: 'var(--violet)', background: 'var(--violet-soft)' }
+                    : { color: 'var(--ink-3)', background: 'var(--paper)' }}
+                >
+                  {count}
+                </span>
+              </Link>
             )
-          }
+          })}
         </div>
 
-      </main>
+        {/* Day detail */}
+        <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
+            <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>
+              {selectedDate === todayStr ? 'Today' : dayTitle}
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
+              {dayAppts.length} appointment{dayAppts.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+
+          {dayAppts.length === 0 ? (
+            <div className="py-14 text-center flex flex-col items-center gap-2">
+              <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'var(--paper)' }}>
+                <CalendarDays size={18} style={{ color: 'var(--ink-3)' }} />
+              </div>
+              <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No appointments this day</p>
+            </div>
+          ) : (
+            dayAppts.map((appt, i) => {
+              const style = STATUS_STYLE[appt.status] ?? STATUS_STYLE.pending
+              const t = new Date(appt.scheduled_at)
+              return (
+                <div
+                  key={appt.id}
+                  className="flex items-center gap-4 px-5 py-4 hover-row transition-colors"
+                  style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
+                >
+                  <div className="flex items-center gap-1.5 shrink-0" style={{ width: 70, color: 'var(--ink)' }}>
+                    <Clock size={12} style={{ color: 'var(--violet)' }} />
+                    <span className="text-sm font-mono font-semibold">
+                      {t.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: 'var(--violet-soft)' }}
+                  >
+                    <User size={14} style={{ color: 'var(--violet)' }} />
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</div>
+                    <div className="flex items-center gap-2.5 mt-0.5 flex-wrap">
+                      {appt.customer_phone && (
+                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-3)' }}>
+                          <Phone size={10} /> {appt.customer_phone}
+                        </span>
+                      )}
+                      {appt.service && (
+                        <span
+                          className="text-xs px-2 py-0.5 rounded-full"
+                          style={{ background: 'var(--violet-soft)', color: 'var(--violet)' }}
+                        >
+                          {appt.service}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span
+                    className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize whitespace-nowrap shrink-0"
+                    style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
+                  >
+                    {appt.status}
+                  </span>
+                </div>
+              )
+            })
+          )}
+        </section>
+      </div>
     </div>
   )
 }

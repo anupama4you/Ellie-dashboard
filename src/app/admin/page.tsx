@@ -5,10 +5,10 @@ import { Building2, Zap, Plus } from 'lucide-react'
 const PLANS = ['starter', 'core', 'professional', 'enterprise'] as const
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  starter:      { color: '#94a3b8', bg: 'rgba(148,163,184,0.07)', border: 'rgba(148,163,184,0.15)' },
-  core:         { color: '#a78bfa', bg: 'rgba(167,139,250,0.1)',  border: 'rgba(167,139,250,0.2)'  },
-  professional: { color: '#f472b6', bg: 'rgba(244,114,182,0.1)',  border: 'rgba(244,114,182,0.2)'  },
-  enterprise:   { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)',   border: 'rgba(251,191,36,0.2)'   },
+  starter:      { color: 'var(--ink-3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
+  core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
+  professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
+  enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },
 }
 
 const PLAN_LIMITS: Record<string, number> = {
@@ -37,7 +37,7 @@ export default async function AdminPage() {
           </div>
           <Link href="/admin/clients/new"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #a78bfa, #f472b6)', color: '#fff', boxShadow: '0 0 20px rgba(167,139,250,0.2)' }}>
+            style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', color: '#fff', boxShadow: '0 0 20px rgba(109,74,255,0.2)' }}>
             <Plus size={14} />
             Add Client
           </Link>
@@ -46,8 +46,8 @@ export default async function AdminPage() {
         {/* Stat cards */}
         <div className="grid grid-cols-2 gap-4">
           {[
-            { label: 'Total Clients',     value: list.length,                                       color: '#a78bfa', icon: Building2 },
-            { label: 'Active Assistants', value: list.filter(b => b.vapi_assistant_id).length,      color: '#34d399', icon: Zap       },
+            { label: 'Total Clients',     value: list.length,                                       color: 'var(--violet)', icon: Building2 },
+            { label: 'Active Assistants', value: list.filter(b => b.vapi_assistant_id).length,      color: 'var(--signal)', icon: Zap       },
           ].map(({ label, value, color, icon: Icon }) => (
             <div key={label} className="rounded-2xl px-6 py-5 flex items-center gap-4"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>

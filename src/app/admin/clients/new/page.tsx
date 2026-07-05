@@ -63,7 +63,7 @@ export default async function NewClientPage({
 
         {error && (
           <div className="px-4 py-3 rounded-xl text-sm"
-            style={{ background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.2)', color: '#f87171' }}>
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
             {error === 'user'
               ? 'Could not create account — that email may already be registered.'
               : 'Account created but business record failed. Please try again.'}
@@ -77,7 +77,7 @@ export default async function NewClientPage({
           {/* Gradient top line */}
           <div className="relative px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
             <div className="absolute top-0 left-0 right-0 h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.35), transparent)' }} />
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(109,74,255,0.35), transparent)' }} />
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Client Details</h2>
           </div>
 
@@ -125,7 +125,7 @@ export default async function NewClientPage({
 
             <button type="submit"
               className="w-full rounded-xl py-3 text-sm font-bold text-white mt-1 transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #a78bfa, #f472b6)', boxShadow: '0 0 24px rgba(167,139,250,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', boxShadow: '0 0 24px rgba(109,74,255,0.25)' }}>
               Create Client &amp; Send Invite
             </button>
 

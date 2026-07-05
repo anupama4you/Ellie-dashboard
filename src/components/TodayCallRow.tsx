@@ -30,7 +30,7 @@ export default function TodayCallRow({
       className="rounded-xl overflow-hidden"
       style={{
         background: 'var(--bg3)',
-        border: `1px solid ${isMissed ? 'rgba(248,113,113,0.18)' : 'var(--border)'}`,
+        border: `1px solid ${isMissed ? 'rgba(221,81,64,0.18)' : 'var(--border)'}`,
       }}
     >
       <div className="flex items-start gap-4 px-4 py-3.5">
@@ -42,7 +42,7 @@ export default function TodayCallRow({
           />
           <span
             className="text-xs font-mono font-semibold tabular-nums"
-            style={{ color: 'var(--t4)', writingMode: 'horizontal-tb' }}
+            style={{ color: 'var(--t2)', writingMode: 'horizontal-tb' }}
           >
             {time}
           </span>
@@ -52,22 +52,29 @@ export default function TodayCallRow({
         <div className="flex-1 min-w-0">
           {isMissed ? (
             <div className="flex items-center gap-2">
-              <PhoneMissed size={13} style={{ color: '#f87171', flexShrink: 0 }} />
-              <p className="text-sm font-medium" style={{ color: '#f87171' }}>
+              <PhoneMissed size={13} style={{ color: 'var(--coral)', flexShrink: 0 }} />
+              <p className="text-sm font-medium" style={{ color: 'var(--coral)' }}>
                 Missed call{customerNumber ? ` from ${customerNumber}` : ''}
               </p>
             </div>
           ) : (
-            <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>
-              {summary || 'No summary available'}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {customerNumber && (
+                <span className="text-sm font-semibold tabular-nums shrink-0" style={{ color: 'var(--text)' }}>
+                  {customerNumber}
+                </span>
+              )}
+              <p className="text-sm leading-relaxed truncate" style={{ color: 'var(--t2)' }}>
+                {summary || 'No summary available'}
+              </p>
+            </div>
           )}
 
           <div className="flex items-center gap-3 mt-1.5">
             {isMissed && customerNumber && (
               <span className="text-xs" style={{ color: 'var(--t4)' }}>
                 Follow up:{' '}
-                <span className="font-medium" style={{ color: '#a78bfa' }}>{customerNumber}</span>
+                <span className="font-medium" style={{ color: 'var(--violet)' }}>{customerNumber}</span>
               </span>
             )}
             {hasTranscript && !isMissed && (
@@ -96,10 +103,10 @@ export default function TodayCallRow({
               onClick={() => setExpanded(v => !v)}
               className="w-7 h-7 rounded-lg flex items-center justify-center transition-all btn-ghost focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{
-                color: expanded ? '#a78bfa' : 'var(--t4)',
-                background: expanded ? 'rgba(167,139,250,0.12)' : undefined,
-                border: expanded ? '1px solid rgba(167,139,250,0.2)' : '1px solid transparent',
-                outlineColor: '#a78bfa',
+                color: expanded ? 'var(--violet)' : 'var(--t4)',
+                background: expanded ? 'rgba(109,74,255,0.12)' : undefined,
+                border: expanded ? '1px solid rgba(109,74,255,0.2)' : '1px solid transparent',
+                outlineColor: 'var(--violet)',
               }}
               title={expanded ? 'Hide recording' : 'Show recording'}
               aria-label={expanded ? 'Hide recording' : 'Show recording'}

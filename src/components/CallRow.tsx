@@ -5,28 +5,28 @@ import WaveformPlayer from './WaveformPlayer'
 const COLS = '32px 1fr 160px 80px 140px 40px'
 
 function TypeIcon({ type }: { type?: string }) {
-  if (type === 'outboundPhoneCall') return <PhoneOutgoing size={13} style={{ color: '#60a5fa' }} />
-  if (type === 'webCall')           return <Globe         size={13} style={{ color: '#a78bfa' }} />
-  if (type === 'inboundPhoneCall')  return <PhoneIncoming size={13} style={{ color: '#34d399' }} />
+  if (type === 'outboundPhoneCall') return <PhoneOutgoing size={13} style={{ color: 'var(--violet)' }} />
+  if (type === 'webCall')           return <Globe         size={13} style={{ color: 'var(--violet)' }} />
+  if (type === 'inboundPhoneCall')  return <PhoneIncoming size={13} style={{ color: 'var(--signal)' }} />
   return <PhoneOff size={13} style={{ color: 'var(--t3)' }} />
 }
 
 function typeBg(type?: string): string {
-  if (type === 'outboundPhoneCall') return 'rgba(96,165,250,0.1)'
-  if (type === 'webCall')           return 'rgba(167,139,250,0.1)'
-  return 'rgba(52,211,153,0.1)'
+  if (type === 'outboundPhoneCall') return 'rgba(109,74,255,0.1)'
+  if (type === 'webCall')           return 'rgba(109,74,255,0.1)'
+  return 'rgba(15,163,122,0.1)'
 }
 
 function typeBorder(type?: string): string {
-  if (type === 'outboundPhoneCall') return 'rgba(96,165,250,0.2)'
-  if (type === 'webCall')           return 'rgba(167,139,250,0.2)'
-  return 'rgba(52,211,153,0.2)'
+  if (type === 'outboundPhoneCall') return 'rgba(109,74,255,0.2)'
+  if (type === 'webCall')           return 'rgba(109,74,255,0.2)'
+  return 'rgba(15,163,122,0.2)'
 }
 
 function typeAccent(type?: string): string {
-  if (type === 'outboundPhoneCall') return '#60a5fa'
-  if (type === 'webCall')           return '#a78bfa'
-  return '#34d399'
+  if (type === 'outboundPhoneCall') return 'var(--violet)'
+  if (type === 'webCall')           return 'var(--violet)'
+  return 'var(--signal)'
 }
 
 export type CallRowProps = {
@@ -142,8 +142,8 @@ export default function CallRow({
             href={`/calls/${id}`}
             className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{
-              background: 'rgba(100,116,139,0.07)',
-              border: '1px solid rgba(100,116,139,0.12)',
+              background: 'rgba(139,133,160,0.07)',
+              border: '1px solid rgba(139,133,160,0.12)',
               color: 'var(--t3)',
               outlineColor: 'var(--t3)',
             }}

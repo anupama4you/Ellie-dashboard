@@ -3,10 +3,10 @@ import Link from 'next/link'
 import { Plus, Pencil } from 'lucide-react'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  starter:      { color: '#94a3b8', bg: 'rgba(148,163,184,0.07)', border: 'rgba(148,163,184,0.15)' },
-  core:         { color: '#a78bfa', bg: 'rgba(167,139,250,0.1)',  border: 'rgba(167,139,250,0.2)'  },
-  professional: { color: '#f472b6', bg: 'rgba(244,114,182,0.1)',  border: 'rgba(244,114,182,0.2)'  },
-  enterprise:   { color: '#fbbf24', bg: 'rgba(251,191,36,0.1)',   border: 'rgba(251,191,36,0.2)'   },
+  starter:      { color: 'var(--ink-3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
+  core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
+  professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
+  enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },
 }
 
 export default async function ClientsPage() {
@@ -33,7 +33,7 @@ export default async function ClientsPage() {
           </div>
           <Link href="/admin/clients/new"
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
-            style={{ background: 'linear-gradient(135deg, #a78bfa, #f472b6)', color: '#fff', boxShadow: '0 0 20px rgba(167,139,250,0.2)' }}>
+            style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', color: '#fff', boxShadow: '0 0 20px rgba(109,74,255,0.2)' }}>
             <Plus size={14} />
             Add Client
           </Link>
@@ -61,7 +61,7 @@ export default async function ClientsPage() {
           {list.length === 0 ? (
             <div className="py-16 text-center">
               <p className="text-sm" style={{ color: 'var(--t5)' }}>No clients yet</p>
-              <Link href="/admin/clients/new" className="text-xs mt-1 inline-block" style={{ color: '#a78bfa' }}>
+              <Link href="/admin/clients/new" className="text-xs mt-1 inline-block" style={{ color: 'var(--violet)' }}>
                 Add your first client →
               </Link>
             </div>

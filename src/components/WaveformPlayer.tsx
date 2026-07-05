@@ -88,7 +88,7 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
     <button
       onClick={togglePlay}
       className={`rounded-full flex items-center justify-center shrink-0 transition-transform cursor-pointer active:scale-95 focus-visible:outline-2 focus-visible:outline-offset-2 ${compact ? 'w-6 h-6' : 'w-9 h-9'}`}
-      style={{ background: '#a78bfa', color: '#0d1117', outlineColor: '#a78bfa' }}
+      style={{ background: 'var(--violet)', color: '#fff', outlineColor: 'var(--violet)' }}
       aria-label={playing ? 'Pause recording' : 'Play recording'}
     >
       {playing
@@ -107,7 +107,7 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
       aria-valuemax={100}
       aria-valuenow={Math.round(progress * 100)}
       tabIndex={0}
-      style={{ outlineColor: '#a78bfa' }}
+      style={{ outlineColor: 'var(--violet)' }}
       onKeyDown={e => {
         if (e.key === 'ArrowRight') seekTo(Math.min(1, progress + 0.05))
         if (e.key === 'ArrowLeft')  seekTo(Math.max(0, progress - 0.05))
@@ -123,7 +123,7 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
             style={{
               height: `${h * 100}%`,
               minHeight: 2,
-              background: played ? '#34d399' : 'var(--t5)',
+              background: played ? 'var(--signal)' : 'var(--t5)',
             }}
           />
         )

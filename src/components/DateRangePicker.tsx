@@ -72,9 +72,9 @@ export default function DateRangePicker({ from, to, onChange }: Props) {
         style={{
           color:      hasValue ? 'var(--text)' : 'var(--t3)',
           border:     '1px solid var(--border)',
-          background: hasValue ? 'rgba(167,139,250,0.08)' : undefined,
+          background: hasValue ? 'rgba(109,74,255,0.08)' : undefined,
         }}>
-        <CalendarDays size={12} style={{ color: hasValue ? '#a78bfa' : 'var(--t4)' }} />
+        <CalendarDays size={12} style={{ color: hasValue ? 'var(--violet)' : 'var(--t4)' }} />
         {label}
         {hasValue && (
           <span

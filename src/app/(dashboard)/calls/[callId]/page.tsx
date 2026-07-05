@@ -39,17 +39,17 @@ function parseTranscript(raw: string): Msg[] {
 
 function CallTypeLabel({ type }: { type?: string }) {
   if (type === 'outboundPhoneCall') return (
-    <span className="flex items-center gap-1 text-xs" style={{ color: '#60a5fa' }}>
+    <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--violet)' }}>
       <PhoneOutgoing size={11} /> Outbound
     </span>
   )
   if (type === 'webCall') return (
-    <span className="flex items-center gap-1 text-xs" style={{ color: '#a78bfa' }}>
+    <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--violet)' }}>
       <Globe size={11} /> Web
     </span>
   )
   return (
-    <span className="flex items-center gap-1 text-xs" style={{ color: '#34d399' }}>
+    <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--signal)' }}>
       <PhoneIncoming size={11} /> Inbound
     </span>
   )
@@ -107,8 +107,8 @@ export default async function CallDetailPage({
             <div className="flex items-start justify-between gap-4 flex-wrap">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0"
-                  style={{ background: 'rgba(167,139,250,0.1)' }}>
-                  <Phone size={17} style={{ color: '#a78bfa' }} />
+                  style={{ background: 'rgba(109,74,255,0.1)' }}>
+                  <Phone size={17} style={{ color: 'var(--violet)' }} />
                 </div>
                 <div>
                   <div className="text-xl font-bold leading-tight" style={{ color: 'var(--text)' }}>
@@ -126,7 +126,7 @@ export default async function CallDetailPage({
               </div>
               {endedLabel && (
                 <span className="text-xs font-medium px-3 py-1.5 rounded-full shrink-0"
-                  style={{ background: 'rgba(167,139,250,0.1)', color: '#a78bfa' }}>
+                  style={{ background: 'rgba(109,74,255,0.1)', color: 'var(--violet)' }}>
                   {endedLabel}
                 </span>
               )}
@@ -148,9 +148,9 @@ export default async function CallDetailPage({
                 },
                 {
                   icon: analysis?.successEvaluation === 'true'
-                    ? <CheckCircle2 size={12} style={{ color: '#34d399' }} />
+                    ? <CheckCircle2 size={12} style={{ color: 'var(--signal)' }} />
                     : analysis?.successEvaluation === 'false'
-                    ? <XCircle size={12} style={{ color: '#f87171' }} />
+                    ? <XCircle size={12} style={{ color: 'var(--coral)' }} />
                     : <span />,
                   label: 'Outcome',
                   value: analysis?.successEvaluation === 'true'  ? 'Successful'
@@ -184,7 +184,7 @@ export default async function CallDetailPage({
             <div className="rounded-xl p-5"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2 mb-4">
-                <Mic size={14} style={{ color: '#a78bfa' }} />
+                <Mic size={14} style={{ color: 'var(--violet)' }} />
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Recording</h2>
               </div>
               <WaveformPlayer src={artifact.recordingUrl} />
@@ -197,7 +197,7 @@ export default async function CallDetailPage({
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2 px-5 py-4"
                 style={{ borderBottom: '1px solid var(--b2)' }}>
-                <FileText size={14} style={{ color: '#a78bfa' }} />
+                <FileText size={14} style={{ color: 'var(--violet)' }} />
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Transcript</h2>
                 {msgs.length > 0 && (
                   <span className="text-xs ml-auto" style={{ color: 'var(--t5)' }}>
@@ -212,15 +212,15 @@ export default async function CallDetailPage({
                     <div key={i} className={`flex gap-2.5 ${msg.role === 'assistant' ? 'flex-row-reverse' : ''}`}>
                       <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1"
                         style={{
-                          background: msg.role === 'user' ? 'rgba(100,116,139,0.2)' : 'rgba(167,139,250,0.15)',
-                          color:      msg.role === 'user' ? 'var(--t3)'              : '#a78bfa',
+                          background: msg.role === 'user' ? 'rgba(139,133,160,0.2)' : 'rgba(109,74,255,0.15)',
+                          color:      msg.role === 'user' ? 'var(--t3)'              : 'var(--violet)',
                         }}>
                         {msg.role === 'user' ? 'C' : 'E'}
                       </div>
                       <div className="max-w-[82%] px-3.5 py-2.5 text-sm leading-relaxed"
                         style={{
-                          background:   msg.role === 'user' ? 'var(--b4)' : 'rgba(167,139,250,0.08)',
-                          color:        msg.role === 'user' ? 'var(--t2)'  : '#c4b5fd',
+                          background:   msg.role === 'user' ? 'var(--b4)' : 'rgba(109,74,255,0.08)',
+                          color:        msg.role === 'user' ? 'var(--t2)'  : 'var(--violet)',
                           borderRadius: msg.role === 'user' ? '4px 12px 12px 12px'   : '12px 4px 12px 12px',
                         }}>
                         {msg.text}

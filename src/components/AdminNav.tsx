@@ -30,7 +30,7 @@ export default function AdminNav() {
         style={{ borderBottom: '1px solid var(--b3)' }}>
         <Image src="/logo.png" alt="Ellie" width={100} height={32} className="h-7 w-auto" />
         <span className="text-xs px-1.5 py-0.5 rounded-md font-bold tracking-wide"
-          style={{ background: 'rgba(251,191,36,0.12)', color: '#fbbf24', border: '1px solid rgba(251,191,36,0.25)' }}>
+          style={{ background: 'rgba(217,138,11,0.12)', color: 'var(--amber)', border: '1px solid rgba(217,138,11,0.25)' }}>
           ADMIN
         </span>
       </div>
@@ -44,10 +44,10 @@ export default function AdminNav() {
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all"
               style={{
                 color:      active ? 'var(--text)' : 'var(--t7)',
-                background: active ? 'linear-gradient(135deg, rgba(167,139,250,0.12), rgba(244,114,182,0.06))' : 'transparent',
-                border:     active ? '1px solid rgba(167,139,250,0.18)' : '1px solid transparent',
+                background: active ? 'linear-gradient(135deg, rgba(109,74,255,0.12), rgba(158,123,255,0.06))' : 'transparent',
+                border:     active ? '1px solid rgba(109,74,255,0.18)' : '1px solid transparent',
               }}>
-              <Icon size={14} style={{ color: active ? '#a78bfa' : 'var(--t7)' }} />
+              <Icon size={14} style={{ color: active ? 'var(--violet)' : 'var(--t7)' }} />
               {label}
             </Link>
           )

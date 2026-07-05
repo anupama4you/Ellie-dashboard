@@ -17,10 +17,16 @@ export default async function AnalyticsPage() {
   }
 
   return (
-    <div className="flex flex-col flex-1 overflow-hidden">
-      <main className="flex-1 overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto">
+      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+        <div>
+          <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
+            Analytics
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>What your phone line has been doing</p>
+        </div>
         <AnalyticsCharts calls={calls} plan={biz?.plan ?? 'core'} />
-      </main>
+      </div>
     </div>
   )
 }

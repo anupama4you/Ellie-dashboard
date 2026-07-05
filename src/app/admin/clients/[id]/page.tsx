@@ -91,7 +91,7 @@ export default async function EditClientPage({
 
         {reset === 'sent' && (
           <div className="px-4 py-3 rounded-xl text-sm"
-            style={{ background: 'rgba(52,211,153,0.07)', border: '1px solid rgba(52,211,153,0.2)', color: '#34d399' }}>
+            style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
             Password reset email sent to {clientEmail}
           </div>
         )}
@@ -103,7 +103,7 @@ export default async function EditClientPage({
 
           <div className="relative px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
             <div className="absolute top-0 left-0 right-0 h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(167,139,250,0.35), transparent)' }} />
+              style={{ background: 'linear-gradient(90deg, transparent, rgba(109,74,255,0.35), transparent)' }} />
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Edit Client</h2>
           </div>
 
@@ -143,7 +143,7 @@ export default async function EditClientPage({
 
             <button type="submit"
               className="w-full rounded-xl py-3 text-sm font-bold text-white mt-1 transition-opacity hover:opacity-90"
-              style={{ background: 'linear-gradient(135deg, #a78bfa, #f472b6)', boxShadow: '0 0 24px rgba(167,139,250,0.25)' }}>
+              style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', boxShadow: '0 0 24px rgba(109,74,255,0.25)' }}>
               Save Changes
             </button>
           </div>
@@ -159,7 +159,7 @@ export default async function EditClientPage({
             <form action={sendPasswordReset}>
               <button type="submit"
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-violet-500/10"
-                style={{ color: '#a78bfa', background: 'rgba(167,139,250,0.07)', border: '1px solid rgba(167,139,250,0.18)' }}>
+                style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
                 <Mail size={13} />
                 Send Password Reset Email
               </button>
@@ -169,15 +169,15 @@ export default async function EditClientPage({
 
         {/* Danger zone — native details for confirmation without JS */}
         <details className="rounded-2xl overflow-hidden"
-          style={{ background: 'var(--bg3)', border: '1px solid rgba(248,113,113,0.18)' }}>
+          style={{ background: 'var(--bg3)', border: '1px solid rgba(221,81,64,0.18)' }}>
           <summary
             className="px-5 py-4 cursor-pointer flex items-center justify-between select-none list-none"
-            style={{ color: '#f87171' }}>
+            style={{ color: 'var(--coral)' }}>
             <span className="text-sm font-semibold">Danger Zone</span>
             <span className="text-xs" style={{ color: 'var(--t4)' }}>expand to delete</span>
           </summary>
           <div className="px-5 pb-5 flex flex-col gap-3"
-            style={{ borderTop: '1px solid rgba(248,113,113,0.1)' }}>
+            style={{ borderTop: '1px solid rgba(221,81,64,0.1)' }}>
             <p className="text-xs pt-4 leading-relaxed" style={{ color: 'var(--t3)' }}>
               Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> and their
               login account. All appointments are also removed. This cannot be undone.
@@ -185,7 +185,7 @@ export default async function EditClientPage({
             <form action={deleteClient}>
               <button type="submit"
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-red-500/10"
-                style={{ color: '#f87171', background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.2)' }}>
+                style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
                 <Trash2 size={13} />
                 Delete {biz.name}
               </button>

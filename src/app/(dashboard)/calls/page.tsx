@@ -43,18 +43,18 @@ function StatPill({
   )
 }
 
-const ERROR_BG    = 'rgba(248,113,113,0.1)'
-const ERROR_COLOR = '#f87171'
-const WARN_BG     = 'rgba(251,146,60,0.1)'
-const WARN_COLOR  = '#fb923c'
-const MUTED_BG    = 'rgba(148,163,184,0.1)'
-const MUTED_COLOR = '#94a3b8'
+const ERROR_BG    = 'rgba(221,81,64,0.1)'
+const ERROR_COLOR = 'var(--coral)'
+const WARN_BG     = 'rgba(217,138,11,0.1)'
+const WARN_COLOR  = 'var(--amber)'
+const MUTED_BG    = 'rgba(139,133,160,0.1)'
+const MUTED_COLOR = 'var(--ink-3)'
 
 const ENDED_REASON: Record<string, { label: string; color: string; bg: string }> = {
-  'customer-ended-call':                              { label: 'Ended by caller',    color: '#34d399',   bg: 'rgba(52,211,153,0.1)'  },
-  'assistant-ended-call':                             { label: 'Ended',              color: '#a78bfa',   bg: 'rgba(167,139,250,0.1)' },
-  'appointment-scheduled':                            { label: 'Booked',             color: '#34d399',   bg: 'rgba(52,211,153,0.1)'  },
-  'call-transferred':                                 { label: 'Transferred',        color: '#60a5fa',   bg: 'rgba(96,165,250,0.1)'  },
+  'customer-ended-call':                              { label: 'Ended by caller',    color: 'var(--signal)',   bg: 'rgba(15,163,122,0.1)'  },
+  'assistant-ended-call':                             { label: 'Ended',              color: 'var(--violet)',   bg: 'rgba(109,74,255,0.1)' },
+  'appointment-scheduled':                            { label: 'Booked',             color: 'var(--signal)',   bg: 'rgba(15,163,122,0.1)'  },
+  'call-transferred':                                 { label: 'Transferred',        color: 'var(--violet)',   bg: 'rgba(109,74,255,0.1)'  },
   'customer-did-not-answer':                          { label: 'No answer',          color: ERROR_COLOR, bg: ERROR_BG   },
   'customer-busy':                                    { label: 'Busy',               color: WARN_COLOR,  bg: WARN_BG    },
   'voicemail':                                        { label: 'Voicemail',          color: WARN_COLOR,  bg: WARN_BG    },
@@ -76,7 +76,7 @@ const ENDED_REASON: Record<string, { label: string; color: string; bg: string }>
 }
 
 function endedReasonBadge(reason?: string) {
-  if (!reason) return { label: 'Completed', color: '#a78bfa', bg: 'rgba(167,139,250,0.1)' }
+  if (!reason) return { label: 'Completed', color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)' }
   if (ENDED_REASON[reason]) return ENDED_REASON[reason]
   const normalised = reason.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '-').replace(/-+/g, '-')
   if (ENDED_REASON[normalised]) return ENDED_REASON[normalised]
@@ -84,7 +84,7 @@ function endedReasonBadge(reason?: string) {
   if (low.includes('audio'))    return { label: 'No audio',    color: ERROR_COLOR, bg: ERROR_BG }
   if (low.includes('error'))    return { label: 'Error',       color: ERROR_COLOR, bg: ERROR_BG }
   if (low.includes('timeout') || low.includes('timed')) return { label: 'Timeout', color: WARN_COLOR, bg: WARN_BG }
-  if (low.includes('transfer')) return { label: 'Transferred', color: '#60a5fa',   bg: 'rgba(96,165,250,0.1)' }
+  if (low.includes('transfer')) return { label: 'Transferred', color: 'var(--violet)',   bg: 'rgba(109,74,255,0.1)' }
   if (low.includes('voicemail'))return { label: 'Voicemail',   color: WARN_COLOR,  bg: WARN_BG }
   if (low.includes('busy'))     return { label: 'Busy',        color: WARN_COLOR,  bg: WARN_BG }
   return { label: 'Completed', color: MUTED_COLOR, bg: MUTED_BG }
@@ -196,39 +196,39 @@ export default async function CallsPage({
           >
             <StatPill
               icon={<div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--violet)' }} />}
-              iconBg="rgba(167,139,250,0.1)"
+              iconBg="rgba(109,74,255,0.1)"
               value={calls.length}
               label={hasDateFilter ? 'calls in range' : 'calls'}
               color="var(--text)"
             />
             <Divider />
             <StatPill
-              icon={<Phone size={12} style={{ color: '#34d399' }} />}
-              iconBg="rgba(52,211,153,0.1)"
+              icon={<Phone size={12} style={{ color: 'var(--signal)' }} />}
+              iconBg="rgba(15,163,122,0.1)"
               value={answered}
               label="answered"
-              color="#34d399"
+              color="var(--signal)"
             />
             <Divider />
             <StatPill
-              icon={<PhoneOff size={12} style={{ color: '#f87171' }} />}
-              iconBg="rgba(248,113,113,0.1)"
+              icon={<PhoneOff size={12} style={{ color: 'var(--coral)' }} />}
+              iconBg="rgba(221,81,64,0.1)"
               value={missed}
               label="missed"
-              color="#f87171"
+              color="var(--coral)"
             />
             <Divider />
             <StatPill
               icon={<MicOff size={12} style={{ color: 'var(--t3)' }} />}
-              iconBg="rgba(148,163,184,0.1)"
+              iconBg="rgba(139,133,160,0.1)"
               value={recorded}
               label="recorded"
               color="var(--text)"
             />
             <Divider />
             <StatPill
-              icon={<Clock size={12} style={{ color: '#fbbf24' }} />}
-              iconBg="rgba(251,191,36,0.1)"
+              icon={<Clock size={12} style={{ color: 'var(--amber)' }} />}
+              iconBg="rgba(217,138,11,0.1)"
               value={avgDuration}
               label="avg. duration"
               color="var(--text)"
@@ -288,11 +288,11 @@ export default async function CallsPage({
             <div className="py-12 text-center px-6 flex flex-col items-center gap-2">
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.15)' }}
+                style={{ background: 'rgba(221,81,64,0.08)', border: '1px solid rgba(221,81,64,0.15)' }}
               >
-                <PhoneOff size={16} style={{ color: '#f87171' }} />
+                <PhoneOff size={16} style={{ color: 'var(--coral)' }} />
               </div>
-              <p className="text-xs font-semibold" style={{ color: '#f87171' }}>Setup required</p>
+              <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>Setup required</p>
               <p className="text-sm" style={{ color: 'var(--t4)' }}>{fetchError}</p>
             </div>
           )}
@@ -301,7 +301,7 @@ export default async function CallsPage({
             <div className="py-16 text-center flex flex-col items-center gap-3">
               <div
                 className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ background: 'rgba(100,116,139,0.07)', border: '1px solid rgba(100,116,139,0.12)' }}
+                style={{ background: 'rgba(139,133,160,0.07)', border: '1px solid rgba(139,133,160,0.12)' }}
               >
                 <PhoneIncoming size={20} style={{ color: 'var(--t4)' }} />
               </div>

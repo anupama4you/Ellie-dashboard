@@ -69,8 +69,8 @@ export default function CallsFilter() {
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${active ? '' : 'btn-ghost'}`}
             style={{
               color:      active ? 'var(--text)' : 'var(--t3)',
-              border:     `1px solid ${active ? 'rgba(167,139,250,0.35)' : 'var(--border)'}`,
-              background: active ? 'rgba(167,139,250,0.12)' : undefined,
+              border:     `1px solid ${active ? 'rgba(109,74,255,0.35)' : 'var(--border)'}`,
+              background: active ? 'rgba(109,74,255,0.12)' : undefined,
             }}>
             {q.label}
           </button>
@@ -97,8 +97,8 @@ export default function CallsFilter() {
           width: 148,
           padding: '5px 10px',
           fontSize: 13,
-          borderColor: outcome ? 'rgba(167,139,250,0.35)' : undefined,
-          background: outcome ? 'rgba(167,139,250,0.08)' : undefined,
+          borderColor: outcome ? 'rgba(109,74,255,0.35)' : undefined,
+          background: outcome ? 'rgba(109,74,255,0.08)' : undefined,
           color: outcome ? 'var(--text)' : undefined,
         }}>
         {OUTCOMES.map(o => (
