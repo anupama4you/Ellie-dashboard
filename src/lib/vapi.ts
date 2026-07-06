@@ -13,10 +13,17 @@ export class VapiError extends Error {
 }
 
 async function vapiRequest(path: string, options?: RequestInit) {
+  // Only GET requests are safe to cache — mutations (PATCH/POST/DELETE) must
+  // never be, and this Next.js version's dev-mode fetch instrumentation has
+  // been observed to corrupt the response body when `next.revalidate` is
+  // applied to a non-GET request.
+  const method    = options?.method ?? 'GET'
+  const cacheable = method === 'GET' && !options?.cache
+
   const res = await fetch(`${VAPI_BASE}${path}`, {
     // Short-lived cache so switching tabs a few seconds apart reuses the
     // same response instead of re-hitting Vapi on every navigation.
-    next: { revalidate: 20 },
+    ...(cacheable ? { next: { revalidate: 20 } } : { cache: 'no-store' as const }),
     ...options,
     headers: {
       Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
@@ -24,15 +31,24 @@ async function vapiRequest(path: string, options?: RequestInit) {
       ...options?.headers,
     },
   })
+
+  const raw = await res.text()
+
   if (!res.ok) {
     let detail = ''
     try {
-      const body = await res.json()
+      const body = JSON.parse(raw)
       detail = Array.isArray(body.message) ? body.message.join('; ') : (body.message ?? '')
     } catch {}
     throw new VapiError(path, res.status, detail)
   }
-  return res.json()
+
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    console.error(`Vapi ${path} returned unparsable JSON:`, raw.slice(0, 500))
+    throw new Error(`Vapi ${path} returned a response that couldn't be parsed as JSON: ${(err as Error).message}`)
+  }
 }
 
 export type VapiCall = {
@@ -151,7 +167,9 @@ export type VapiAssistant = {
 }
 
 export async function getAssistant(assistantId: string): Promise<VapiAssistant> {
-  return vapiRequest(`/assistant/${assistantId}`)
+  // Always fresh — this feeds a fetch-then-patch merge, so a stale cached
+  // copy risks clobbering recent changes (e.g. tools added moments ago).
+  return vapiRequest(`/assistant/${assistantId}`, { cache: 'no-store' })
 }
 
 export async function updateAssistant(assistantId: string, patch: Record<string, unknown>): Promise<VapiAssistant> {
