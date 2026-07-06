@@ -30,12 +30,30 @@ function fmtDate(iso: string) {
   return d.toLocaleString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
 }
 
+// Real calls hit this server-to-server from Vapi's backend (no CORS involved),
+// but Vapi's dashboard "Test" tool calls it directly from the browser — so a
+// preflight OPTIONS request needs a response, and the actual response needs
+// Access-Control-Allow-Origin, or the browser blocks it before it's read.
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+function json(body: unknown, init?: ResponseInit) {
+  return NextResponse.json(body, { ...init, headers: { ...CORS_HEADERS, ...init?.headers } })
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
+}
+
 export async function POST(req: Request) {
   const secret = process.env.VAPI_WEBHOOK_SECRET
   if (secret) {
     const auth = req.headers.get('authorization')
     if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return json({ error: 'Unauthorized' }, { status: 401 })
     }
   } else {
     console.warn('VAPI_WEBHOOK_SECRET is not set — webhook is accepting unauthenticated requests.')
@@ -43,7 +61,7 @@ export async function POST(req: Request) {
 
   const body = await req.json()
   const { message } = body
-  if (!message) return NextResponse.json({ ok: true })
+  if (!message) return json({ ok: true })
 
   if (message.type === 'tool-calls') {
     const results: { toolCallId: string; result: string }[] = []
@@ -149,8 +167,8 @@ export async function POST(req: Request) {
       results.push({ toolCallId: toolCall.id, result: resultText })
     }
 
-    return NextResponse.json({ results })
+    return json({ results })
   }
 
-  return NextResponse.json({ ok: true })
+  return json({ ok: true })
 }
