@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Trash2, AlertTriangle } from 'lucide-react'
-import { saveBriefing, type Hours, type TransferRule, type ServiceDraft, type FaqDraft, type BriefingPayload } from '@/app/(dashboard)/briefing/actions'
+import { Plus, Trash2 } from 'lucide-react'
+import { saveBriefing, type Hours, type TransferRule, type ServiceDraft, type FaqDraft } from '@/app/(dashboard)/briefing/actions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
 
 const DAY_LABELS: { key: keyof Hours; label: string }[] = [
@@ -23,24 +23,20 @@ function parseDollars(str: string): number | null {
 type Props = {
   businessId: string
   businessName: string
-  vapiAssistantId?: string | null
   initialGreeting: string
   initialCustomInstructions: string
   initialHours: Hours
   initialTransferRules: TransferRule[]
   initialServices: ServiceDraft[]
   initialFaqs: FaqDraft[]
-  /** Defaults to the client-facing Server Action; the admin route passes its own service-role action here. */
-  saveAction?: (businessId: string, payload: BriefingPayload) => Promise<{ warning?: string }>
 }
 
 const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
   `e.g. We don't take same-day bookings on Mondays.\nMention our 10% first-time customer discount when quoting prices.\nIf someone asks about parking, tell them there's free 2-hour parking out back.\nWe only service the northern suburbs — politely decline anything further out.`
 
 export default function BriefingEditor({
-  businessId, businessName, vapiAssistantId, initialGreeting, initialCustomInstructions,
+  businessId, businessName, initialGreeting, initialCustomInstructions,
   initialHours, initialTransferRules, initialServices, initialFaqs,
-  saveAction = saveBriefing,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
   const [greeting, setGreeting]                     = useState(initialGreeting)
@@ -51,20 +47,15 @@ export default function BriefingEditor({
   const [faqs, setFaqs]                              = useState(initialFaqs)
   const [isPending, startTransition]                = useTransition()
   const [status, setStatus]                         = useState<'idle' | 'saved' | 'error'>('idle')
-  const [warning, setWarning]                       = useState<string | null>(null)
-  const [confirmOpen, setConfirmOpen]                = useState(false)
 
   function save() {
-    setConfirmOpen(false)
     startTransition(async () => {
       try {
-        const result = await saveAction(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs })
+        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs })
         setStatus('saved')
-        setWarning(result.warning ?? null)
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
         setStatus('error')
-        setWarning(null)
       }
     })
   }
@@ -76,19 +67,16 @@ export default function BriefingEditor({
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--text)' }}>
             Ellie&apos;s briefing
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--t3)' }}>What Ellie knows about your business. She uses this on every call.</p>
-          {!vapiAssistantId && (
-            <p className="text-xs mt-1 flex items-center gap-1.5" style={{ color: 'var(--amber)' }}>
-              <AlertTriangle size={12} /> Not yet connected to a live Vapi assistant — changes here are saved but won&apos;t affect calls yet.
-            </p>
-          )}
+          <p className="text-sm mt-0.5" style={{ color: 'var(--t3)' }}>What Ellie knows about your business.</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--t4)' }}>
+            Changes here are reviewed by our team before they go live on real calls.
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          {status === 'saved' && !warning && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Saved</span>}
-          {status === 'saved' && warning && <span className="text-sm font-semibold" style={{ color: 'var(--amber)' }}>{warning}</span>}
+          {status === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Saved — your changes will be reviewed and added to Ellie shortly</span>}
           {status === 'error' && <span className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Failed to save</span>}
           <button
-            onClick={() => vapiAssistantId ? setConfirmOpen(true) : save()}
+            onClick={save}
             disabled={isPending}
             className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60"
             style={{ background: 'var(--violet)' }}
@@ -97,43 +85,6 @@ export default function BriefingEditor({
           </button>
         </div>
       </div>
-
-      {confirmOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(23,17,38,0.5)' }}
-          onClick={() => setConfirmOpen(false)}
-        >
-          <div
-            className="rounded-2xl p-6 max-w-sm w-full"
-            style={{ background: 'var(--bg3)', boxShadow: '0 20px 60px rgba(0,0,0,0.35)' }}
-            onClick={e => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-              Update Ellie&apos;s live behaviour?
-            </h3>
-            <p className="text-sm mt-2 leading-relaxed" style={{ color: 'var(--t2)' }}>
-              This changes what Ellie says on real calls right away — her greeting, what she knows, and when she transfers callers to you.
-            </p>
-            <div className="flex justify-end gap-2 mt-5">
-              <button
-                onClick={() => setConfirmOpen(false)}
-                className="px-4 py-2 rounded-lg text-sm font-semibold"
-                style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={save}
-                className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
-                style={{ background: 'var(--violet)' }}
-              >
-                Save changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="flex flex-col gap-4">

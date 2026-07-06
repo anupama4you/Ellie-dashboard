@@ -39,10 +39,9 @@ export default async function NewClientPage({
       redirect('/admin/clients/new?error=biz')
     }
 
-    // Straight into Ellie's Briefing for the new client — hours/transfer rules
-    // already have sensible defaults from the schema, so this is where the
-    // admin fills in the greeting, services, FAQs, and anything custom.
-    redirect(`/admin/clients/${biz.id}/briefing?created=1`)
+    // Straight into the System Prompt tab for the new client — that's where
+    // Ellie's actual live behaviour gets set up.
+    redirect(`/admin/clients/${biz.id}/prompt?created=1`)
   }
 
   return (

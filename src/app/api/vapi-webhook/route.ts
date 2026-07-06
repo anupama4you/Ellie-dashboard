@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
+import { findNextAvailableSlots, formatSlot } from '@/lib/availability'
+import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -47,7 +49,54 @@ export async function POST(req: Request) {
     const results: { toolCallId: string; result: string }[] = []
 
     for (const toolCall of (message.toolCallList ?? []) as ToolCall[]) {
-      if (toolName(toolCall) !== 'bookAppointment') continue
+      const name = toolName(toolCall)
+
+      if (name === 'checkAvailability') {
+        const args = toolArgs(toolCall)
+        let resultText: string
+
+        try {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('id, hours')
+            .eq('vapi_assistant_id', message.call?.assistantId)
+            .single()
+
+          if (!biz) {
+            resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
+          } else {
+            const [{ data: services }, { data: existing }] = await Promise.all([
+              supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
+              supabase.from('appointments')
+                .select('scheduled_at, service')
+                .eq('business_id', biz.id)
+                .neq('status', 'cancelled')
+                .gte('scheduled_at', new Date().toISOString())
+                .order('scheduled_at')
+                .limit(100),
+            ])
+
+            const slots = findNextAvailableSlots({
+              hours: biz.hours as Hours,
+              services: services ?? [],
+              existing: existing ?? [],
+              requestedService: args.service as string | undefined,
+            })
+
+            resultText = slots.length
+              ? `Next available slots: ${slots.map(s => `${formatSlot(s)} (${s.toISOString()})`).join('; ')}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose.`
+              : "No open slots found in the next two weeks — let the caller know you'll have someone reach out to schedule."
+          }
+        } catch (err) {
+          console.error('checkAvailability tool call failed:', err)
+          resultText = "Something went wrong checking the calendar — let the caller know you'll confirm a time shortly."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      if (name !== 'bookAppointment') continue
 
       const args  = toolArgs(toolCall)
       const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number

@@ -1,13 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { syncAssistantPrompt } from '@/lib/vapi'
-import { buildAssistantConfig } from '@/lib/assistantPrompt'
 import type { BriefingPayload } from '@/app/(dashboard)/briefing/actions'
 
 /**
- * Shared Briefing write path, used by both the client Server Action
- * (RLS-bound client) and the admin Server Action (service-role client).
- * Not itself a Server Action — plain helpers, so a SupabaseClient argument
- * is safe to pass (never crosses the client/server RPC boundary).
+ * Client's Briefing write path. Saves the structured fields to Postgres only
+ * — it no longer pushes anything to the live Vapi assistant. Flags the
+ * business for admin review so a human decides how (and whether) to fold
+ * the change into the actual system prompt via the admin System Prompt tab.
  */
 export async function applyBriefingWrite(supabase: SupabaseClient, businessId: string, payload: BriefingPayload) {
   const { error: bizError } = await supabase
@@ -17,6 +15,8 @@ export async function applyBriefingWrite(supabase: SupabaseClient, businessId: s
       custom_instructions: payload.customInstructions,
       hours: payload.hours,
       transfer_rules: payload.transferRules,
+      briefing_needs_review: true,
+      briefing_updated_at: new Date().toISOString(),
     })
     .eq('id', businessId)
   if (bizError) throw new Error(bizError.message)
@@ -56,33 +56,5 @@ export async function applyBriefingWrite(supabase: SupabaseClient, businessId: s
       }))
     )
     if (insFaqsError) throw new Error(insFaqsError.message)
-  }
-}
-
-/** Pushes the just-saved Briefing content to the business's live Vapi assistant, if one is connected. */
-export async function syncBriefingToVapi(supabase: SupabaseClient, businessId: string, payload: BriefingPayload): Promise<string | undefined> {
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('name, vapi_assistant_id')
-    .eq('id', businessId)
-    .single()
-
-  if (!biz?.vapi_assistant_id) return undefined
-
-  try {
-    const { firstMessage, systemPrompt } = buildAssistantConfig({
-      businessName: biz.name,
-      greeting: payload.greetingScript,
-      customInstructions: payload.customInstructions,
-      hours: payload.hours,
-      services: payload.services,
-      faqs: payload.faqs,
-      transferRules: payload.transferRules,
-    })
-    await syncAssistantPrompt(biz.vapi_assistant_id, { firstMessage, systemPrompt })
-    return undefined
-  } catch (err) {
-    console.error('Failed to sync assistant to Vapi:', err)
-    return "Saved, but couldn't update Ellie's live behaviour — check the Vapi assistant connection."
   }
 }

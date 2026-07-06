@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { applyBriefingWrite, syncBriefingToVapi } from '@/lib/briefing'
+import { applyBriefingWrite } from '@/lib/briefing'
 
 export type DayHours = { open: boolean; opensAt: string; closesAt: string }
 export type Hours = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', DayHours>
@@ -19,10 +19,8 @@ export type BriefingPayload = {
   faqs: FaqDraft[]
 }
 
-export async function saveBriefing(businessId: string, payload: BriefingPayload): Promise<{ warning?: string }> {
+export async function saveBriefing(businessId: string, payload: BriefingPayload): Promise<void> {
   const supabase = await createClient()
   await applyBriefingWrite(supabase, businessId, payload)
-  const warning = await syncBriefingToVapi(supabase, businessId, payload)
   revalidatePath('/briefing')
-  return { warning }
 }

@@ -28,7 +28,6 @@ export default async function BriefingPage() {
         <BriefingEditor
           businessId={biz.id}
           businessName={biz.name}
-          vapiAssistantId={biz.vapi_assistant_id}
           initialGreeting={biz.greeting_script ?? ''}
           initialCustomInstructions={biz.custom_instructions ?? ''}
           initialHours={biz.hours as Hours}

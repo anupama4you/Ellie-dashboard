@@ -178,7 +178,10 @@ export async function updateAssistant(assistantId: string, patch: Record<string,
 
 /** Tool IDs every assistant should have attached — created once via scripts/setup-vapi-tool.mjs */
 function requiredToolIds(): string[] {
-  return [process.env.VAPI_BOOK_APPOINTMENT_TOOL_ID].filter((id): id is string => !!id)
+  return [
+    process.env.VAPI_BOOK_APPOINTMENT_TOOL_ID,
+    process.env.VAPI_CHECK_AVAILABILITY_TOOL_ID,
+  ].filter((id): id is string => !!id)
 }
 
 /**

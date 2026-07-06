@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Plus, Pencil, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Sparkles, Clock } from 'lucide-react'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
@@ -76,8 +76,15 @@ export default async function ClientsPage() {
                     gridTemplateColumns: '2fr 2fr 1fr 1.3fr 80px',
                     borderBottom: i < list.length - 1 ? '1px solid var(--b4)' : 'none',
                   }}>
-                  <Link href={`/admin/clients/${biz.id}`} className="text-sm font-semibold truncate pr-2 hover:underline" style={{ color: 'var(--text)' }}>
-                    {biz.name}
+                  <Link href={`/admin/clients/${biz.id}`} className="flex items-center gap-2 text-sm font-semibold truncate pr-2 hover:underline" style={{ color: 'var(--text)' }}>
+                    <span className="truncate">{biz.name}</span>
+                    {biz.briefing_needs_review && (
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                        style={{ color: 'var(--amber)', background: 'rgba(217,138,11,0.12)' }}
+                        title="Client updated their Briefing — needs review">
+                        <Clock size={9} /> Needs review
+                      </span>
+                    )}
                   </Link>
                   <span className="text-xs truncate pr-2" style={{ color: 'var(--t3)' }}>
                     {emailMap[biz.user_id] ?? '—'}

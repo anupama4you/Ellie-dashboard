@@ -11,7 +11,7 @@ const NAV = [
   { href: '/admin/clients', label: 'Clients',  icon: Users,           exact: false },
 ]
 
-export default function AdminNav() {
+export default function AdminNav({ pendingReviewCount = 0 }: { pendingReviewCount?: number }) {
   const pathname = usePathname()
   const router   = useRouter()
 
@@ -48,7 +48,13 @@ export default function AdminNav() {
                 border:     active ? '1px solid rgba(109,74,255,0.18)' : '1px solid transparent',
               }}>
               <Icon size={14} style={{ color: active ? 'var(--violet)' : 'var(--t7)' }} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {href === '/admin/clients' && pendingReviewCount > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ color: 'var(--amber)', background: 'rgba(217,138,11,0.15)' }}>
+                  {pendingReviewCount}
+                </span>
+              )}
             </Link>
           )
         })}

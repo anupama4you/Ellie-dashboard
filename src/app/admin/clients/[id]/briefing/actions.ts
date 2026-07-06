@@ -2,13 +2,11 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { applyBriefingWrite, syncBriefingToVapi } from '@/lib/briefing'
-import type { BriefingPayload } from '@/app/(dashboard)/briefing/actions'
 
-export async function adminSaveBriefing(businessId: string, payload: BriefingPayload): Promise<{ warning?: string }> {
+/** Clears the review flag without touching the live system prompt — for changes that don't need a prompt update. */
+export async function dismissBriefingReview(businessId: string) {
   const admin = createAdminClient()
-  await applyBriefingWrite(admin, businessId, payload)
-  const warning = await syncBriefingToVapi(admin, businessId, payload)
+  await admin.from('businesses').update({ briefing_needs_review: false }).eq('id', businessId)
   revalidatePath(`/admin/clients/${businessId}/briefing`)
-  return { warning }
+  revalidatePath('/admin/clients')
 }
