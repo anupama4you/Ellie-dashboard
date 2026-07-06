@@ -32,27 +32,27 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
-      style={{ background: 'var(--bg)' }}>
+      style={{ background: 'var(--night)' }}>
 
       {/* Grid background */}
       <div className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage:
-            'linear-gradient(rgba(109,74,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(109,74,255,0.04) 1px, transparent 1px)',
+            'linear-gradient(rgba(109,74,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(109,74,255,0.08) 1px, transparent 1px)',
           backgroundSize: '48px 48px',
           maskImage: 'radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 80%)',
           WebkitMaskImage: 'radial-gradient(ellipse 80% 80% at 50% 50%, black 20%, transparent 80%)',
         }} />
 
       {/* Ambient orbs */}
-      <div className="absolute pointer-events-none" style={{ top: '-20%', left: '-10%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(109,74,255,0.08) 0%, transparent 70%)', filter: 'blur(40px)' }} />
-      <div className="absolute pointer-events-none" style={{ bottom: '-15%', right: '-5%', width: 480, height: 480, borderRadius: '50%', background: 'radial-gradient(circle, rgba(158,123,255,0.07) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+      <div className="absolute pointer-events-none" style={{ top: '-20%', left: '-10%', width: 600, height: 600, borderRadius: '50%', background: 'radial-gradient(circle, rgba(109,74,255,0.16) 0%, transparent 70%)', filter: 'blur(40px)' }} />
+      <div className="absolute pointer-events-none" style={{ bottom: '-15%', right: '-5%', width: 480, height: 480, borderRadius: '50%', background: 'radial-gradient(circle, rgba(158,123,255,0.14) 0%, transparent 70%)', filter: 'blur(40px)' }} />
 
       <div className="w-full max-w-sm relative">
 
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Image src="/logo.png" alt="Ellie" width={200} height={64} className="h-16 w-auto" />
+          <Image src="/logo.png" alt="Ellie" width={590} height={343} className="h-16 w-auto" />
         </div>
 
         {/* Card */}

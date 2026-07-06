@@ -5,7 +5,7 @@ import { Building2, Zap, Plus } from 'lucide-react'
 const PLANS = ['starter', 'core', 'professional', 'enterprise'] as const
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  starter:      { color: 'var(--ink-3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
+  starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
   core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
   professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
   enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },

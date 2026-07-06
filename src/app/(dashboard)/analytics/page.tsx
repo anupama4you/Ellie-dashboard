@@ -1,15 +1,9 @@
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentBusiness } from '@/lib/business'
 import { getCalls } from '@/lib/vapi'
 import AnalyticsCharts from '@/components/AnalyticsCharts'
 
 export default async function AnalyticsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('vapi_assistant_id, plan')
-    .eq('user_id', user?.id)
-    .single()
+  const { business: biz } = await getCurrentBusiness()
 
   let calls: Awaited<ReturnType<typeof getCalls>> = []
   if (biz?.vapi_assistant_id) {

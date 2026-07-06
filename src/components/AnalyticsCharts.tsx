@@ -6,17 +6,18 @@ import {
 } from 'recharts'
 import type { VapiCall } from '@/lib/vapi'
 import { callDuration } from '@/lib/vapi'
+import { localDateStr } from '@/lib/dates'
 
 function getLast30Days(calls: VapiCall[]) {
   const days: Record<string, { date: string; calls: number; duration: number }> = {}
   for (let i = 29; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
-    const key = d.toISOString().slice(0, 10)
+    const key = localDateStr(d)
     days[key] = { date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), calls: 0, duration: 0 }
   }
   calls.forEach(c => {
-    const key = c.startedAt?.slice(0, 10)
+    const key = c.startedAt && localDateStr(new Date(c.startedAt))
     if (key && days[key]) {
       days[key].calls++
       days[key].duration += callDuration(c)

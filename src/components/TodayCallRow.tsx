@@ -9,6 +9,7 @@ type Props = {
   id: string
   time: string
   summary?: string
+  summaryIsReal?: boolean
   badgeLabel: string
   badgeColor: string
   badgeBg: string
@@ -20,7 +21,7 @@ type Props = {
 }
 
 export default function TodayCallRow({
-  id, time, summary, badgeLabel, badgeColor, badgeBg, badgeBorder,
+  id, time, summary, summaryIsReal, badgeLabel, badgeColor, badgeBg, badgeBorder,
   recordingUrl, hasTranscript, isMissed, customerNumber,
 }: Props) {
   const [expanded, setExpanded] = useState(false)
@@ -64,8 +65,11 @@ export default function TodayCallRow({
                   {customerNumber}
                 </span>
               )}
-              <p className="text-sm leading-relaxed truncate" style={{ color: 'var(--t2)' }}>
-                {summary || 'No summary available'}
+              <p
+                className={`text-sm leading-relaxed truncate ${summaryIsReal ? '' : 'italic'}`}
+                style={{ color: summaryIsReal ? 'var(--t2)' : 'var(--t4)' }}
+              >
+                {summary}
               </p>
             </div>
           )}

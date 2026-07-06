@@ -14,6 +14,9 @@ export class VapiError extends Error {
 
 async function vapiRequest(path: string, options?: RequestInit) {
   const res = await fetch(`${VAPI_BASE}${path}`, {
+    // Short-lived cache so switching tabs a few seconds apart reuses the
+    // same response instead of re-hitting Vapi on every navigation.
+    next: { revalidate: 20 },
     ...options,
     headers: {
       Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}`,
@@ -39,7 +42,10 @@ export type VapiCall = {
   status: string
   startedAt: string
   endedAt?: string
-  customer?: { number?: string; name?: string }
+  // Vapi returns "" (not an object) when there's no customer — e.g. web calls
+  customer?: { number?: string; name?: string } | string
+  // Same deal: "" for web calls, the Vapi/Twilio number for phone calls
+  phoneNumber?: { number?: string } | string
   phoneCallProvider?: string
   duration?: number        // v2 field name (seconds)
   durationSeconds?: number // v1 fallback
@@ -55,7 +61,47 @@ export type VapiCall = {
     successEvaluation?: string
     structuredData?: unknown
   }
+  // Vapi also mirrors this at the top level on some responses
+  summary?: string
   endedReason?: string
+}
+
+/** Vapi returns "" instead of omitting the field when there's no customer on a call (e.g. web calls) */
+export function getCustomer(call: VapiCall): { number?: string; name?: string } {
+  return typeof call.customer === 'object' && call.customer ? call.customer : {}
+}
+
+/** Same deal for the phone number Ellie answered on — "" or a bare string depending on call type */
+export function getAssistantPhoneNumber(call: VapiCall): string | undefined {
+  if (typeof call.phoneNumber === 'string') return call.phoneNumber || undefined
+  return call.phoneNumber?.number || undefined
+}
+
+/**
+ * Vapi's AI-generated summary is often blank — analysis can be disabled for the
+ * assistant, skipped for trivial calls, or still processing right after a call ends.
+ * Falls back to a real quote from the transcript instead of a dead-end placeholder.
+ */
+export function callSummary(call: VapiCall): { text: string; isReal: boolean } {
+  const real = (call.analysis?.summary || call.summary)?.trim()
+  if (real) return { text: real, isReal: true }
+
+  const transcript = call.artifact?.transcript
+  const firstUserLine = transcript
+    ?.split('\n')
+    .map(l => l.trim())
+    .find(l => /^(user|customer|caller):\s*\S/i.test(l))
+  if (firstUserLine) {
+    const said = firstUserLine.replace(/^(user|customer|caller):\s*/i, '')
+    const excerpt = said.length > 90 ? `${said.slice(0, 90).trimEnd()}…` : said
+    return { text: `"${excerpt}"`, isReal: false }
+  }
+
+  if (call.endedAt && Date.now() - new Date(call.endedAt).getTime() < 2 * 60 * 1000) {
+    return { text: 'Summary is still processing…', isReal: false }
+  }
+
+  return { text: 'No transcript captured for this call', isReal: false }
 }
 
 /** Returns call duration in whole seconds, handling all Vapi response shapes */
@@ -90,6 +136,50 @@ export async function getCalls(
 
 export async function getCall(callId: string): Promise<VapiCall> {
   return vapiRequest(`/call/${callId}`)
+}
+
+export type VapiAssistant = {
+  id: string
+  firstMessage?: string
+  model?: {
+    provider?: string
+    model?: string
+    messages?: { role: string; content: string }[]
+    toolIds?: string[]
+    [key: string]: unknown
+  }
+}
+
+export async function getAssistant(assistantId: string): Promise<VapiAssistant> {
+  return vapiRequest(`/assistant/${assistantId}`)
+}
+
+export async function updateAssistant(assistantId: string, patch: Record<string, unknown>): Promise<VapiAssistant> {
+  return vapiRequest(`/assistant/${assistantId}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
+/** Tool IDs every assistant should have attached — created once via scripts/setup-vapi-tool.mjs */
+function requiredToolIds(): string[] {
+  return [process.env.VAPI_BOOK_APPOINTMENT_TOOL_ID].filter((id): id is string => !!id)
+}
+
+/**
+ * Fetch-then-patch so we only ever replace firstMessage, the system message,
+ * and our required tools. PATCH isn't guaranteed to deep-merge nested
+ * objects, so voice/transcriber/model provider are explicitly preserved
+ * rather than risked, and any tool IDs already on the assistant (e.g. added
+ * manually in the Vapi dashboard) are kept alongside ours.
+ */
+export async function syncAssistantPrompt(
+  assistantId: string,
+  opts: { firstMessage: string; systemPrompt: string },
+): Promise<void> {
+  const current = await getAssistant(assistantId)
+  const toolIds = Array.from(new Set([...(current.model?.toolIds ?? []), ...requiredToolIds()]))
+  await updateAssistant(assistantId, {
+    firstMessage: opts.firstMessage,
+    model: { ...current.model, messages: [{ role: 'system', content: opts.systemPrompt }], toolIds },
+  })
 }
 
 export type AnalyticsRow = Record<string, string | number | null>

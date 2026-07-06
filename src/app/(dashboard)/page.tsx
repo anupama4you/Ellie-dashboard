@@ -1,6 +1,8 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
-import { getCalls } from '@/lib/vapi'
+import { getCurrentBusiness } from '@/lib/business'
+import { getCalls, getCustomer, callSummary } from '@/lib/vapi'
+import { localDateStr } from '@/lib/dates'
 import TodayCallRow from '@/components/TodayCallRow'
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
 import { Phone, CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles } from 'lucide-react'
@@ -48,30 +50,32 @@ const STATUS_APPT: Record<string, { color: string; bg: string; border: string }>
 const WEEKDAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
 export default async function TodayPage() {
+  const { business: biz } = await getCurrentBusiness()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('*')
-    .eq('user_id', user?.id)
-    .single()
 
   const now  = new Date()
   const hour = now.getHours()
 
   const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0)
   const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999)
+  const weekStart = new Date(dayStart); weekStart.setDate(weekStart.getDate() - 6)
 
-  const { data: allAppts } = await supabase
-    .from('appointments')
-    .select('*')
-    .eq('business_id', biz?.id)
-    .order('scheduled_at', { ascending: true })
-
-  const { data: services } = await supabase
-    .from('business_services')
-    .select('name, price_cents')
-    .eq('business_id', biz?.id)
+  const noCalls: Awaited<ReturnType<typeof getCalls>> = []
+  const [
+    { data: allAppts },
+    { data: services },
+    allCalls,
+    weekCalls,
+  ] = await Promise.all([
+    supabase.from('appointments').select('*').eq('business_id', biz?.id).order('scheduled_at', { ascending: true }),
+    supabase.from('business_services').select('name, price_cents').eq('business_id', biz?.id),
+    biz?.vapi_assistant_id
+      ? getCalls(biz.vapi_assistant_id, 100).catch(err => { console.error('Failed to fetch calls from Vapi:', err); return noCalls })
+      : Promise.resolve(noCalls),
+    biz?.vapi_assistant_id
+      ? getCalls(biz.vapi_assistant_id, 500, 1, { from: localDateStr(weekStart) }).catch(err => { console.error('Failed to fetch weekly calls from Vapi:', err); return noCalls })
+      : Promise.resolve(noCalls),
+  ])
   const priceByService = new Map((services ?? []).map(s => [s.name, s.price_cents as number | null]))
 
   const todayAppts = (allAppts ?? []).filter(a => {
@@ -80,15 +84,6 @@ export default async function TodayPage() {
   })
   const revenueBookedCents = todayAppts.reduce((sum, a) => sum + (priceByService.get(a.service) ?? 0), 0)
 
-  let allCalls: Awaited<ReturnType<typeof getCalls>> = []
-  let weekCalls: Awaited<ReturnType<typeof getCalls>> = []
-  if (biz?.vapi_assistant_id) {
-    try { allCalls = await getCalls(biz.vapi_assistant_id, 100) } catch (err) { console.error('Failed to fetch calls from Vapi:', err) }
-    try {
-      const weekStart = new Date(dayStart); weekStart.setDate(weekStart.getDate() - 6)
-      weekCalls = await getCalls(biz.vapi_assistant_id, 500, 1, { from: weekStart.toISOString().slice(0, 10) })
-    } catch (err) { console.error('Failed to fetch weekly calls from Vapi:', err) }
-  }
   const todayCalls = allCalls.filter(c => {
     if (!c.startedAt) return false
     const d = new Date(c.startedAt)
@@ -102,10 +97,10 @@ export default async function TodayPage() {
   // Last 7 days chart data (oldest → today)
   const weekDays: WeekDay[] = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(dayStart); d.setDate(d.getDate() - (6 - i))
-    const key = d.toISOString().slice(0, 10)
-    const dayCallsCount = weekCalls.filter(c => c.startedAt?.slice(0, 10) === key).length
+    const key = localDateStr(d)
+    const dayCallsCount = weekCalls.filter(c => c.startedAt && localDateStr(new Date(c.startedAt)) === key).length
     const dayBookingsCount = (allAppts ?? []).filter(a =>
-      a.scheduled_at.slice(0, 10) === key && a.status !== 'cancelled'
+      localDateStr(new Date(a.scheduled_at)) === key && a.status !== 'cancelled'
     ).length
     return { label: WEEKDAY_LABELS[d.getDay() === 0 ? 6 : d.getDay() - 1], calls: dayCallsCount, bookings: dayBookingsCount }
   })
@@ -209,12 +204,14 @@ export default async function TodayPage() {
                   const time     = call.startedAt
                     ? new Date(call.startedAt).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
                     : '—'
+                  const summary  = callSummary(call)
                   return (
                     <TodayCallRow
                       key={call.id}
                       id={call.id}
                       time={time}
-                      summary={call.analysis?.summary}
+                      summary={summary.text}
+                      summaryIsReal={summary.isReal}
                       badgeLabel={badge.label}
                       badgeColor={badge.color}
                       badgeBg={badge.bg}
@@ -222,7 +219,7 @@ export default async function TodayPage() {
                       recordingUrl={call.artifact?.recordingUrl}
                       hasTranscript={!!call.artifact?.transcript}
                       isMissed={isMissed}
-                      customerNumber={call.customer?.number}
+                      customerNumber={getCustomer(call).number}
                     />
                   )
                 })

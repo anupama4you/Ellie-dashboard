@@ -26,20 +26,23 @@ export default async function NewClientPage({
     const { data: { user }, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email)
     if (inviteErr || !user) redirect('/admin/clients/new?error=user')
 
-    const { error: bizErr } = await admin.from('businesses').insert({
+    const { data: biz, error: bizErr } = await admin.from('businesses').insert({
       user_id:           user.id,
       name:              (formData.get('name') as string).trim(),
       phone:             (formData.get('phone') as string).trim() || null,
       plan:              formData.get('plan') as string,
       vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
-    })
+    }).select('id').single()
 
-    if (bizErr) {
+    if (bizErr || !biz) {
       await admin.auth.admin.deleteUser(user.id)
       redirect('/admin/clients/new?error=biz')
     }
 
-    redirect('/admin/clients')
+    // Straight into Ellie's Briefing for the new client — hours/transfer rules
+    // already have sensible defaults from the schema, so this is where the
+    // admin fills in the greeting, services, FAQs, and anything custom.
+    redirect(`/admin/clients/${biz.id}/briefing?created=1`)
   }
 
   return (
@@ -56,7 +59,7 @@ export default async function NewClientPage({
           <div>
             <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Add New Client</h1>
             <p className="text-xs mt-0.5" style={{ color: 'var(--t6)' }}>
-              An invitation email is sent so the client can set their own password.
+              An invitation email is sent so the client can set their own password. You&apos;ll set up Ellie&apos;s Briefing right after.
             </p>
           </div>
         </div>
@@ -126,7 +129,7 @@ export default async function NewClientPage({
             <button type="submit"
               className="w-full rounded-xl py-3 text-sm font-bold text-white mt-1 transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', boxShadow: '0 0 24px rgba(109,74,255,0.25)' }}>
-              Create Client &amp; Send Invite
+              Create Client &amp; Continue to Briefing
             </button>
 
           </div>

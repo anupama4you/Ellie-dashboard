@@ -1,9 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Plus, Pencil } from 'lucide-react'
+import { Plus, Pencil, Sparkles } from 'lucide-react'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  starter:      { color: 'var(--ink-3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
+  starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
   core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
   professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
   enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },
@@ -46,7 +46,7 @@ export default async function ClientsPage() {
           {/* Column headers */}
           <div className="hidden md:grid px-5 py-3 text-xs font-bold tracking-widest uppercase"
             style={{
-              gridTemplateColumns: '2fr 2fr 1fr 2fr 40px',
+              gridTemplateColumns: '2fr 2fr 1fr 1.3fr 80px',
               color: 'var(--t5)',
               borderBottom: '1px solid var(--b3)',
               background: 'var(--b6)',
@@ -54,7 +54,7 @@ export default async function ClientsPage() {
             <span>Business</span>
             <span>Email</span>
             <span>Plan</span>
-            <span>Assistant ID</span>
+            <span>Assistant</span>
             <span />
           </div>
 
@@ -68,16 +68,17 @@ export default async function ClientsPage() {
           ) : (
             list.map((biz, i) => {
               const s = PLAN_STYLE[biz.plan] ?? PLAN_STYLE.core
+              const hasAssistant = !!biz.vapi_assistant_id
               return (
                 <div key={biz.id}
                   className="hover-row grid items-center px-5 py-4 gap-3 transition-colors"
                   style={{
-                    gridTemplateColumns: '2fr 2fr 1fr 2fr 40px',
+                    gridTemplateColumns: '2fr 2fr 1fr 1.3fr 80px',
                     borderBottom: i < list.length - 1 ? '1px solid var(--b4)' : 'none',
                   }}>
-                  <span className="text-sm font-semibold truncate pr-2" style={{ color: 'var(--text)' }}>
+                  <Link href={`/admin/clients/${biz.id}`} className="text-sm font-semibold truncate pr-2 hover:underline" style={{ color: 'var(--text)' }}>
                     {biz.name}
-                  </span>
+                  </Link>
                   <span className="text-xs truncate pr-2" style={{ color: 'var(--t3)' }}>
                     {emailMap[biz.user_id] ?? '—'}
                   </span>
@@ -87,14 +88,25 @@ export default async function ClientsPage() {
                       {biz.plan}
                     </span>
                   </span>
-                  <span className="text-xs font-mono truncate pr-2" style={{ color: 'var(--t5)' }}>
-                    {biz.vapi_assistant_id ? `${biz.vapi_assistant_id.slice(0, 20)}…` : '—'}
+                  <span className="text-xs font-semibold flex items-center gap-1.5"
+                    style={{ color: hasAssistant ? 'var(--signal)' : 'var(--t5)' }}>
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: hasAssistant ? 'var(--signal)' : 'var(--t6)' }} />
+                    {hasAssistant ? 'Connected' : 'Not connected'}
                   </span>
-                  <Link href={`/admin/clients/${biz.id}`}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost shrink-0"
-                    style={{ color: 'var(--t7)' }}>
-                    <Pencil size={13} />
-                  </Link>
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <Link href={`/admin/clients/${biz.id}/briefing`}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost shrink-0"
+                      style={{ color: 'var(--t7)' }}
+                      title="Ellie's Briefing">
+                      <Sparkles size={13} />
+                    </Link>
+                    <Link href={`/admin/clients/${biz.id}`}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost shrink-0"
+                      style={{ color: 'var(--t7)' }}
+                      title="Edit details">
+                      <Pencil size={13} />
+                    </Link>
+                  </div>
                 </div>
               )
             })

@@ -1,5 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
+import { getCurrentBusiness } from '@/lib/business'
+import { localDateStr } from '@/lib/dates'
 import { CalendarDays, Clock, User, Phone, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
@@ -30,9 +32,7 @@ function startOfWeek(d: Date) {
   return monday
 }
 
-function toDateStr(d: Date) {
-  return d.toISOString().slice(0, 10)
-}
+const toDateStr = localDateStr
 
 export default async function AppointmentsPage({
   searchParams,
@@ -56,13 +56,8 @@ export default async function AppointmentsPage({
   const prevWeekDate = new Date(selected); prevWeekDate.setDate(prevWeekDate.getDate() - 7)
   const nextWeekDate = new Date(selected); nextWeekDate.setDate(nextWeekDate.getDate() + 7)
 
+  const { business: biz } = await getCurrentBusiness()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('id')
-    .eq('user_id', user?.id)
-    .single()
 
   const { data: appointments } = await supabase
     .from('appointments')
@@ -77,12 +72,12 @@ export default async function AppointmentsPage({
 
   const countByDay = new Map<string, number>()
   for (const a of weekAppts) {
-    const key = a.scheduled_at.slice(0, 10)
+    const key = localDateStr(new Date(a.scheduled_at))
     countByDay.set(key, (countByDay.get(key) ?? 0) + 1)
   }
 
   const dayAppts = weekAppts
-    .filter(a => a.scheduled_at.slice(0, 10) === selectedDate)
+    .filter(a => localDateStr(new Date(a.scheduled_at)) === selectedDate)
     .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
 
   const dayTitle = selected.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })

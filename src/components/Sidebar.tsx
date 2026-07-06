@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, BarChart3, Sparkles, Settings, LogOut } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, BarChart3, Sparkles, Settings, LogOut, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
@@ -33,9 +33,10 @@ type Props = {
   userEmail: string
   coveragePct: number
   streakDays: number
+  isAdmin?: boolean
 }
 
-export default function Sidebar({ businessName, userEmail, coveragePct, streakDays }: Props) {
+export default function Sidebar({ businessName, userEmail, coveragePct, streakDays, isAdmin }: Props) {
   const pathname = usePathname()
   const router   = useRouter()
 
@@ -56,11 +57,21 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
           className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center shrink-0"
           style={{ background: 'linear-gradient(135deg, var(--violet), #9E7BFF)' }}
         >
-          <Image src="/logo.png" alt="" width={20} height={20} className="opacity-95" />
+          <Image src="/logo.png" alt="" width={20} height={20} className="opacity-95" style={{ width: 20, height: 20 }} />
         </div>
         <div>
-          <div className="font-extrabold text-xl leading-none text-white" style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.01em' }}>
-            Ellie
+          <div className="flex items-center gap-1.5">
+            <span className="font-extrabold text-xl leading-none text-white" style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.01em' }}>
+              Ellie
+            </span>
+            {isAdmin && (
+              <span
+                className="text-[0.6rem] px-1.5 py-0.5 rounded-md font-bold tracking-wide"
+                style={{ background: 'rgba(217,138,11,0.16)', color: 'var(--amber)', border: '1px solid rgba(217,138,11,0.3)' }}
+              >
+                ADMIN
+              </span>
+            )}
           </div>
           <div className="text-[10px] tracking-widest uppercase mt-0.5" style={{ color: '#8B84A6' }}>
             AI Receptionist
@@ -92,6 +103,26 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
           )
         })}
       </nav>
+
+      {isAdmin && (
+        <>
+          <div className="text-[10px] tracking-widest uppercase px-2.5 pt-4 pb-1.5" style={{ color: '#736C90' }}>
+            Operator
+          </div>
+          <Link
+            href="/admin"
+            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[0.92rem] font-medium transition-colors"
+            style={{
+              background: pathname.startsWith('/admin') ? 'rgba(217,138,11,0.14)' : 'transparent',
+              color: pathname.startsWith('/admin') ? 'var(--amber)' : '#B9B2CE',
+              border: `1px solid ${pathname.startsWith('/admin') ? 'rgba(217,138,11,0.3)' : 'transparent'}`,
+            }}
+          >
+            <ShieldCheck size={17} style={{ opacity: 0.9, flexShrink: 0 }} />
+            Admin panel
+          </Link>
+        </>
+      )}
 
       <div className="flex-1" />
 

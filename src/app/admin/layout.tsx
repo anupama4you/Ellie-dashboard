@@ -10,7 +10,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (user.email !== process.env.ADMIN_EMAIL) redirect('/')
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
+    <div data-theme="admin" className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
       <AdminNav />
       <div className="flex-1 overflow-hidden">
         {children}

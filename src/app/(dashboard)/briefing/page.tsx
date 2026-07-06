@@ -1,15 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
+import { getCurrentBusiness } from '@/lib/business'
 import BriefingEditor from '@/components/BriefingEditor'
 import type { Hours, TransferRule } from './actions'
 
 export default async function BriefingPage() {
+  const { business: biz } = await getCurrentBusiness()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('*')
-    .eq('user_id', user?.id)
-    .single()
 
   if (!biz) {
     return (
@@ -31,7 +27,10 @@ export default async function BriefingPage() {
       <div className="p-6 max-w-[1220px] mx-auto">
         <BriefingEditor
           businessId={biz.id}
+          businessName={biz.name}
+          vapiAssistantId={biz.vapi_assistant_id}
           initialGreeting={biz.greeting_script ?? ''}
+          initialCustomInstructions={biz.custom_instructions ?? ''}
           initialHours={biz.hours as Hours}
           initialTransferRules={biz.transfer_rules as TransferRule[]}
           initialServices={(services ?? []).map(s => ({

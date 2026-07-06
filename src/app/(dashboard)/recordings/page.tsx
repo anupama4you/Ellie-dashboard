@@ -1,6 +1,6 @@
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
-import { getCalls, callDuration } from '@/lib/vapi'
+import { getCurrentBusiness } from '@/lib/business'
+import { getCalls, callDuration, getCustomer } from '@/lib/vapi'
 import { FileText, Mic, Download } from 'lucide-react'
 import WaveformPlayer from '@/components/WaveformPlayer'
 
@@ -13,13 +13,7 @@ function fmtDuration(secs: number) {
 }
 
 export default async function RecordingsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('vapi_assistant_id')
-    .eq('user_id', user?.id)
-    .single()
+  const { business: biz } = await getCurrentBusiness()
 
   let calls: Awaited<ReturnType<typeof getCalls>> = []
   let fetchError: string | null = null
@@ -75,7 +69,7 @@ export default async function RecordingsPage() {
                 >
                   <div className="min-w-0 shrink-0" style={{ width: 150 }}>
                     <div className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>
-                      {call.customer?.number ?? call.customer?.name ?? 'Unknown caller'}
+                      {getCustomer(call).number ?? getCustomer(call).name ?? 'Unknown caller'}
                     </div>
                     {when && (
                       <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>

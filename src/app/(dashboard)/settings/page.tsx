@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentBusiness } from '@/lib/business'
 import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, Bell } from 'lucide-react'
 import NotificationToggles from '@/components/NotificationToggles'
 import type { NotificationPrefs } from './actions'
@@ -39,13 +39,7 @@ const DEFAULT_PREFS: NotificationPrefs = {
 }
 
 export default async function SettingsPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('*')
-    .eq('user_id', user?.id)
-    .single()
+  const { user, business: biz } = await getCurrentBusiness()
 
   const fields = [
     { label: 'Business Name',    value: biz?.name              },

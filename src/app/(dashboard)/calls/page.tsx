@@ -1,10 +1,8 @@
 import Link from 'next/link'
-import { Suspense } from 'react'
-import { createClient } from '@/lib/supabase/server'
-import { getCalls, callDuration, VapiError } from '@/lib/vapi'
-import { ChevronLeft, ChevronRight, PhoneOff, Phone, PhoneIncoming, MicOff, Clock } from 'lucide-react'
-import CallRow from '@/components/CallRow'
-import CallsFilter from '@/components/CallsFilter'
+import { getCurrentBusiness } from '@/lib/business'
+import { getCalls, getCustomer, getAssistantPhoneNumber, callDuration, VapiError } from '@/lib/vapi'
+import { PhoneOff, Search } from 'lucide-react'
+import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
 
 function fmtTime(iso: string) {
   const d = new Date(iso)
@@ -14,115 +12,65 @@ function fmtTime(iso: string) {
   }
 }
 
-function Divider() {
-  return <div className="w-px h-4 mx-1.5" style={{ background: 'var(--b3)' }} />
+const ERROR_REASONS = new Set([
+  'exceeded-max-duration',
+  'max-duration-exceeded',
+  'silence-timed-out',
+  'error-assistant-did-not-receive-customer-audio',
+  'assistant-did-not-receive-customer-audio',
+  'error-assistant-not-invalid-tool-call-payload',
+  'twilio-failed-to-connect-call',
+  'twilio-reported-customer-misdialed',
+  'sip-telephony-provider-closed-call',
+  'vonage-rejected',
+  'assistant-error',
+  'pipeline-error',
+  'custom-function-error',
+  'worker-shutdown',
+  'unknown-error',
+])
+
+function classify(endedReason?: string): { category: CallItem['category']; label: string; color: string; bg: string } {
+  if (endedReason === 'appointment-scheduled') {
+    return { category: 'booked', label: 'Booked', color: 'var(--signal)', bg: 'var(--signal-soft)' }
+  }
+  if (endedReason === 'call-transferred') {
+    return { category: 'transferred', label: 'Transferred', color: 'var(--amber)', bg: 'var(--amber-soft)' }
+  }
+  if (endedReason === 'customer-did-not-answer') {
+    return { category: 'missed', label: 'No answer', color: 'var(--coral)', bg: 'var(--coral-soft)' }
+  }
+  if (endedReason === 'voicemail') {
+    return { category: 'missed', label: 'Voicemail', color: 'var(--coral)', bg: 'var(--coral-soft)' }
+  }
+  if (endedReason === 'customer-busy') {
+    return { category: 'missed', label: 'Busy', color: 'var(--coral)', bg: 'var(--coral-soft)' }
+  }
+  if (endedReason && (ERROR_REASONS.has(endedReason) || endedReason.toLowerCase().includes('error'))) {
+    return { category: 'errored', label: 'Error', color: 'var(--coral)', bg: 'var(--coral-soft)' }
+  }
+  return { category: 'enquiry', label: 'Enquiry', color: 'var(--violet)', bg: 'var(--violet-soft)' }
 }
 
-function StatPill({
-  icon, iconBg, value, label, color,
-}: {
-  icon: React.ReactNode
-  iconBg: string
-  value: string | number
-  label: string
-  color: string
-}) {
-  return (
-    <div className="flex items-center gap-2 px-1.5 py-0.5">
-      <div
-        className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-        style={{ background: iconBg }}
-      >
-        {icon}
-      </div>
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-sm font-semibold tabular-nums" style={{ color }}>{value}</span>
-        <span className="text-xs" style={{ color: 'var(--t4)' }}>{label}</span>
-      </div>
-    </div>
-  )
+function typeLabel(type?: string) {
+  if (type === 'webCall') return 'Web'
+  if (type === 'outboundPhoneCall') return 'Outbound'
+  if (type === 'inboundPhoneCall') return 'Inbound'
+  return 'Phone'
 }
 
-const ERROR_BG    = 'rgba(221,81,64,0.1)'
-const ERROR_COLOR = 'var(--coral)'
-const WARN_BG     = 'rgba(217,138,11,0.1)'
-const WARN_COLOR  = 'var(--amber)'
-const MUTED_BG    = 'rgba(139,133,160,0.1)'
-const MUTED_COLOR = 'var(--ink-3)'
-
-const ENDED_REASON: Record<string, { label: string; color: string; bg: string }> = {
-  'customer-ended-call':                              { label: 'Ended by caller',    color: 'var(--signal)',   bg: 'rgba(15,163,122,0.1)'  },
-  'assistant-ended-call':                             { label: 'Ended',              color: 'var(--violet)',   bg: 'rgba(109,74,255,0.1)' },
-  'appointment-scheduled':                            { label: 'Booked',             color: 'var(--signal)',   bg: 'rgba(15,163,122,0.1)'  },
-  'call-transferred':                                 { label: 'Transferred',        color: 'var(--violet)',   bg: 'rgba(109,74,255,0.1)'  },
-  'customer-did-not-answer':                          { label: 'No answer',          color: ERROR_COLOR, bg: ERROR_BG   },
-  'customer-busy':                                    { label: 'Busy',               color: WARN_COLOR,  bg: WARN_BG    },
-  'voicemail':                                        { label: 'Voicemail',          color: WARN_COLOR,  bg: WARN_BG    },
-  'exceeded-max-duration':                            { label: 'Max duration',       color: WARN_COLOR,  bg: WARN_BG    },
-  'max-duration-exceeded':                            { label: 'Max duration',       color: WARN_COLOR,  bg: WARN_BG    },
-  'silence-timed-out':                                { label: 'Silence timeout',    color: WARN_COLOR,  bg: WARN_BG    },
-  'error-assistant-did-not-receive-customer-audio':   { label: 'No audio received',  color: ERROR_COLOR, bg: ERROR_BG   },
-  'assistant-did-not-receive-customer-audio':         { label: 'No audio received',  color: ERROR_COLOR, bg: ERROR_BG   },
-  'error-assistant-not-invalid-tool-call-payload':    { label: 'Tool error',         color: ERROR_COLOR, bg: ERROR_BG   },
-  'twilio-failed-to-connect-call':                    { label: 'Failed to connect',  color: ERROR_COLOR, bg: ERROR_BG   },
-  'twilio-reported-customer-misdialed':               { label: 'Misdialled',         color: WARN_COLOR,  bg: WARN_BG    },
-  'sip-telephony-provider-closed-call':               { label: 'Provider closed',    color: MUTED_COLOR, bg: MUTED_BG   },
-  'vonage-rejected':                                  { label: 'Rejected',           color: ERROR_COLOR, bg: ERROR_BG   },
-  'assistant-error':                                  { label: 'Assistant error',    color: ERROR_COLOR, bg: ERROR_BG   },
-  'pipeline-error':                                   { label: 'Pipeline error',     color: ERROR_COLOR, bg: ERROR_BG   },
-  'custom-function-error':                            { label: 'Tool error',         color: ERROR_COLOR, bg: ERROR_BG   },
-  'worker-shutdown':                                  { label: 'Server restart',     color: MUTED_COLOR, bg: MUTED_BG   },
-  'unknown-error':                                    { label: 'Unknown error',      color: ERROR_COLOR, bg: ERROR_BG   },
-}
-
-function endedReasonBadge(reason?: string) {
-  if (!reason) return { label: 'Completed', color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)' }
-  if (ENDED_REASON[reason]) return ENDED_REASON[reason]
-  const normalised = reason.toLowerCase().replace(/\s+/g, '-').replace(/\./g, '-').replace(/-+/g, '-')
-  if (ENDED_REASON[normalised]) return ENDED_REASON[normalised]
-  const low = reason.toLowerCase()
-  if (low.includes('audio'))    return { label: 'No audio',    color: ERROR_COLOR, bg: ERROR_BG }
-  if (low.includes('error'))    return { label: 'Error',       color: ERROR_COLOR, bg: ERROR_BG }
-  if (low.includes('timeout') || low.includes('timed')) return { label: 'Timeout', color: WARN_COLOR, bg: WARN_BG }
-  if (low.includes('transfer')) return { label: 'Transferred', color: 'var(--violet)',   bg: 'rgba(109,74,255,0.1)' }
-  if (low.includes('voicemail'))return { label: 'Voicemail',   color: WARN_COLOR,  bg: WARN_BG }
-  if (low.includes('busy'))     return { label: 'Busy',        color: WARN_COLOR,  bg: WARN_BG }
-  return { label: 'Completed', color: MUTED_COLOR, bg: MUTED_BG }
-}
-
-function matchOutcome(endedReason: string | undefined, outcome: string): boolean {
-  if (!outcome) return true
-  if (outcome === 'missed')    return endedReason === 'customer-did-not-answer'
-  if (outcome === 'voicemail') return endedReason === 'voicemail'
-  if (outcome === 'booked')    return endedReason === 'appointment-scheduled'
-  if (outcome === 'answered')  return (
-    endedReason !== 'customer-did-not-answer' &&
-    endedReason !== 'voicemail' &&
-    endedReason !== 'customer-busy'
-  )
-  return true
-}
-
-const PAGE_SIZE      = 25
+const BATCH_SIZE = 300
 const DATE_RANGE_LIMIT = 500
 
 export default async function CallsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; from?: string; to?: string; outcome?: string }>
+  searchParams: Promise<{ from?: string; to?: string }>
 }) {
-  const { page: pageStr, from, to, outcome } = await searchParams
+  const { from, to } = await searchParams
   const hasDateFilter = Boolean(from || to)
-  const page  = hasDateFilter ? 1 : Math.max(1, parseInt(pageStr ?? '1'))
-  const limit = hasDateFilter ? DATE_RANGE_LIMIT : PAGE_SIZE
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('vapi_assistant_id')
-    .eq('user_id', user?.id)
-    .single()
+  const { business: biz } = await getCurrentBusiness()
 
   let rawCalls: Awaited<ReturnType<typeof getCalls>> = []
   let fetchError: string | null = null
@@ -133,216 +81,115 @@ export default async function CallsPage({
     fetchError = 'No Vapi Assistant ID set on your business profile.'
   } else {
     try {
-      rawCalls = await getCalls(
-        biz.vapi_assistant_id,
-        limit,
-        page,
-        from || to ? { from, to } : undefined,
-      )
+      rawCalls = hasDateFilter
+        ? await getCalls(biz.vapi_assistant_id, DATE_RANGE_LIMIT, 1, { from, to })
+        : await getCalls(biz.vapi_assistant_id, BATCH_SIZE)
     } catch (err) {
       console.error('Failed to fetch calls from Vapi:', err)
-      // Vapi 400s carry user-actionable messages (e.g. date range outside the plan's retention window)
       fetchError = err instanceof VapiError && err.status === 400 && err.detail
         ? err.detail
         : 'Could not reach Vapi — check your assistant ID and VAPI_PRIVATE_KEY.'
     }
   }
 
-  const calls = outcome
-    ? rawCalls.filter(c => matchOutcome(c.endedReason, outcome))
-    : rawCalls
-
-  const hasPrev = !hasDateFilter && page > 1
-  const hasNext = !hasDateFilter && rawCalls.length === PAGE_SIZE
-
-  function pageLink(p: number) {
-    const q = new URLSearchParams()
-    if (from)    q.set('from', from)
-    if (to)      q.set('to', to)
-    if (outcome) q.set('outcome', outcome)
-    q.set('page', String(p))
-    return `/calls?${q}`
-  }
-
-  const answered = calls.filter(c =>
-    c.endedReason !== 'customer-did-not-answer' &&
-    c.endedReason !== 'voicemail' &&
-    c.endedReason !== 'customer-busy'
-  ).length
-  const missed   = calls.filter(c => c.endedReason === 'customer-did-not-answer').length
-  const recorded = calls.filter(c => c.artifact?.recordingUrl).length
-  const totalDuration = calls.reduce((sum, c) => sum + callDuration(c), 0)
-  const avgDurationSecs = calls.length ? Math.round(totalDuration / calls.length) : 0
-  const avgDuration = avgDurationSecs > 0
-    ? avgDurationSecs < 60
-      ? `${avgDurationSecs}s`
-      : `${Math.floor(avgDurationSecs / 60)}m ${avgDurationSecs % 60}s`
-    : '—'
+  const calls: CallItem[] = rawCalls.map(call => {
+    const { category, label, color, bg } = classify(call.endedReason)
+    const dt = call.startedAt ? fmtTime(call.startedAt) : null
+    const customer = getCustomer(call)
+    // Web calls have no phone number on either end; real phone calls answer on the business's Ellie number.
+    const assistantNumber = getAssistantPhoneNumber(call) || (call.type !== 'webCall' ? biz?.phone ?? undefined : undefined)
+    return {
+      id: call.id,
+      type: call.type,
+      typeLabel: typeLabel(call.type),
+      assistantNumber,
+      customerNumber: customer.number,
+      customerName: customer.name,
+      startedAtIso: call.startedAt,
+      startedDate: dt?.date,
+      startedTime: dt?.time,
+      durationSecs: callDuration(call),
+      summary: call.analysis?.summary,
+      category,
+      badgeLabel: label,
+      badgeColor: color,
+      badgeBg: bg,
+      recordingUrl: call.artifact?.recordingUrl,
+      hasTranscript: !!call.artifact?.transcript,
+    }
+  })
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 flex flex-col gap-5">
-
-        {/* Filter bar */}
-        <Suspense>
-          <CallsFilter />
-        </Suspense>
-
-        {/* Summary strip */}
-        {calls.length > 0 && !fetchError && (
-          <div
-            className="flex items-center gap-1 px-3 py-2.5 rounded-xl flex-wrap"
-            style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}
-          >
-            <StatPill
-              icon={<div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--violet)' }} />}
-              iconBg="rgba(109,74,255,0.1)"
-              value={calls.length}
-              label={hasDateFilter ? 'calls in range' : 'calls'}
-              color="var(--text)"
-            />
-            <Divider />
-            <StatPill
-              icon={<Phone size={12} style={{ color: 'var(--signal)' }} />}
-              iconBg="rgba(15,163,122,0.1)"
-              value={answered}
-              label="answered"
-              color="var(--signal)"
-            />
-            <Divider />
-            <StatPill
-              icon={<PhoneOff size={12} style={{ color: 'var(--coral)' }} />}
-              iconBg="rgba(221,81,64,0.1)"
-              value={missed}
-              label="missed"
-              color="var(--coral)"
-            />
-            <Divider />
-            <StatPill
-              icon={<MicOff size={12} style={{ color: 'var(--t3)' }} />}
-              iconBg="rgba(139,133,160,0.1)"
-              value={recorded}
-              label="recorded"
-              color="var(--text)"
-            />
-            <Divider />
-            <StatPill
-              icon={<Clock size={12} style={{ color: 'var(--amber)' }} />}
-              iconBg="rgba(217,138,11,0.1)"
-              value={avgDuration}
-              label="avg. duration"
-              color="var(--text)"
-            />
-          </div>
-        )}
-
-        {/* Table */}
-        <div className="card">
-          {/* Column headers */}
-          <div
-            className="grid px-5 py-3 text-xs font-semibold uppercase tracking-wider select-none"
-            style={{
-              color: 'var(--t4)',
-              borderBottom: '1px solid var(--b3)',
-              gridTemplateColumns: '32px 1fr 160px 80px 140px 40px',
-            }}
-          >
-            <span />
-            <span>Caller</span>
-            <span>Started</span>
-            <span>Duration</span>
-            <span>Outcome</span>
-            <span />
-          </div>
-
-          {/* Rows */}
+      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+        <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
-            {calls.map(call => {
-              const badge   = endedReasonBadge(call.endedReason)
-              const summary = call.analysis?.summary
-              const dt      = call.startedAt ? fmtTime(call.startedAt) : null
-              const dur     = callDuration(call)
-              return (
-                <CallRow
-                  key={call.id}
-                  id={call.id}
-                  type={call.type}
-                  customerNumber={call.customer?.number ?? call.customer?.name}
-                  startedDate={dt?.date}
-                  startedTime={dt?.time}
-                  duration={dur}
-                  badgeLabel={badge.label}
-                  badgeColor={badge.color}
-                  badgeBg={badge.bg}
-                  summary={summary}
-                  recordingUrl={call.artifact?.recordingUrl}
-                  hasTranscript={!!call.artifact?.transcript}
-                  paddingTop={summary ? '10px' : '14px'}
-                  paddingBottom={summary ? '10px' : '14px'}
-                />
-              )
-            })}
+            <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
+              Calls
+            </h1>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>
+              Every call Ellie has answered, recorded and transcribed
+            </p>
           </div>
 
-          {fetchError && (
-            <div className="py-12 text-center px-6 flex flex-col items-center gap-2">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center"
-                style={{ background: 'rgba(221,81,64,0.08)', border: '1px solid rgba(221,81,64,0.15)' }}
+          {/* Date range filter — plain GET form, no client JS needed */}
+          <form
+            className="flex items-end gap-2 flex-wrap"
+            action="/calls"
+          >
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>From</span>
+              <input
+                type="date"
+                name="from"
+                defaultValue={from ?? ''}
+                className="text-sm rounded-lg px-2.5 py-1.5"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>To</span>
+              <input
+                type="date"
+                name="to"
+                defaultValue={to ?? ''}
+                className="text-sm rounded-lg px-2.5 py-1.5"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
+              />
+            </label>
+            <button
+              type="submit"
+              className="flex items-center gap-1.5 text-sm font-semibold px-3.5 py-1.5 rounded-lg text-white"
+              style={{ background: 'var(--violet)' }}
+            >
+              <Search size={13} /> Search
+            </button>
+            {hasDateFilter && (
+              <Link
+                href="/calls"
+                className="text-sm font-semibold px-3.5 py-1.5 rounded-lg"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
               >
-                <PhoneOff size={16} style={{ color: 'var(--coral)' }} />
-              </div>
-              <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>Setup required</p>
-              <p className="text-sm" style={{ color: 'var(--t4)' }}>{fetchError}</p>
-            </div>
-          )}
-
-          {!fetchError && calls.length === 0 && (
-            <div className="py-16 text-center flex flex-col items-center gap-3">
-              <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center"
-                style={{ background: 'rgba(139,133,160,0.07)', border: '1px solid rgba(139,133,160,0.12)' }}
-              >
-                <PhoneIncoming size={20} style={{ color: 'var(--t4)' }} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold" style={{ color: 'var(--t3)' }}>
-                  {(from || to || outcome) ? 'No calls match your filters' : 'No calls yet — Ellie is ready and waiting'}
-                </p>
-                {(from || to || outcome) && (
-                  <p className="text-xs mt-1" style={{ color: 'var(--t5)' }}>Try adjusting or clearing the filters</p>
-                )}
-              </div>
-            </div>
-          )}
+                Clear
+              </Link>
+            )}
+          </form>
         </div>
 
-        {/* Pagination */}
-        {(hasPrev || hasNext) && (
-          <div className="flex items-center justify-between px-1">
-            <Link
-              href={pageLink(page - 1)}
-              className={`flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg transition-colors font-medium ${hasPrev ? 'btn-ghost' : 'pointer-events-none opacity-25'}`}
-              style={{ color: 'var(--t3)', border: '1px solid var(--b3)' }}
-            >
-              <ChevronLeft size={14} /> Previous
-            </Link>
-            <span
-              className="text-xs px-3 py-1.5 rounded-full"
-              style={{ color: 'var(--t4)', background: 'var(--bg3)', border: '1px solid var(--border)' }}
-            >
-              Page {page}
-            </span>
-            <Link
-              href={pageLink(page + 1)}
-              className={`flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg transition-colors font-medium ${hasNext ? 'btn-ghost' : 'pointer-events-none opacity-25'}`}
-              style={{ color: 'var(--t3)', border: '1px solid var(--b3)' }}
-            >
-              Next <ChevronRight size={14} />
-            </Link>
+        {fetchError ? (
+          <div
+            className="rounded-2xl py-12 text-center px-6 flex flex-col items-center gap-2"
+            style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}
+          >
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'var(--coral-soft)' }}>
+              <PhoneOff size={16} style={{ color: 'var(--coral)' }} />
+            </div>
+            <p className="text-xs font-semibold" style={{ color: 'var(--coral)' }}>Setup required</p>
+            <p className="text-sm" style={{ color: 'var(--ink-3)' }}>{fetchError}</p>
           </div>
+        ) : (
+          <CallsExplorer calls={calls} />
         )}
-
       </div>
     </div>
   )

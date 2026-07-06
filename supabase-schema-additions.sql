@@ -13,6 +13,7 @@ alter table public.businesses
 
 alter table public.businesses
   add column if not exists greeting_script text,
+  add column if not exists custom_instructions text,
   add column if not exists hours jsonb not null default '{
     "mon": {"open": false, "opensAt": "09:00", "closesAt": "17:30"},
     "tue": {"open": true,  "opensAt": "09:00", "closesAt": "17:30"},

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/server'
-import { getCall, callDuration } from '@/lib/vapi'
+import { getCurrentBusiness } from '@/lib/business'
+import { getCall, callDuration, getCustomer } from '@/lib/vapi'
 import {
   ArrowLeft, Phone, Clock,
   CheckCircle2, XCircle, Mic, FileText,
@@ -62,19 +62,13 @@ export default async function CallDetailPage({
 }) {
   const { callId } = await params
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('vapi_assistant_id')
-    .eq('user_id', user?.id)
-    .single()
+  const [{ business: biz }, callResult] = await Promise.all([
+    getCurrentBusiness(),
+    getCall(callId).catch(() => null),
+  ])
 
-  if (!biz?.vapi_assistant_id) notFound()
-
-  let call: Awaited<ReturnType<typeof getCall>>
-  try { call = await getCall(callId) }
-  catch { notFound() }
+  if (!biz?.vapi_assistant_id || !callResult) notFound()
+  const call = callResult
 
   // SECURITY: only show calls that belong to this user's assistant
   if (call.assistantId !== biz.vapi_assistant_id) notFound()
@@ -112,7 +106,7 @@ export default async function CallDetailPage({
                 </div>
                 <div>
                   <div className="text-xl font-bold leading-tight" style={{ color: 'var(--text)' }}>
-                    {call.customer?.number ?? call.customer?.name ?? 'Unknown caller'}
+                    {getCustomer(call).number ?? getCustomer(call).name ?? 'Unknown caller'}
                   </div>
                   <div className="flex items-center gap-3 mt-1">
                     <CallTypeLabel type={call.type} />

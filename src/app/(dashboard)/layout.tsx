@@ -1,17 +1,14 @@
-import { createClient } from '@/lib/supabase/server'
+import { getCurrentBusiness } from '@/lib/business'
 import { getCalls, type VapiCall } from '@/lib/vapi'
+import { localDateStr } from '@/lib/dates'
 import Sidebar from '@/components/Sidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('name, vapi_assistant_id')
-    .eq('user_id', user?.id)
-    .single()
+  const { user, business: biz } = await getCurrentBusiness()
 
-  const WINDOW_DAYS = 30
+  // Kept within the shortest common Vapi retention window (14 days) so this
+  // best-effort sidebar stat doesn't 400 on lower-tier plans.
+  const WINDOW_DAYS = 14
   let coveragePct = 100
   let streakDays   = 0
 
@@ -19,7 +16,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     try {
       const since = new Date()
       since.setDate(since.getDate() - WINDOW_DAYS)
-      const calls = await getCalls(biz.vapi_assistant_id, 300, 1, { from: since.toISOString().slice(0, 10) })
+      const calls = await getCalls(biz.vapi_assistant_id, 300, 1, { from: localDateStr(since) })
 
       if (calls.length) {
         const missed = calls.filter(c => c.endedReason === 'customer-did-not-answer').length
@@ -28,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         const byDay = new Map<string, VapiCall[]>()
         for (const c of calls) {
           if (!c.startedAt) continue
-          const day = c.startedAt.slice(0, 10)
+          const day = localDateStr(new Date(c.startedAt))
           if (!byDay.has(day)) byDay.set(day, [])
           byDay.get(day)!.push(c)
         }
@@ -36,7 +33,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         for (let i = 0; i < WINDOW_DAYS; i++) {
           const d = new Date()
           d.setDate(d.getDate() - i)
-          const key = d.toISOString().slice(0, 10)
+          const key = localDateStr(d)
           const dayHadMiss = (byDay.get(key) ?? []).some(c => c.endedReason === 'customer-did-not-answer')
           if (dayHadMiss) break
           streakDays++
@@ -47,6 +44,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
   }
 
+  const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--paper)' }}>
       <Sidebar
@@ -54,6 +53,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         userEmail={user?.email ?? ''}
         coveragePct={coveragePct}
         streakDays={streakDays}
+        isAdmin={isAdmin}
       />
       <div className="flex-1 overflow-hidden">
         {children}

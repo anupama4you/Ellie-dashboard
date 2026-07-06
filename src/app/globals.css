@@ -53,6 +53,38 @@
   --hov: var(--paper);
 }
 
+/* Admin panel keeps the original dark operator theme — scoped so the
+   client-facing "paper" theme above is untouched. Applied via
+   data-theme="admin" on the admin layout's root element. */
+[data-theme="admin"] {
+  --bg:      #030712;
+  --bg2:     #07090f;
+  --bg3:     #0d1117;
+  --bg4:     #111827;
+  --text:    #e2e8f0;
+  --muted:   #7c8fa8;
+  --border:  rgba(255,255,255,0.07);
+
+  --t2: #94a3b8;
+  --t3: #64748b;
+  --t4: #475569;
+  --t5: #334155;
+  --t6: #1e293b;
+  --t7: #4b5563;
+
+  --b2: rgba(255,255,255,0.06);
+  --b3: rgba(255,255,255,0.05);
+  --b4: rgba(255,255,255,0.04);
+  --b5: rgba(255,255,255,0.02);
+  --b6: rgba(255,255,255,0.01);
+
+  --hov: rgba(255,255,255,0.04);
+
+  /* The light theme's shadow is tuned for a white surface — on a dark
+     surface it's invisible, so give this scope its own dark-mode shadow. */
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.4);
+}
+
 @theme inline {
   --color-bg:     var(--bg);
   --color-bg2:    var(--bg2);
@@ -167,66 +199,6 @@ body {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-}
-
-/* ── react-day-picker v10 theme ─────────────────────────────── */
-.rdp-root { padding: 16px; }
-.rdp-months { display: flex; gap: 20px; }
-.rdp-month { display: flex; flex-direction: column; gap: 4px; }
-.rdp-month_caption {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 2px 8px;
-}
-.rdp-caption_label { font-size: 13px; font-weight: 600; color: var(--text); }
-.rdp-nav { display: flex; gap: 2px; }
-.rdp-button_previous,
-.rdp-button_next {
-  width: 28px; height: 28px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--t3); cursor: pointer; transition: background 150ms;
-}
-.rdp-button_previous:hover,
-.rdp-button_next:hover { background: var(--hov); }
-.rdp-chevron { fill: currentColor; width: 14px; height: 14px; }
-.rdp-month_grid { border-collapse: collapse; }
-.rdp-weekdays { display: flex; gap: 2px; margin-bottom: 2px; }
-.rdp-weekday {
-  width: 36px; height: 28px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 500; color: var(--t5);
-}
-.rdp-weeks { display: flex; flex-direction: column; gap: 2px; }
-.rdp-week { display: flex; gap: 2px; }
-.rdp-day {
-  width: 36px; height: 36px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center;
-}
-.rdp-day_button {
-  width: 36px; height: 36px; border-radius: 8px;
-  font-size: 13px; font-weight: 500; color: var(--text);
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: background 100ms, color 100ms;
-}
-.rdp-day_button:hover:not(:disabled) { background: var(--hov); }
-.rdp-today > .rdp-day_button { color: #6D4AFF; font-weight: 700; }
-.rdp-outside { pointer-events: none; opacity: 0; }
-.rdp-disabled > .rdp-day_button { color: var(--t6); cursor: default; }
-
-/* Range highlight band */
-.rdp-range_start,
-.rdp-range_end    { background: rgba(109,74,255,0.18); }
-.rdp-range_middle { background: rgba(109,74,255,0.1); }
-.rdp-range_start  { border-radius: 8px 0 0 8px; }
-.rdp-range_end    { border-radius: 0 8px 8px 0; }
-.rdp-range_middle { border-radius: 0; }
-.rdp-range_start > .rdp-day_button,
-.rdp-range_end   > .rdp-day_button { background: #6D4AFF; color: #fff; }
-.rdp-range_middle > .rdp-day_button { background: transparent; color: var(--text); }
-.rdp-range_middle > .rdp-day_button:hover { background: rgba(109,74,255,0.18); }
-
-/* Single selected day (when only start picked) */
-.rdp-selected:not(.rdp-range_start):not(.rdp-range_end):not(.rdp-range_middle) > .rdp-day_button {
-  background: #6D4AFF; color: #fff;
 }
 
 audio { color-scheme: light; }
