@@ -4,11 +4,10 @@ import {
   AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
-import type { VapiCall } from '@/lib/vapi'
-import { callDuration } from '@/lib/vapi'
+import type { LocalCall } from '@/lib/calls'
 import { localDateStr } from '@/lib/dates'
 
-function getLast30Days(calls: VapiCall[]) {
+function getLast30Days(calls: LocalCall[]) {
   const days: Record<string, { date: string; calls: number; duration: number }> = {}
   for (let i = 29; i >= 0; i--) {
     const d = new Date()
@@ -17,10 +16,10 @@ function getLast30Days(calls: VapiCall[]) {
     days[key] = { date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), calls: 0, duration: 0 }
   }
   calls.forEach(c => {
-    const key = c.startedAt && localDateStr(new Date(c.startedAt))
+    const key = c.started_at && localDateStr(new Date(c.started_at))
     if (key && days[key]) {
       days[key].calls++
-      days[key].duration += callDuration(c)
+      days[key].duration += c.duration_seconds ?? 0
     }
   })
   return Object.values(days)
@@ -30,11 +29,11 @@ const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BUCKET_HOURS = 2
 const BUCKET_COUNT = 24 / BUCKET_HOURS
 
-function getDayHourHeatmap(calls: VapiCall[]) {
+function getDayHourHeatmap(calls: LocalCall[]) {
   const grid = Array.from({ length: 7 }, () => Array(BUCKET_COUNT).fill(0))
   calls.forEach(c => {
-    if (!c.startedAt) return
-    const d = new Date(c.startedAt)
+    if (!c.started_at) return
+    const d = new Date(c.started_at)
     const dow = (d.getDay() + 6) % 7 // Mon=0..Sun=6
     const bucket = Math.floor(d.getHours() / BUCKET_HOURS)
     grid[dow][bucket]++
@@ -43,12 +42,12 @@ function getDayHourHeatmap(calls: VapiCall[]) {
   return { grid, max }
 }
 
-function getOutcomeBreakdown(calls: VapiCall[]) {
+function getOutcomeBreakdown(calls: LocalCall[]) {
   const counts: Record<string, number> = { Handled: 0, Missed: 0, Voicemail: 0, Transferred: 0 }
   calls.forEach(c => {
-    if (c.endedReason === 'customer-did-not-answer') counts.Missed++
-    else if (c.endedReason === 'voicemail') counts.Voicemail++
-    else if (c.endedReason === 'call-transferred') counts.Transferred++
+    if (c.ended_reason === 'customer-did-not-answer') counts.Missed++
+    else if (c.ended_reason === 'voicemail') counts.Voicemail++
+    else if (c.ended_reason === 'call-transferred') counts.Transferred++
     else counts.Handled++
   })
   return Object.entries(counts).map(([name, value]) => ({ name, value })).filter(d => d.value > 0)
@@ -65,15 +64,15 @@ const tooltipStyle = {
   fontSize: 12,
 }
 
-export default function AnalyticsCharts({ calls, plan }: { calls: VapiCall[]; plan: string }) {
+export default function AnalyticsCharts({ calls, plan }: { calls: LocalCall[]; plan: string }) {
   const daily   = getLast30Days(calls)
   const outcome = getOutcomeBreakdown(calls)
   const { grid: heatGrid, max: heatMax } = getDayHourHeatmap(calls)
 
-  const totalMins   = Math.round(calls.reduce((s, c) => s + (callDuration(c)), 0) / 60)
-  const avgDuration = calls.length ? Math.round(calls.reduce((s, c) => s + (callDuration(c)), 0) / calls.length) : 0
+  const totalMins   = Math.round(calls.reduce((s, c) => s + (c.duration_seconds ?? 0), 0) / 60)
+  const avgDuration = calls.length ? Math.round(calls.reduce((s, c) => s + (c.duration_seconds ?? 0), 0) / calls.length) : 0
   const handledRate = calls.length
-    ? Math.round((calls.filter(c => c.endedReason !== 'customer-did-not-answer').length / calls.length) * 100)
+    ? Math.round((calls.filter(c => c.ended_reason !== 'customer-did-not-answer').length / calls.length) * 100)
     : 0
 
   const summaryStats = [

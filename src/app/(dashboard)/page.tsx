@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { getCalls, getCustomer, callSummary } from '@/lib/vapi'
+import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
 import { localDateStr } from '@/lib/dates'
 import TodayCallRow from '@/components/TodayCallRow'
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
@@ -60,7 +60,7 @@ export default async function TodayPage() {
   const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999)
   const weekStart = new Date(dayStart); weekStart.setDate(weekStart.getDate() - 6)
 
-  const noCalls: Awaited<ReturnType<typeof getCalls>> = []
+  const noCalls: LocalCall[] = []
   const [
     { data: allAppts },
     { data: services },
@@ -69,11 +69,11 @@ export default async function TodayPage() {
   ] = await Promise.all([
     supabase.from('appointments').select('*').eq('business_id', biz?.id).order('scheduled_at', { ascending: true }),
     supabase.from('business_services').select('name, price_cents').eq('business_id', biz?.id),
-    biz?.vapi_assistant_id
-      ? getCalls(biz.vapi_assistant_id, 100).catch(err => { console.error('Failed to fetch calls from Vapi:', err); return noCalls })
+    biz
+      ? getLocalCalls(biz.id, { limit: 100 }).catch(err => { console.error('Failed to fetch local calls:', err); return noCalls })
       : Promise.resolve(noCalls),
-    biz?.vapi_assistant_id
-      ? getCalls(biz.vapi_assistant_id, 500, 1, { from: localDateStr(weekStart) }).catch(err => { console.error('Failed to fetch weekly calls from Vapi:', err); return noCalls })
+    biz
+      ? getLocalCalls(biz.id, { limit: 500, dateRange: { from: localDateStr(weekStart) } }).catch(err => { console.error('Failed to fetch local weekly calls:', err); return noCalls })
       : Promise.resolve(noCalls),
   ])
   const priceByService = new Map((services ?? []).map(s => [s.name, s.price_cents as number | null]))
@@ -85,20 +85,20 @@ export default async function TodayPage() {
   const revenueBookedCents = todayAppts.reduce((sum, a) => sum + (priceByService.get(a.service) ?? 0), 0)
 
   const todayCalls = allCalls.filter(c => {
-    if (!c.startedAt) return false
-    const d = new Date(c.startedAt)
+    if (!c.started_at) return false
+    const d = new Date(c.started_at)
     return d >= dayStart && d <= dayEnd
   })
 
-  const answered = todayCalls.filter(c => c.endedReason !== 'customer-did-not-answer').length
+  const answered = todayCalls.filter(c => c.ended_reason !== 'customer-did-not-answer').length
   const booked   = todayAppts.length
-  const missed   = todayCalls.filter(c => c.endedReason === 'customer-did-not-answer').length
+  const missed   = todayCalls.filter(c => c.ended_reason === 'customer-did-not-answer').length
 
   // Last 7 days chart data (oldest → today)
   const weekDays: WeekDay[] = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(dayStart); d.setDate(d.getDate() - (6 - i))
     const key = localDateStr(d)
-    const dayCallsCount = weekCalls.filter(c => c.startedAt && localDateStr(new Date(c.startedAt)) === key).length
+    const dayCallsCount = weekCalls.filter(c => c.started_at && localDateStr(new Date(c.started_at)) === key).length
     const dayBookingsCount = (allAppts ?? []).filter(a =>
       localDateStr(new Date(a.scheduled_at)) === key && a.status !== 'cancelled'
     ).length
@@ -199,10 +199,10 @@ export default async function TodayPage() {
                 </div>
               ) : (
                 todayCalls.map(call => {
-                  const badge    = getBadge(call.endedReason)
-                  const isMissed = call.endedReason === 'customer-did-not-answer'
-                  const time     = call.startedAt
-                    ? new Date(call.startedAt).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+                  const badge    = getBadge(call.ended_reason ?? undefined)
+                  const isMissed = call.ended_reason === 'customer-did-not-answer'
+                  const time     = call.started_at
+                    ? new Date(call.started_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
                     : '—'
                   const summary  = callSummary(call)
                   return (
@@ -216,10 +216,10 @@ export default async function TodayPage() {
                       badgeColor={badge.color}
                       badgeBg={badge.bg}
                       badgeBorder={badge.border}
-                      recordingUrl={call.artifact?.recordingUrl}
-                      hasTranscript={!!call.artifact?.transcript}
+                      recordingUrl={call.recording_url ?? undefined}
+                      hasTranscript={!!call.transcript}
                       isMissed={isMissed}
-                      customerNumber={getCustomer(call).number}
+                      customerNumber={call.caller_phone ?? undefined}
                     />
                   )
                 })

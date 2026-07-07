@@ -164,6 +164,7 @@ export type VapiAssistant = {
     toolIds?: string[]
     [key: string]: unknown
   }
+  server?: { url?: string; secret?: string; [key: string]: unknown }
 }
 
 export async function getAssistant(assistantId: string): Promise<VapiAssistant> {
@@ -185,6 +186,23 @@ function requiredToolIds(): string[] {
 }
 
 /**
+ * Assistant-level server.url is what makes Vapi send call-lifecycle events
+ * (end-of-call-report, etc.) to us — separate from each tool's own
+ * server.url, which only covers tool-calls. Without this, saved calls never
+ * arrive. `server.secret`, if configured, is sent back by Vapi on every
+ * webhook request for verification (exact header TBC against Vapi's current
+ * docs — treat as best-effort until confirmed, real verification is tracked
+ * separately).
+ */
+function requiredServerConfig(current?: VapiAssistant['server']): VapiAssistant['server'] | undefined {
+  const base = process.env.APP_URL
+  if (!base) return current
+  const url = `${base.replace(/\/$/, '')}/api/vapi-webhook`
+  const secret = process.env.VAPI_WEBHOOK_SECRET
+  return { ...current, url, ...(secret ? { secret } : {}) }
+}
+
+/**
  * Fetch-then-patch so we only ever replace firstMessage, the system message,
  * and our required tools. PATCH isn't guaranteed to deep-merge nested
  * objects, so voice/transcriber/model provider are explicitly preserved
@@ -200,6 +218,7 @@ export async function syncAssistantPrompt(
   await updateAssistant(assistantId, {
     firstMessage: opts.firstMessage,
     model: { ...current.model, messages: [{ role: 'system', content: opts.systemPrompt }], toolIds },
+    server: requiredServerConfig(current.server),
   })
 }
 

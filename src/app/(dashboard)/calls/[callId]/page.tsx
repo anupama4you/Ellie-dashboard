@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getCall, callDuration, getCustomer } from '@/lib/vapi'
+import { getLocalCall } from '@/lib/calls'
 import {
   ArrowLeft, Phone, Clock,
   CheckCircle2, XCircle, Mic, FileText,
@@ -62,23 +62,16 @@ export default async function CallDetailPage({
 }) {
   const { callId } = await params
 
-  const [{ business: biz }, callResult] = await Promise.all([
-    getCurrentBusiness(),
-    getCall(callId).catch(() => null),
-  ])
+  const { business: biz } = await getCurrentBusiness()
+  if (!biz) notFound()
 
-  if (!biz?.vapi_assistant_id || !callResult) notFound()
-  const call = callResult
+  const call = await getLocalCall(biz.id, callId)
+  if (!call) notFound()
 
-  // SECURITY: only show calls that belong to this user's assistant
-  if (call.assistantId !== biz.vapi_assistant_id) notFound()
-
-  const dur      = callDuration(call)
-  const analysis = call.analysis
-  const artifact = call.artifact
-  const msgs     = artifact?.transcript ? parseTranscript(artifact.transcript) : []
-  const dt       = call.startedAt ? new Date(call.startedAt) : null
-  const endedRaw = call.endedReason ?? ''
+  const dur      = call.duration_seconds ?? 0
+  const msgs     = call.transcript ? parseTranscript(call.transcript) : []
+  const dt       = call.started_at ? new Date(call.started_at) : null
+  const endedRaw = call.ended_reason ?? ''
   const endedLabel = endedRaw
     ? endedRaw.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
     : null
@@ -106,10 +99,10 @@ export default async function CallDetailPage({
                 </div>
                 <div>
                   <div className="text-xl font-bold leading-tight" style={{ color: 'var(--text)' }}>
-                    {getCustomer(call).number ?? getCustomer(call).name ?? 'Unknown caller'}
+                    {call.caller_phone ?? call.caller_name ?? 'Unknown caller'}
                   </div>
                   <div className="flex items-center gap-3 mt-1">
-                    <CallTypeLabel type={call.type} />
+                    <CallTypeLabel type={call.call_type ?? undefined} />
                     {dt && (
                       <span className="text-xs" style={{ color: 'var(--t4)' }}>
                         {dt.toLocaleString('en-AU', { dateStyle: 'long', timeStyle: 'short' })}
@@ -141,14 +134,14 @@ export default async function CallDetailPage({
                   value: call.status ? call.status.charAt(0).toUpperCase() + call.status.slice(1) : '—',
                 },
                 {
-                  icon: analysis?.successEvaluation === 'true'
+                  icon: call.success_evaluation === 'true'
                     ? <CheckCircle2 size={12} style={{ color: 'var(--signal)' }} />
-                    : analysis?.successEvaluation === 'false'
+                    : call.success_evaluation === 'false'
                     ? <XCircle size={12} style={{ color: 'var(--coral)' }} />
                     : <span />,
                   label: 'Outcome',
-                  value: analysis?.successEvaluation === 'true'  ? 'Successful'
-                       : analysis?.successEvaluation === 'false' ? 'Unsuccessful'
+                  value: call.success_evaluation === 'true'  ? 'Successful'
+                       : call.success_evaluation === 'false' ? 'Unsuccessful'
                        : '—',
                 },
               ].map(({ icon, label, value }) => (
@@ -163,30 +156,30 @@ export default async function CallDetailPage({
           </div>
 
           {/* AI Summary */}
-          {analysis?.summary && (
+          {call.summary && (
             <div className="rounded-xl p-5"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>AI Summary</h2>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--t2)' }}>
-                {analysis.summary}
+                {call.summary}
               </p>
             </div>
           )}
 
           {/* Recording */}
-          {artifact?.recordingUrl && (
+          {call.recording_url && (
             <div className="rounded-xl p-5"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2 mb-4">
                 <Mic size={14} style={{ color: 'var(--violet)' }} />
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Recording</h2>
               </div>
-              <WaveformPlayer src={artifact.recordingUrl} />
+              <WaveformPlayer src={call.recording_url} />
             </div>
           )}
 
           {/* Transcript */}
-          {artifact?.transcript ? (
+          {call.transcript ? (
             <div className="rounded-xl overflow-hidden"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2 px-5 py-4"
@@ -225,7 +218,7 @@ export default async function CallDetailPage({
               ) : (
                 <pre className="p-5 text-sm leading-relaxed whitespace-pre-wrap font-sans"
                   style={{ color: 'var(--t2)' }}>
-                  {artifact.transcript}
+                  {call.transcript}
                 </pre>
               )}
             </div>
@@ -240,7 +233,7 @@ export default async function CallDetailPage({
           )}
 
           <p className="text-center text-xs pb-2 font-mono" style={{ color: 'var(--t6)' }}>
-            {callId}
+            {call.vapi_call_id}
           </p>
         </div>
       </div>

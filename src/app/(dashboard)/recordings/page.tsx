@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getCalls, callDuration, getCustomer } from '@/lib/vapi'
+import { getLocalCalls, type LocalCall } from '@/lib/calls'
 import { FileText, Mic, Download } from 'lucide-react'
 import WaveformPlayer from '@/components/WaveformPlayer'
 
@@ -15,18 +15,18 @@ function fmtDuration(secs: number) {
 export default async function RecordingsPage() {
   const { business: biz } = await getCurrentBusiness()
 
-  let calls: Awaited<ReturnType<typeof getCalls>> = []
+  let calls: LocalCall[] = []
   let fetchError: string | null = null
-  if (!biz?.vapi_assistant_id) {
-    fetchError = 'No Vapi Assistant ID set on your business profile.'
+  if (!biz) {
+    fetchError = 'No business profile found.'
   } else {
-    try { calls = await getCalls(biz.vapi_assistant_id, 200) } catch (err) {
-      console.error('Failed to fetch calls from Vapi:', err)
-      fetchError = 'Could not reach Vapi — check your assistant ID and VAPI_PRIVATE_KEY.'
+    try { calls = await getLocalCalls(biz.id, { limit: 200 }) } catch (err) {
+      console.error('Failed to fetch local calls:', err)
+      fetchError = 'Could not load recordings — please try again shortly.'
     }
   }
 
-  const recordings = calls.filter(c => c.artifact?.recordingUrl)
+  const recordings = calls.filter(c => c.recording_url)
 
   return (
     <div className="h-full overflow-y-auto">
@@ -59,8 +59,8 @@ export default async function RecordingsPage() {
             </div>
           ) : (
             recordings.map((call, i) => {
-              const dur  = callDuration(call)
-              const when = call.startedAt ? new Date(call.startedAt) : null
+              const dur  = call.duration_seconds ?? 0
+              const when = call.started_at ? new Date(call.started_at) : null
               return (
                 <div
                   key={call.id}
@@ -69,7 +69,7 @@ export default async function RecordingsPage() {
                 >
                   <div className="min-w-0 shrink-0" style={{ width: 150 }}>
                     <div className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>
-                      {getCustomer(call).number ?? getCustomer(call).name ?? 'Unknown caller'}
+                      {call.caller_phone ?? call.caller_name ?? 'Unknown caller'}
                     </div>
                     {when && (
                       <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
@@ -79,7 +79,7 @@ export default async function RecordingsPage() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <WaveformPlayer src={call.artifact!.recordingUrl!} compact />
+                    <WaveformPlayer src={call.recording_url!} compact />
                   </div>
 
                   <span className="text-sm font-mono shrink-0" style={{ color: 'var(--ink-3)', minWidth: 56, textAlign: 'right' }}>
@@ -87,7 +87,7 @@ export default async function RecordingsPage() {
                   </span>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {call.artifact?.transcript && (
+                    {call.transcript && (
                       <Link
                         href={`/calls/${call.id}`}
                         className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
@@ -99,7 +99,7 @@ export default async function RecordingsPage() {
                       </Link>
                     )}
                     <a
-                      href={call.artifact!.recordingUrl}
+                      href={call.recording_url!}
                       download
                       className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
                       style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}

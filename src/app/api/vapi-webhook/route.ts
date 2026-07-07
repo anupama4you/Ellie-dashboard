@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
 import { findNextAvailableSlots, formatSlot } from '@/lib/availability'
+import { classifyCall } from '@/lib/callClassify'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -28,6 +29,40 @@ function fmtDate(iso: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   return d.toLocaleString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
+}
+
+// end-of-call-report field extraction — Vapi has flattened some of these fields
+// directly onto `message` in different API versions, so check both the nested
+// (call/artifact/analysis) and flat shapes rather than trusting one.
+type EndOfCallReport = Record<string, unknown> & {
+  call?: {
+    id?: string; assistantId?: string; type?: string; startedAt?: string; endedAt?: string
+    customer?: { number?: string; name?: string } | string
+    phoneNumber?: { number?: string } | string
+  }
+  artifact?: { transcript?: string; recordingUrl?: string }
+  analysis?: { summary?: string; successEvaluation?: string }
+}
+
+function eocCustomer(message: EndOfCallReport): { number?: string; name?: string } {
+  const c = message.call?.customer ?? message.customer
+  return typeof c === 'object' && c ? c as { number?: string; name?: string } : {}
+}
+
+function eocAssistantPhone(message: EndOfCallReport): string | undefined {
+  const p = message.call?.phoneNumber ?? message.phoneNumber
+  if (typeof p === 'string') return p || undefined
+  return (p as { number?: string } | undefined)?.number || undefined
+}
+
+function eocDurationSeconds(message: EndOfCallReport, startedAt?: string, endedAt?: string): number | undefined {
+  const raw = (message.durationSeconds ?? message.duration) as number | undefined
+  if (raw != null && raw > 0) return raw > 7200 ? Math.round(raw / 1000) : Math.round(raw)
+  if (startedAt && endedAt) {
+    const ms = new Date(endedAt).getTime() - new Date(startedAt).getTime()
+    return ms > 0 ? Math.round(ms / 1000) : undefined
+  }
+  return undefined
 }
 
 // Real calls hit this server-to-server from Vapi's backend (no CORS involved),
@@ -168,6 +203,63 @@ export async function POST(req: Request) {
     }
 
     return json({ results })
+  }
+
+  if (message.type === 'end-of-call-report') {
+    const report = message as EndOfCallReport
+    const assistantId = report.call?.assistantId as string | undefined
+    const callId       = report.call?.id as string | undefined
+
+    try {
+      if (!assistantId || !callId) {
+        console.error('end-of-call-report missing assistantId or call id', report)
+        return json({ ok: true })
+      }
+
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('id')
+        .eq('vapi_assistant_id', assistantId)
+        .single()
+
+      if (!biz) {
+        console.error('end-of-call-report: no business found for assistant', assistantId)
+        return json({ ok: true })
+      }
+
+      const startedAt = (report.call?.startedAt ?? report.startedAt) as string | undefined
+      const endedAt   = (report.call?.endedAt   ?? report.endedAt)   as string | undefined
+      const customer  = eocCustomer(report)
+      const endedReason = report.endedReason as string | undefined
+
+      const { error } = await supabase.from('calls').upsert({
+        business_id:        biz.id,
+        vapi_call_id:       callId,
+        vapi_assistant_id:  assistantId,
+        call_type:          report.call?.type ?? null,
+        status:             'ended',
+        caller_name:        customer.name ?? null,
+        caller_phone:       customer.number ?? null,
+        assistant_phone:    eocAssistantPhone(report) ?? null,
+        started_at:         startedAt ?? null,
+        ended_at:           endedAt ?? null,
+        duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
+        ended_reason:       endedReason ?? null,
+        outcome:            classifyCall(endedReason).category,
+        summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
+        success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
+        transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
+        recording_url:      (report.artifact?.recordingUrl ?? report.recordingUrl ?? null) as string | null,
+        raw_payload:        report,
+        updated_at:         new Date().toISOString(),
+      }, { onConflict: 'vapi_call_id' })
+
+      if (error) console.error('Failed to save call record:', error)
+    } catch (err) {
+      console.error('end-of-call-report handling failed:', err)
+    }
+
+    return json({ ok: true })
   }
 
   return json({ ok: true })

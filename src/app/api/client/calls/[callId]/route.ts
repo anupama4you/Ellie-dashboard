@@ -11,27 +11,22 @@ export async function GET(
 
   const { data: biz } = await supabase
     .from('businesses')
-    .select('vapi_assistant_id')
+    .select('id')
     .eq('user_id', user.id)
     .single()
 
-  if (!biz?.vapi_assistant_id)
-    return Response.json({ error: 'Not found' }, { status: 404 })
+  if (!biz) return Response.json({ error: 'Not found' }, { status: 404 })
 
   const { callId } = await ctx.params
 
-  const res = await fetch(`https://api.vapi.ai/call/${callId}`, {
-    headers: { Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}` },
-    cache: 'no-store',
-  })
+  const { data: call } = await supabase
+    .from('calls')
+    .select('*')
+    .eq('business_id', biz.id)
+    .eq('id', callId)
+    .single()
 
-  if (!res.ok) return Response.json({ error: 'Not found' }, { status: 404 })
-
-  const call = await res.json()
-
-  // SECURITY: verify call belongs to this user's assistant — never trust the client
-  if (call.assistantId !== biz.vapi_assistant_id)
-    return Response.json({ error: 'Forbidden' }, { status: 403 })
+  if (!call) return Response.json({ error: 'Not found' }, { status: 404 })
 
   return Response.json(call)
 }

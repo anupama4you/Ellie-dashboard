@@ -9,33 +9,29 @@ export async function GET(request: NextRequest) {
 
   const { data: biz } = await supabase
     .from('businesses')
-    .select('vapi_assistant_id')
+    .select('id')
     .eq('user_id', user.id)
     .single()
 
-  if (!biz?.vapi_assistant_id)
-    return Response.json({ error: 'No assistant configured' }, { status: 404 })
+  if (!biz) return Response.json({ error: 'No business found' }, { status: 404 })
 
   const sp        = new URL(request.url).searchParams
   const page      = Math.max(1, parseInt(sp.get('page')  ?? '1'))
   const limit     = Math.min(100, Math.max(1, parseInt(sp.get('limit') ?? '25')))
-  const sortOrder = sp.get('sortOrder') === 'ASC' ? 'ASC' : 'DESC'
+  const ascending = sp.get('sortOrder') === 'ASC'
   const endedReason = sp.get('endedReason')
 
-  const params = new URLSearchParams({
-    page: String(page), limit: String(limit), sortOrder,
-    assistantId: biz.vapi_assistant_id,
-  })
-  if (endedReason) params.set('endedReason', endedReason)
+  let query = supabase
+    .from('calls')
+    .select('*', { count: 'exact' })
+    .eq('business_id', biz.id)
+    .order('started_at', { ascending })
+    .range((page - 1) * limit, page * limit - 1)
 
-  const res = await fetch(`https://api.vapi.ai/v2/call?${params}`, {
-    headers: { Authorization: `Bearer ${process.env.VAPI_PRIVATE_KEY}` },
-    cache: 'no-store',
-  })
+  if (endedReason) query = query.eq('ended_reason', endedReason)
 
-  if (!res.ok) return Response.json({ error: `Vapi ${res.status}` }, { status: res.status })
+  const { data: calls, count, error } = await query
+  if (error) return Response.json({ error: error.message }, { status: 500 })
 
-  const data  = await res.json()
-  const calls = Array.isArray(data) ? data : (data.results ?? [])
-  return Response.json({ calls, total: data.total ?? calls.length, page, limit })
+  return Response.json({ calls: calls ?? [], total: count ?? (calls ?? []).length, page, limit })
 }

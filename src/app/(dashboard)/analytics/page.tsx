@@ -1,13 +1,13 @@
 import { getCurrentBusiness } from '@/lib/business'
-import { getCalls } from '@/lib/vapi'
+import { getLocalCalls, type LocalCall } from '@/lib/calls'
 import AnalyticsCharts from '@/components/AnalyticsCharts'
 
 export default async function AnalyticsPage() {
   const { business: biz } = await getCurrentBusiness()
 
-  let calls: Awaited<ReturnType<typeof getCalls>> = []
-  if (biz?.vapi_assistant_id) {
-    try { calls = await getCalls(biz.vapi_assistant_id, 200) } catch (err) { console.error('Failed to fetch calls from Vapi:', err) }
+  let calls: LocalCall[] = []
+  if (biz) {
+    try { calls = await getLocalCalls(biz.id, { limit: 200 }) } catch (err) { console.error('Failed to fetch local calls:', err) }
   }
 
   return (

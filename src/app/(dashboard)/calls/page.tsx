@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getCalls, getCustomer, getAssistantPhoneNumber, callDuration, VapiError } from '@/lib/vapi'
+import { getLocalCalls, type LocalCall } from '@/lib/calls'
+import { classifyCall, callTypeLabel } from '@/lib/callClassify'
 import { PhoneOff, Search } from 'lucide-react'
 import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
 
@@ -10,53 +11,6 @@ function fmtTime(iso: string) {
     date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }),
     time: d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
   }
-}
-
-const ERROR_REASONS = new Set([
-  'exceeded-max-duration',
-  'max-duration-exceeded',
-  'silence-timed-out',
-  'error-assistant-did-not-receive-customer-audio',
-  'assistant-did-not-receive-customer-audio',
-  'error-assistant-not-invalid-tool-call-payload',
-  'twilio-failed-to-connect-call',
-  'twilio-reported-customer-misdialed',
-  'sip-telephony-provider-closed-call',
-  'vonage-rejected',
-  'assistant-error',
-  'pipeline-error',
-  'custom-function-error',
-  'worker-shutdown',
-  'unknown-error',
-])
-
-function classify(endedReason?: string): { category: CallItem['category']; label: string; color: string; bg: string } {
-  if (endedReason === 'appointment-scheduled') {
-    return { category: 'booked', label: 'Booked', color: 'var(--signal)', bg: 'var(--signal-soft)' }
-  }
-  if (endedReason === 'call-transferred') {
-    return { category: 'transferred', label: 'Transferred', color: 'var(--amber)', bg: 'var(--amber-soft)' }
-  }
-  if (endedReason === 'customer-did-not-answer') {
-    return { category: 'missed', label: 'No answer', color: 'var(--coral)', bg: 'var(--coral-soft)' }
-  }
-  if (endedReason === 'voicemail') {
-    return { category: 'missed', label: 'Voicemail', color: 'var(--coral)', bg: 'var(--coral-soft)' }
-  }
-  if (endedReason === 'customer-busy') {
-    return { category: 'missed', label: 'Busy', color: 'var(--coral)', bg: 'var(--coral-soft)' }
-  }
-  if (endedReason && (ERROR_REASONS.has(endedReason) || endedReason.toLowerCase().includes('error'))) {
-    return { category: 'errored', label: 'Error', color: 'var(--coral)', bg: 'var(--coral-soft)' }
-  }
-  return { category: 'enquiry', label: 'Enquiry', color: 'var(--violet)', bg: 'var(--violet-soft)' }
-}
-
-function typeLabel(type?: string) {
-  if (type === 'webCall') return 'Web'
-  if (type === 'outboundPhoneCall') return 'Outbound'
-  if (type === 'inboundPhoneCall') return 'Inbound'
-  return 'Phone'
 }
 
 const BATCH_SIZE = 300
@@ -72,7 +26,7 @@ export default async function CallsPage({
 
   const { business: biz } = await getCurrentBusiness()
 
-  let rawCalls: Awaited<ReturnType<typeof getCalls>> = []
+  let rawCalls: LocalCall[] = []
   let fetchError: string | null = null
 
   if (!biz) {
@@ -81,41 +35,39 @@ export default async function CallsPage({
     fetchError = 'No Vapi Assistant ID set on your business profile.'
   } else {
     try {
-      rawCalls = hasDateFilter
-        ? await getCalls(biz.vapi_assistant_id, DATE_RANGE_LIMIT, 1, { from, to })
-        : await getCalls(biz.vapi_assistant_id, BATCH_SIZE)
+      rawCalls = await getLocalCalls(biz.id, {
+        limit: hasDateFilter ? DATE_RANGE_LIMIT : BATCH_SIZE,
+        dateRange: hasDateFilter ? { from, to } : undefined,
+      })
     } catch (err) {
-      console.error('Failed to fetch calls from Vapi:', err)
-      fetchError = err instanceof VapiError && err.status === 400 && err.detail
-        ? err.detail
-        : 'Could not reach Vapi — check your assistant ID and VAPI_PRIVATE_KEY.'
+      console.error('Failed to fetch local calls:', err)
+      fetchError = 'Could not load calls — please try again shortly.'
     }
   }
 
   const calls: CallItem[] = rawCalls.map(call => {
-    const { category, label, color, bg } = classify(call.endedReason)
-    const dt = call.startedAt ? fmtTime(call.startedAt) : null
-    const customer = getCustomer(call)
+    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined)
+    const dt = call.started_at ? fmtTime(call.started_at) : null
     // Web calls have no phone number on either end; real phone calls answer on the business's Ellie number.
-    const assistantNumber = getAssistantPhoneNumber(call) || (call.type !== 'webCall' ? biz?.phone ?? undefined : undefined)
+    const assistantNumber = call.assistant_phone || (call.call_type !== 'webCall' ? biz?.phone ?? undefined : undefined)
     return {
       id: call.id,
-      type: call.type,
-      typeLabel: typeLabel(call.type),
-      assistantNumber,
-      customerNumber: customer.number,
-      customerName: customer.name,
-      startedAtIso: call.startedAt,
+      type: call.call_type ?? undefined,
+      typeLabel: callTypeLabel(call.call_type ?? undefined),
+      assistantNumber: assistantNumber ?? undefined,
+      customerNumber: call.caller_phone ?? undefined,
+      customerName: call.caller_name ?? undefined,
+      startedAtIso: call.started_at ?? undefined,
       startedDate: dt?.date,
       startedTime: dt?.time,
-      durationSecs: callDuration(call),
-      summary: call.analysis?.summary,
+      durationSecs: call.duration_seconds ?? 0,
+      summary: call.summary ?? undefined,
       category,
       badgeLabel: label,
       badgeColor: color,
       badgeBg: bg,
-      recordingUrl: call.artifact?.recordingUrl,
-      hasTranscript: !!call.artifact?.transcript,
+      recordingUrl: call.recording_url ?? undefined,
+      hasTranscript: !!call.transcript,
     }
   })
 
