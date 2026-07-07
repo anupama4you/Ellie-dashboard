@@ -41,10 +41,11 @@ export default async function EditClientPage({
     }
 
     await admin.from('businesses').update({
-      name:              (formData.get('name') as string).trim(),
-      phone:             (formData.get('phone') as string).trim() || null,
-      plan:              formData.get('plan') as string,
-      vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
+      name:                (formData.get('name') as string).trim(),
+      phone:               (formData.get('phone') as string).trim() || null,
+      plan:                formData.get('plan') as string,
+      vapi_assistant_id:   (formData.get('assistant_id') as string).trim() || null,
+      twilio_phone_number: (formData.get('twilio_phone_number') as string).trim() || null,
     }).eq('id', bizId)
 
     redirect(`/admin/clients/${bizId}?saved=1`)
@@ -144,6 +145,17 @@ export default async function EditClientPage({
                   defaultValue={biz.vapi_assistant_id ?? ''}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   className="admin-input font-mono" />
+              </div>
+
+              <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Twilio Phone Number</label>
+                <input type="tel" name="twilio_phone_number"
+                  defaultValue={biz.twilio_phone_number ?? ''}
+                  placeholder="+61280000000"
+                  className="admin-input font-mono" />
+                <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                  This business&apos;s own number — SMS confirmations are sent from this, not a shared number.
+                </p>
               </div>
 
               <button type="submit"

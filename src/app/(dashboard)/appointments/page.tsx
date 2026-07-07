@@ -2,7 +2,8 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { localDateStr } from '@/lib/dates'
-import { CalendarDays, Clock, User, Phone, ChevronLeft, ChevronRight } from 'lucide-react'
+import { getValidAccessToken, listEvents } from '@/lib/googleCalendar'
+import { CalendarDays, Clock, User, Phone, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   confirmed:   { color: 'var(--signal)', bg: 'var(--signal-soft)', border: 'rgba(15,163,122,0.2)'  },
@@ -70,15 +71,41 @@ export default async function AppointmentsPage({
     return t >= weekDates[0] && t <= weekEnd && a.status !== 'cancelled'
   })
 
+  // Merge in the connected Google Calendar (if any) so staff see everything —
+  // Ellie's bookings alongside anything booked directly in their own calendar.
+  type GoogleEvent = { id: string; title: string; start: Date; htmlLink?: string }
+  let weekGoogleEvents: GoogleEvent[] = []
+  if (biz) {
+    try {
+      const google = await getValidAccessToken(supabase, biz.id)
+      if (google) {
+        const events = await listEvents(google.accessToken, google.calendarId, weekDates[0], weekEnd)
+        weekGoogleEvents = events
+          .filter(e => e.start?.dateTime)
+          .map(e => ({ id: e.id, title: e.summary ?? 'Untitled event', start: new Date(e.start!.dateTime!), htmlLink: e.htmlLink }))
+      }
+    } catch (err) {
+      console.error('Failed to load Google Calendar events:', err)
+    }
+  }
+
   const countByDay = new Map<string, number>()
   for (const a of weekAppts) {
     const key = localDateStr(new Date(a.scheduled_at))
+    countByDay.set(key, (countByDay.get(key) ?? 0) + 1)
+  }
+  for (const e of weekGoogleEvents) {
+    const key = localDateStr(e.start)
     countByDay.set(key, (countByDay.get(key) ?? 0) + 1)
   }
 
   const dayAppts = weekAppts
     .filter(a => localDateStr(new Date(a.scheduled_at)) === selectedDate)
     .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+
+  const dayGoogleEvents = weekGoogleEvents
+    .filter(e => localDateStr(e.start) === selectedDate)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())
 
   const dayTitle = selected.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
 
@@ -160,11 +187,12 @@ export default async function AppointmentsPage({
               {selectedDate === todayStr ? 'Today' : dayTitle}
             </h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
-              {dayAppts.length} appointment{dayAppts.length !== 1 ? 's' : ''}
+              {dayAppts.length + dayGoogleEvents.length} item{dayAppts.length + dayGoogleEvents.length !== 1 ? 's' : ''}
+              {dayGoogleEvents.length > 0 && ` · ${dayGoogleEvents.length} from your calendar`}
             </p>
           </div>
 
-          {dayAppts.length === 0 ? (
+          {dayAppts.length === 0 && dayGoogleEvents.length === 0 ? (
             <div className="py-14 text-center flex flex-col items-center gap-2">
               <div className="w-10 h-10 rounded-2xl flex items-center justify-center" style={{ background: 'var(--paper)' }}>
                 <CalendarDays size={18} style={{ color: 'var(--ink-3)' }} />
@@ -172,57 +200,95 @@ export default async function AppointmentsPage({
               <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No appointments this day</p>
             </div>
           ) : (
-            dayAppts.map((appt, i) => {
-              const style = STATUS_STYLE[appt.status] ?? STATUS_STYLE.pending
-              const t = new Date(appt.scheduled_at)
-              return (
-                <div
-                  key={appt.id}
-                  className="flex items-center gap-4 px-5 py-4 hover-row transition-colors"
-                  style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
-                >
-                  <div className="flex items-center gap-1.5 shrink-0" style={{ width: 70, color: 'var(--ink)' }}>
-                    <Clock size={12} style={{ color: 'var(--violet)' }} />
-                    <span className="text-sm font-mono font-semibold">
-                      {t.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: 'var(--violet-soft)' }}
-                  >
-                    <User size={14} style={{ color: 'var(--violet)' }} />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</div>
-                    <div className="flex items-center gap-2.5 mt-0.5 flex-wrap">
-                      {appt.customer_phone && (
-                        <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-3)' }}>
-                          <Phone size={10} /> {appt.customer_phone}
+            [
+              ...dayAppts.map(a => ({ kind: 'appointment' as const, time: new Date(a.scheduled_at), appt: a })),
+              ...dayGoogleEvents.map(e => ({ kind: 'google' as const, time: e.start, event: e })),
+            ]
+              .sort((a, b) => a.time.getTime() - b.time.getTime())
+              .map((item, i) => {
+                if (item.kind === 'google') {
+                  const e = item.event
+                  return (
+                    <div
+                      key={`g-${e.id}`}
+                      className="flex items-center gap-4 px-5 py-4 transition-colors"
+                      style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
+                    >
+                      <div className="flex items-center gap-1.5 shrink-0" style={{ width: 70, color: 'var(--ink)' }}>
+                        <Clock size={12} style={{ color: 'var(--ink-3)' }} />
+                        <span className="text-sm font-mono font-semibold">
+                          {e.start.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
                         </span>
-                      )}
-                      {appt.service && (
-                        <span
-                          className="text-xs px-2 py-0.5 rounded-full"
-                          style={{ background: 'var(--violet-soft)', color: 'var(--violet)' }}
-                        >
-                          {appt.service}
-                        </span>
+                      </div>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--paper)' }}>
+                        <CalendarDays size={14} style={{ color: 'var(--ink-3)' }} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{e.title}</div>
+                        <span className="text-xs" style={{ color: 'var(--ink-3)' }}>From your calendar</span>
+                      </div>
+                      {e.htmlLink && (
+                        <a href={e.htmlLink} target="_blank" rel="noopener noreferrer"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost shrink-0"
+                          style={{ color: 'var(--ink-3)' }} title="Open in Google Calendar">
+                          <ExternalLink size={13} />
+                        </a>
                       )}
                     </div>
-                  </div>
+                  )
+                }
 
-                  <span
-                    className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize whitespace-nowrap shrink-0"
-                    style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
+                const appt  = item.appt
+                const style = STATUS_STYLE[appt.status] ?? STATUS_STYLE.pending
+                const t     = item.time
+                return (
+                  <div
+                    key={appt.id}
+                    className="flex items-center gap-4 px-5 py-4 hover-row transition-colors"
+                    style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
                   >
-                    {appt.status}
-                  </span>
-                </div>
-              )
-            })
+                    <div className="flex items-center gap-1.5 shrink-0" style={{ width: 70, color: 'var(--ink)' }}>
+                      <Clock size={12} style={{ color: 'var(--violet)' }} />
+                      <span className="text-sm font-mono font-semibold">
+                        {t.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                      style={{ background: 'var(--violet-soft)' }}
+                    >
+                      <User size={14} style={{ color: 'var(--violet)' }} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</div>
+                      <div className="flex items-center gap-2.5 mt-0.5 flex-wrap">
+                        {appt.customer_phone && (
+                          <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--ink-3)' }}>
+                            <Phone size={10} /> {appt.customer_phone}
+                          </span>
+                        )}
+                        {appt.service && (
+                          <span
+                            className="text-xs px-2 py-0.5 rounded-full"
+                            style={{ background: 'var(--violet-soft)', color: 'var(--violet)' }}
+                          >
+                            {appt.service}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <span
+                      className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize whitespace-nowrap shrink-0"
+                      style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
+                    >
+                      {appt.status}
+                    </span>
+                  </div>
+                )
+              })
           )}
         </section>
       </div>

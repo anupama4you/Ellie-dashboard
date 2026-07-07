@@ -1,8 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
-import { findNextAvailableSlots, formatSlot } from '@/lib/availability'
+import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
+import { getValidAccessToken, freeBusyQuery, createCalendarEvent } from '@/lib/googleCalendar'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -129,11 +130,25 @@ export async function POST(req: Request) {
                 .limit(100),
             ])
 
+            let externalBusy: { start: Date; end: Date }[] = []
+            try {
+              const google = await getValidAccessToken(supabase, biz.id)
+              if (google) {
+                const now = new Date()
+                const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
+                const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
+                externalBusy = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
+              }
+            } catch (calErr) {
+              console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
+            }
+
             const slots = findNextAvailableSlots({
               hours: biz.hours as Hours,
               services: services ?? [],
               existing: existing ?? [],
               requestedService: args.service as string | undefined,
+              externalBusy,
             })
 
             resultText = slots.length
@@ -158,14 +173,14 @@ export async function POST(req: Request) {
       try {
         const { data: biz } = await supabase
           .from('businesses')
-          .select('id, name')
+          .select('id, name, twilio_phone_number')
           .eq('vapi_assistant_id', message.call?.assistantId)
           .single()
 
         if (!biz) {
           resultText = "I couldn't find this business's account — let the caller know you'll have someone call them back to confirm."
         } else {
-          const { error: insertError } = await supabase.from('appointments').insert({
+          const { data: inserted, error: insertError } = await supabase.from('appointments').insert({
             business_id:    biz.id,
             customer_name:  args.customerName  ?? 'Unknown',
             customer_phone: phone ?? null,
@@ -173,7 +188,7 @@ export async function POST(req: Request) {
             service:        args.service       ?? null,
             scheduled_at:   args.dateTime,
             status:         'confirmed',
-          })
+          }).select('id').single()
 
           if (insertError) {
             console.error('Failed to insert appointment:', insertError)
@@ -185,12 +200,38 @@ export async function POST(req: Request) {
               try {
                 await sendSms(
                   phone,
-                  `Hi ${args.customerName ?? ''}, your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for ${fmtDate(args.dateTime as string)}. Reply STOP to opt out.`
+                  `Hi ${args.customerName ?? ''}, your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for ${fmtDate(args.dateTime as string)}. Reply STOP to opt out.`,
+                  biz.twilio_phone_number ?? undefined,
                 )
               } catch (smsError) {
                 console.error('Failed to send confirmation SMS:', smsError)
                 // Booking already succeeded — don't fail the tool call over a text delivery issue.
               }
+            }
+
+            try {
+              const google = await getValidAccessToken(supabase, biz.id)
+              if (google) {
+                const { data: services } = await supabase
+                  .from('business_services')
+                  .select('name, duration_minutes')
+                  .eq('business_id', biz.id)
+                const start = new Date(args.dateTime as string)
+                const durationMins = durationFor(args.service as string | undefined, services ?? [])
+                const end = new Date(start.getTime() + durationMins * 60_000)
+
+                const event = await createCalendarEvent(google.accessToken, google.calendarId, {
+                  summary: `${args.service ?? 'Appointment'} — ${args.customerName ?? 'Customer'}`,
+                  description: [phone && `Phone: ${phone}`, args.customerEmail && `Email: ${args.customerEmail}`]
+                    .filter(Boolean).join('\n'),
+                  start,
+                  end,
+                })
+
+                await supabase.from('appointments').update({ calendar_event_id: event.id }).eq('id', inserted.id)
+              }
+            } catch (calErr) {
+              console.error('Failed to create Google Calendar event — booking already saved locally:', calErr)
             }
           }
         }

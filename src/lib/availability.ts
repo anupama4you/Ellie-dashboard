@@ -11,7 +11,7 @@ const DEFAULT_SLOT_COUNT = 3
 type ServiceRow = { name: string; duration_minutes: number | null }
 type ExistingAppointment = { scheduled_at: string; service: string | null }
 
-function durationFor(serviceName: string | null | undefined, services: ServiceRow[]): number {
+export function durationFor(serviceName: string | null | undefined, services: ServiceRow[]): number {
   if (!serviceName) return DEFAULT_DURATION_MINUTES
   const match = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
   return match?.duration_minutes ?? DEFAULT_DURATION_MINUTES
@@ -37,17 +37,22 @@ export function findNextAvailableSlots(opts: {
   requestedService?: string | null
   now?: Date
   count?: number
+  /** Busy intervals from a connected external calendar (e.g. Google free/busy) — merged in alongside our own appointments. */
+  externalBusy?: { start: Date; end: Date }[]
 }): Date[] {
   const now = opts.now ?? new Date()
   const duration = durationFor(opts.requestedService, opts.services)
   const wantCount = opts.count ?? DEFAULT_SLOT_COUNT
   const earliestStart = new Date(now.getTime() + MIN_LEAD_MINUTES * 60_000)
 
-  const busy = opts.existing.map(a => {
-    const start = new Date(a.scheduled_at)
-    const end = new Date(start.getTime() + durationFor(a.service, opts.services) * 60_000)
-    return { start, end }
-  })
+  const busy = [
+    ...opts.existing.map(a => {
+      const start = new Date(a.scheduled_at)
+      const end = new Date(start.getTime() + durationFor(a.service, opts.services) * 60_000)
+      return { start, end }
+    }),
+    ...(opts.externalBusy ?? []),
+  ]
 
   const slots: Date[] = []
 

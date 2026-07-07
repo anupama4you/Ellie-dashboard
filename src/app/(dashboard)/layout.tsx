@@ -1,31 +1,29 @@
 import { getCurrentBusiness } from '@/lib/business'
-import { getCalls, type VapiCall } from '@/lib/vapi'
+import { getLocalCalls, type LocalCall } from '@/lib/calls'
 import { localDateStr } from '@/lib/dates'
 import Sidebar from '@/components/Sidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business: biz } = await getCurrentBusiness()
 
-  // Kept within the shortest common Vapi retention window (14 days) so this
-  // best-effort sidebar stat doesn't 400 on lower-tier plans.
   const WINDOW_DAYS = 14
   let coveragePct = 100
   let streakDays   = 0
 
-  if (biz?.vapi_assistant_id) {
+  if (biz) {
     try {
       const since = new Date()
       since.setDate(since.getDate() - WINDOW_DAYS)
-      const calls = await getCalls(biz.vapi_assistant_id, 300, 1, { from: localDateStr(since) })
+      const calls = await getLocalCalls(biz.id, { dateRange: { from: localDateStr(since) } })
 
       if (calls.length) {
-        const missed = calls.filter(c => c.endedReason === 'customer-did-not-answer').length
+        const missed = calls.filter(c => c.ended_reason === 'customer-did-not-answer').length
         coveragePct = Math.round(((calls.length - missed) / calls.length) * 100)
 
-        const byDay = new Map<string, VapiCall[]>()
+        const byDay = new Map<string, LocalCall[]>()
         for (const c of calls) {
-          if (!c.startedAt) continue
-          const day = localDateStr(new Date(c.startedAt))
+          if (!c.started_at) continue
+          const day = localDateStr(new Date(c.started_at))
           if (!byDay.has(day)) byDay.set(day, [])
           byDay.get(day)!.push(c)
         }
@@ -34,7 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           const d = new Date()
           d.setDate(d.getDate() - i)
           const key = localDateStr(d)
-          const dayHadMiss = (byDay.get(key) ?? []).some(c => c.endedReason === 'customer-did-not-answer')
+          const dayHadMiss = (byDay.get(key) ?? []).some(c => c.ended_reason === 'customer-did-not-answer')
           if (dayHadMiss) break
           streakDays++
         }

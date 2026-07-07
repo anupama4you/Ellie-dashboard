@@ -1,6 +1,8 @@
+import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, Bell } from 'lucide-react'
 import NotificationToggles from '@/components/NotificationToggles'
+import GoogleCalendarCard from '@/components/GoogleCalendarCard'
 import type { NotificationPrefs } from './actions'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
@@ -38,8 +40,18 @@ const DEFAULT_PREFS: NotificationPrefs = {
   weeklyReport: true,
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ calendar?: string }>
+}) {
+  const { calendar } = await searchParams
   const { user, business: biz } = await getCurrentBusiness()
+  const supabase = await createClient()
+
+  const { data: calendarConnection } = biz
+    ? await supabase.from('calendar_connections').select('google_email, status').eq('business_id', biz.id).single()
+    : { data: null }
 
   const fields = [
     { label: 'Business Name',    value: biz?.name              },
@@ -121,6 +133,10 @@ export default async function SettingsPage() {
             </div>
             {biz?.id && <NotificationToggles businessId={biz.id} initialPrefs={prefs} />}
           </section>
+
+          {biz?.id && (
+            <GoogleCalendarCard businessId={biz.id} connection={calendarConnection} statusParam={calendar} />
+          )}
         </div>
 
         <div className="flex items-center justify-center gap-2">
