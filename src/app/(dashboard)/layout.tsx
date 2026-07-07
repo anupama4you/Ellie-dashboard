@@ -1,10 +1,11 @@
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCalls, type LocalCall } from '@/lib/calls'
-import { localDateStr } from '@/lib/dates'
+import { dateStrInZone, addDaysInZone } from '@/lib/timezone'
 import Sidebar from '@/components/Sidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business: biz } = await getCurrentBusiness()
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   const WINDOW_DAYS = 14
   let coveragePct = 100
@@ -12,9 +13,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   if (biz) {
     try {
-      const since = new Date()
-      since.setDate(since.getDate() - WINDOW_DAYS)
-      const calls = await getLocalCalls(biz.id, { dateRange: { from: localDateStr(since) } })
+      const now = new Date()
+      const since = addDaysInZone(now, -WINDOW_DAYS, timeZone)
+      const calls = await getLocalCalls(biz.id, { dateRange: { from: dateStrInZone(since, timeZone), timeZone } })
 
       if (calls.length) {
         const missed = calls.filter(c => c.ended_reason === 'customer-did-not-answer').length
@@ -23,15 +24,14 @@ export default async function DashboardLayout({ children }: { children: React.Re
         const byDay = new Map<string, LocalCall[]>()
         for (const c of calls) {
           if (!c.started_at) continue
-          const day = localDateStr(new Date(c.started_at))
+          const day = dateStrInZone(new Date(c.started_at), timeZone)
           if (!byDay.has(day)) byDay.set(day, [])
           byDay.get(day)!.push(c)
         }
 
         for (let i = 0; i < WINDOW_DAYS; i++) {
-          const d = new Date()
-          d.setDate(d.getDate() - i)
-          const key = localDateStr(d)
+          const d = addDaysInZone(now, -i, timeZone)
+          const key = dateStrInZone(d, timeZone)
           const dayHadMiss = (byDay.get(key) ?? []).some(c => c.ended_reason === 'customer-did-not-answer')
           if (dayHadMiss) break
           streakDays++

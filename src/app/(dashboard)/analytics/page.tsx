@@ -4,6 +4,7 @@ import AnalyticsCharts from '@/components/AnalyticsCharts'
 
 export default async function AnalyticsPage() {
   const { business: biz } = await getCurrentBusiness()
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   let calls: LocalCall[] = []
   if (biz) {
@@ -19,7 +20,7 @@ export default async function AnalyticsPage() {
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>What your phone line has been doing</p>
         </div>
-        <AnalyticsCharts calls={calls} plan={biz?.plan ?? 'core'} />
+        <AnalyticsCharts calls={calls} plan={biz?.plan ?? 'core'} timeZone={timeZone} />
       </div>
     </div>
   )

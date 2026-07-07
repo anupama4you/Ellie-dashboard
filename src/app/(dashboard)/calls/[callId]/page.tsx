@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCall } from '@/lib/calls'
+import { formatInZone } from '@/lib/timezone'
 import {
   ArrowLeft, Phone, Clock,
   CheckCircle2, XCircle, Mic, FileText,
@@ -64,6 +65,7 @@ export default async function CallDetailPage({
 
   const { business: biz } = await getCurrentBusiness()
   if (!biz) notFound()
+  const timeZone = biz.timezone ?? 'Australia/Adelaide'
 
   const call = await getLocalCall(biz.id, callId)
   if (!call) notFound()
@@ -105,7 +107,7 @@ export default async function CallDetailPage({
                     <CallTypeLabel type={call.call_type ?? undefined} />
                     {dt && (
                       <span className="text-xs" style={{ color: 'var(--t4)' }}>
-                        {dt.toLocaleString('en-AU', { dateStyle: 'long', timeStyle: 'short' })}
+                        {formatInZone(dt, timeZone, { dateStyle: 'long', timeStyle: 'short' })}
                       </span>
                     )}
                   </div>

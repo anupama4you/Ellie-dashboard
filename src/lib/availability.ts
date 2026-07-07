@@ -1,4 +1,5 @@
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
+import { zonedTimeToUtc, dateStrInZone, formatInZone } from '@/lib/timezone'
 
 const DAY_KEYS: (keyof Hours)[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
@@ -17,18 +18,12 @@ export function durationFor(serviceName: string | null | undefined, services: Se
   return match?.duration_minutes ?? DEFAULT_DURATION_MINUTES
 }
 
-function parseTimeOnDate(base: Date, hhmm: string): Date {
-  const [h, m] = hhmm.split(':').map(Number)
-  const d = new Date(base)
-  d.setHours(h, m, 0, 0)
-  return d
-}
-
 /**
- * Walks forward day by day (respecting business hours) looking for gaps that
- * don't overlap any existing appointment. Appointments don't store their own
- * end time, so each one's occupied window is derived from its service's
- * duration (or a default) the same way a candidate slot's would be.
+ * Walks forward day by day (respecting business hours, in the business's own
+ * timezone — not the server's) looking for gaps that don't overlap any
+ * existing appointment. Appointments don't store their own end time, so each
+ * one's occupied window is derived from its service's duration (or a
+ * default) the same way a candidate slot's would be.
  */
 export function findNextAvailableSlots(opts: {
   hours: Hours
@@ -39,6 +34,8 @@ export function findNextAvailableSlots(opts: {
   count?: number
   /** Busy intervals from a connected external calendar (e.g. Google free/busy) — merged in alongside our own appointments. */
   externalBusy?: { start: Date; end: Date }[]
+  /** IANA timezone the business actually operates in, e.g. "Australia/Adelaide". */
+  timeZone: string
 }): Date[] {
   const now = opts.now ?? new Date()
   const duration = durationFor(opts.requestedService, opts.services)
@@ -56,14 +53,27 @@ export function findNextAvailableSlots(opts: {
 
   const slots: Date[] = []
 
+  // "Today" as a calendar date (Y-M-D) in the business's own timezone — once
+  // we have that, subsequent days are pure calendar-date arithmetic (a
+  // Y-M-D's day-of-week doesn't depend on timezone), only converted to a real
+  // instant via zonedTimeToUtc when we need actual open/close timestamps.
+  const [ty, tm, td] = dateStrInZone(now, opts.timeZone).split('-').map(Number)
+  const todayCalendarMs = Date.UTC(ty, tm - 1, td)
+
   for (let dayOffset = 0; dayOffset <= MAX_DAYS_AHEAD && slots.length < wantCount; dayOffset++) {
-    const day = new Date(now)
-    day.setDate(day.getDate() + dayOffset)
-    const dayHours = opts.hours[DAY_KEYS[day.getDay()]]
+    const dayCalendar = new Date(todayCalendarMs + dayOffset * 86_400_000)
+    const y = dayCalendar.getUTCFullYear()
+    const mo = dayCalendar.getUTCMonth() + 1
+    const d = dayCalendar.getUTCDate()
+    const dow = dayCalendar.getUTCDay()
+
+    const dayHours = opts.hours[DAY_KEYS[dow]]
     if (!dayHours.open) continue
 
-    const close = parseTimeOnDate(day, dayHours.closesAt)
-    const candidate = parseTimeOnDate(day, dayHours.opensAt)
+    const [openH, openM] = dayHours.opensAt.split(':').map(Number)
+    const [closeH, closeM] = dayHours.closesAt.split(':').map(Number)
+    const close = zonedTimeToUtc(opts.timeZone, y, mo, d, closeH, closeM)
+    const candidate = zonedTimeToUtc(opts.timeZone, y, mo, d, openH, openM)
 
     while (candidate.getTime() + duration * 60_000 <= close.getTime()) {
       if (candidate >= earliestStart) {
@@ -74,13 +84,13 @@ export function findNextAvailableSlots(opts: {
           if (slots.length >= wantCount) break
         }
       }
-      candidate.setMinutes(candidate.getMinutes() + SLOT_STEP_MINUTES)
+      candidate.setTime(candidate.getTime() + SLOT_STEP_MINUTES * 60_000)
     }
   }
 
   return slots
 }
 
-export function formatSlot(d: Date): string {
-  return d.toLocaleString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
+export function formatSlot(d: Date, timeZone: string): string {
+  return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
 }

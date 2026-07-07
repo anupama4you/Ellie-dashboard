@@ -10,6 +10,17 @@ const PLANS = [
   { value: 'enterprise',   label: 'Enterprise — 500 calls/mo'   },
 ]
 
+const TIMEZONES = [
+  { value: 'Australia/Sydney',      label: 'Sydney / Melbourne / Canberra (AEST/AEDT)' },
+  { value: 'Australia/Brisbane',    label: 'Brisbane (AEST, no DST)' },
+  { value: 'Australia/Adelaide',    label: 'Adelaide (ACST/ACDT)' },
+  { value: 'Australia/Darwin',      label: 'Darwin (ACST, no DST)' },
+  { value: 'Australia/Perth',       label: 'Perth (AWST, no DST)' },
+  { value: 'Australia/Hobart',      label: 'Hobart (AEST/AEDT)' },
+  { value: 'Australia/Broken_Hill', label: 'Broken Hill (ACST/ACDT)' },
+  { value: 'Australia/Lord_Howe',   label: 'Lord Howe Island' },
+]
+
 export default async function EditClientPage({
   params,
   searchParams,
@@ -46,6 +57,7 @@ export default async function EditClientPage({
       plan:                formData.get('plan') as string,
       vapi_assistant_id:   (formData.get('assistant_id') as string).trim() || null,
       twilio_phone_number: (formData.get('twilio_phone_number') as string).trim() || null,
+      timezone:            formData.get('timezone') as string,
     }).eq('id', bizId)
 
     redirect(`/admin/clients/${bizId}?saved=1`)
@@ -137,6 +149,18 @@ export default async function EditClientPage({
                     <option key={p.value} value={p.value}>{p.label}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Timezone</label>
+                <select name="timezone" defaultValue={biz.timezone ?? 'Australia/Adelaide'} className="admin-input admin-select">
+                  {TIMEZONES.map(t => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+                <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                  Business hours, appointment times, and SMS confirmations are all computed in this timezone — getting it wrong books real appointments at the wrong time.
+                </p>
               </div>
 
               <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>

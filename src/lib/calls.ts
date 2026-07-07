@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { zonedTimeToUtc } from '@/lib/timezone'
 
 export type LocalCall = {
   id: string
@@ -26,7 +27,7 @@ export type LocalCall = {
 
 export async function getLocalCalls(
   businessId: string,
-  opts: { limit?: number; dateRange?: { from?: string; to?: string } } = {},
+  opts: { limit?: number; dateRange?: { from?: string; to?: string; timeZone?: string } } = {},
 ): Promise<LocalCall[]> {
   const supabase = await createClient()
   let query = supabase
@@ -36,8 +37,20 @@ export async function getLocalCalls(
     .order('started_at', { ascending: false })
     .limit(opts.limit ?? 300)
 
-  if (opts.dateRange?.from) query = query.gte('started_at', `${opts.dateRange.from}T00:00:00.000Z`)
-  if (opts.dateRange?.to)   query = query.lte('started_at', `${opts.dateRange.to}T23:59:59.999Z`)
+  // `from`/`to` are calendar dates (YYYY-MM-DD) the business means in its own
+  // timezone — treating them as UTC midnight (as this used to) shifts the
+  // whole range by the business's UTC offset, clipping off early-morning or
+  // late-night calls near the boundary.
+  const timeZone = opts.dateRange?.timeZone ?? 'Australia/Adelaide'
+  if (opts.dateRange?.from) {
+    const [y, mo, d] = opts.dateRange.from.split('-').map(Number)
+    query = query.gte('started_at', zonedTimeToUtc(timeZone, y, mo, d, 0, 0).toISOString())
+  }
+  if (opts.dateRange?.to) {
+    const [y, mo, d] = opts.dateRange.to.split('-').map(Number)
+    const endOfDay = new Date(zonedTimeToUtc(timeZone, y, mo, d, 0, 0).getTime() + 24 * 60 * 60_000 - 1)
+    query = query.lte('started_at', endOfDay.toISOString())
+  }
 
   const { data, error } = await query
   if (error) throw new Error(error.message)

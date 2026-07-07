@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
-import { localDateStr } from '@/lib/dates'
+import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 import TodayCallRow from '@/components/TodayCallRow'
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
 import { Phone, CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles } from 'lucide-react'
@@ -53,12 +53,13 @@ export default async function TodayPage() {
   const { business: biz } = await getCurrentBusiness()
   const supabase = await createClient()
 
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
   const now  = new Date()
-  const hour = now.getHours()
+  const hour = hourInZone(now, timeZone)
 
-  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0)
-  const dayEnd   = new Date(now); dayEnd.setHours(23, 59, 59, 999)
-  const weekStart = new Date(dayStart); weekStart.setDate(weekStart.getDate() - 6)
+  const dayStart  = startOfDayInZone(now, timeZone)
+  const dayEnd    = new Date(addDaysInZone(now, 1, timeZone).getTime() - 1)
+  const weekStart = addDaysInZone(now, -6, timeZone)
 
   const noCalls: LocalCall[] = []
   const [
@@ -73,7 +74,7 @@ export default async function TodayPage() {
       ? getLocalCalls(biz.id, { limit: 100 }).catch(err => { console.error('Failed to fetch local calls:', err); return noCalls })
       : Promise.resolve(noCalls),
     biz
-      ? getLocalCalls(biz.id, { limit: 500, dateRange: { from: localDateStr(weekStart) } }).catch(err => { console.error('Failed to fetch local weekly calls:', err); return noCalls })
+      ? getLocalCalls(biz.id, { limit: 500, dateRange: { from: dateStrInZone(weekStart, timeZone), timeZone } }).catch(err => { console.error('Failed to fetch local weekly calls:', err); return noCalls })
       : Promise.resolve(noCalls),
   ])
   const priceByService = new Map((services ?? []).map(s => [s.name, s.price_cents as number | null]))
@@ -96,19 +97,20 @@ export default async function TodayPage() {
 
   // Last 7 days chart data (oldest → today)
   const weekDays: WeekDay[] = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(dayStart); d.setDate(d.getDate() - (6 - i))
-    const key = localDateStr(d)
-    const dayCallsCount = weekCalls.filter(c => c.started_at && localDateStr(new Date(c.started_at)) === key).length
+    const d = addDaysInZone(dayStart, -(6 - i), timeZone)
+    const key = dateStrInZone(d, timeZone)
+    const dayCallsCount = weekCalls.filter(c => c.started_at && dateStrInZone(new Date(c.started_at), timeZone) === key).length
     const dayBookingsCount = (allAppts ?? []).filter(a =>
-      localDateStr(new Date(a.scheduled_at)) === key && a.status !== 'cancelled'
+      dateStrInZone(new Date(a.scheduled_at), timeZone) === key && a.status !== 'cancelled'
     ).length
-    return { label: WEEKDAY_LABELS[d.getDay() === 0 ? 6 : d.getDay() - 1], calls: dayCallsCount, bookings: dayBookingsCount }
+    const dow = dayOfWeekInZone(d, timeZone)
+    return { label: WEEKDAY_LABELS[dow === 0 ? 6 : dow - 1], calls: dayCallsCount, bookings: dayBookingsCount }
   })
   const weekTotalCalls    = weekDays.reduce((s, d) => s + d.calls, 0)
   const weekTotalBookings = weekDays.reduce((s, d) => s + d.bookings, 0)
   const weekConversion    = weekTotalCalls > 0 ? Math.round((weekTotalBookings / weekTotalCalls) * 100) : 0
 
-  const dateLabel = now.toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })
+  const dateLabel = formatInZone(now, timeZone, { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
     <div className="h-full overflow-y-auto">
@@ -202,7 +204,7 @@ export default async function TodayPage() {
                   const badge    = getBadge(call.ended_reason ?? undefined)
                   const isMissed = call.ended_reason === 'customer-did-not-answer'
                   const time     = call.started_at
-                    ? new Date(call.started_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+                    ? formatInZone(new Date(call.started_at), timeZone, { hour: '2-digit', minute: '2-digit' })
                     : '—'
                   const summary  = callSummary(call)
                   return (
@@ -243,7 +245,7 @@ export default async function TodayPage() {
                 </div>
               ) : (
                 (todayAppts as Appointment[]).map((appt, i) => {
-                  const t = new Date(appt.scheduled_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })
+                  const t = formatInZone(new Date(appt.scheduled_at), timeZone, { hour: '2-digit', minute: '2-digit' })
                   const style = STATUS_APPT[appt.status] ?? STATUS_APPT.pending
                   return (
                     <div key={appt.id} className="flex items-center gap-3 px-5 py-3"

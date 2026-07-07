@@ -2,14 +2,15 @@ import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCalls, type LocalCall } from '@/lib/calls'
 import { classifyCall, callTypeLabel } from '@/lib/callClassify'
+import { formatInZone } from '@/lib/timezone'
 import { PhoneOff, Search } from 'lucide-react'
 import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
 
-function fmtTime(iso: string) {
+function fmtTime(iso: string, timeZone: string) {
   const d = new Date(iso)
   return {
-    date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }),
-    time: d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
+    date: formatInZone(d, timeZone, { day: 'numeric', month: 'short', year: 'numeric' }),
+    time: formatInZone(d, timeZone, { hour: '2-digit', minute: '2-digit' }),
   }
 }
 
@@ -25,6 +26,7 @@ export default async function CallsPage({
   const hasDateFilter = Boolean(from || to)
 
   const { business: biz } = await getCurrentBusiness()
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   let rawCalls: LocalCall[] = []
   let fetchError: string | null = null
@@ -37,7 +39,7 @@ export default async function CallsPage({
     try {
       rawCalls = await getLocalCalls(biz.id, {
         limit: hasDateFilter ? DATE_RANGE_LIMIT : BATCH_SIZE,
-        dateRange: hasDateFilter ? { from, to } : undefined,
+        dateRange: hasDateFilter ? { from, to, timeZone } : undefined,
       })
     } catch (err) {
       console.error('Failed to fetch local calls:', err)
@@ -47,7 +49,7 @@ export default async function CallsPage({
 
   const calls: CallItem[] = rawCalls.map(call => {
     const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined)
-    const dt = call.started_at ? fmtTime(call.started_at) : null
+    const dt = call.started_at ? fmtTime(call.started_at, timeZone) : null
     // Web calls have no phone number on either end; real phone calls answer on the business's Ellie number.
     const assistantNumber = call.assistant_phone || (call.call_type !== 'webCall' ? biz?.phone ?? undefined : undefined)
     return {

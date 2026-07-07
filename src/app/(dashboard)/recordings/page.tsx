@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCalls, type LocalCall } from '@/lib/calls'
+import { formatInZone } from '@/lib/timezone'
 import { FileText, Mic, Download } from 'lucide-react'
 import WaveformPlayer from '@/components/WaveformPlayer'
 
@@ -14,6 +15,7 @@ function fmtDuration(secs: number) {
 
 export default async function RecordingsPage() {
   const { business: biz } = await getCurrentBusiness()
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   let calls: LocalCall[] = []
   let fetchError: string | null = null
@@ -73,7 +75,7 @@ export default async function RecordingsPage() {
                     </div>
                     {when && (
                       <div className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>
-                        {when.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} · {when.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' })}
+                        {formatInZone(when, timeZone, { day: 'numeric', month: 'short' })} · {formatInZone(when, timeZone, { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     )}
                   </div>

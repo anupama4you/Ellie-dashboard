@@ -5,18 +5,18 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import type { LocalCall } from '@/lib/calls'
-import { localDateStr } from '@/lib/dates'
+import { dateStrInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 
-function getLast30Days(calls: LocalCall[]) {
+function getLast30Days(calls: LocalCall[], timeZone: string) {
+  const now = new Date()
   const days: Record<string, { date: string; calls: number; duration: number }> = {}
   for (let i = 29; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    const key = localDateStr(d)
-    days[key] = { date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }), calls: 0, duration: 0 }
+    const d = addDaysInZone(now, -i, timeZone)
+    const key = dateStrInZone(d, timeZone)
+    days[key] = { date: formatInZone(d, timeZone, { day: 'numeric', month: 'short' }), calls: 0, duration: 0 }
   }
   calls.forEach(c => {
-    const key = c.started_at && localDateStr(new Date(c.started_at))
+    const key = c.started_at && dateStrInZone(new Date(c.started_at), timeZone)
     if (key && days[key]) {
       days[key].calls++
       days[key].duration += c.duration_seconds ?? 0
@@ -29,13 +29,13 @@ const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BUCKET_HOURS = 2
 const BUCKET_COUNT = 24 / BUCKET_HOURS
 
-function getDayHourHeatmap(calls: LocalCall[]) {
+function getDayHourHeatmap(calls: LocalCall[], timeZone: string) {
   const grid = Array.from({ length: 7 }, () => Array(BUCKET_COUNT).fill(0))
   calls.forEach(c => {
     if (!c.started_at) return
     const d = new Date(c.started_at)
-    const dow = (d.getDay() + 6) % 7 // Mon=0..Sun=6
-    const bucket = Math.floor(d.getHours() / BUCKET_HOURS)
+    const dow = (dayOfWeekInZone(d, timeZone) + 6) % 7 // Mon=0..Sun=6
+    const bucket = Math.floor(hourInZone(d, timeZone) / BUCKET_HOURS)
     grid[dow][bucket]++
   })
   const max = Math.max(1, ...grid.flat())
@@ -64,10 +64,10 @@ const tooltipStyle = {
   fontSize: 12,
 }
 
-export default function AnalyticsCharts({ calls, plan }: { calls: LocalCall[]; plan: string }) {
-  const daily   = getLast30Days(calls)
+export default function AnalyticsCharts({ calls, plan, timeZone }: { calls: LocalCall[]; plan: string; timeZone: string }) {
+  const daily   = getLast30Days(calls, timeZone)
   const outcome = getOutcomeBreakdown(calls)
-  const { grid: heatGrid, max: heatMax } = getDayHourHeatmap(calls)
+  const { grid: heatGrid, max: heatMax } = getDayHourHeatmap(calls, timeZone)
 
   const totalMins   = Math.round(calls.reduce((s, c) => s + (c.duration_seconds ?? 0), 0) / 60)
   const avgDuration = calls.length ? Math.round(calls.reduce((s, c) => s + (c.duration_seconds ?? 0), 0) / calls.length) : 0

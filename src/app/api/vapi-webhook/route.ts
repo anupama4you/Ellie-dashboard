@@ -4,6 +4,7 @@ import { sendSms } from '@/lib/twilio'
 import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, freeBusyQuery, createCalendarEvent } from '@/lib/googleCalendar'
+import { formatInZone } from '@/lib/timezone'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -26,10 +27,10 @@ function toolArgs(toolCall: ToolCall): Record<string, unknown> {
   return toolCall.arguments ?? toolCall.function?.arguments ?? {}
 }
 
-function fmtDate(iso: string) {
+function fmtDate(iso: string, timeZone: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
-  return d.toLocaleString('en-AU', { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
+  return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
 }
 
 // end-of-call-report field extraction — Vapi has flattened some of these fields
@@ -112,7 +113,7 @@ export async function POST(req: Request) {
         try {
           const { data: biz } = await supabase
             .from('businesses')
-            .select('id, hours')
+            .select('id, hours, timezone')
             .eq('vapi_assistant_id', message.call?.assistantId)
             .single()
 
@@ -149,10 +150,11 @@ export async function POST(req: Request) {
               existing: existing ?? [],
               requestedService: args.service as string | undefined,
               externalBusy,
+              timeZone: biz.timezone,
             })
 
             resultText = slots.length
-              ? `Next available slots: ${slots.map(s => `${formatSlot(s)} (${s.toISOString()})`).join('; ')}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose.`
+              ? `Next available slots: ${slots.map(s => `${formatSlot(s, biz.timezone)} (${s.toISOString()})`).join('; ')}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose.`
               : "No open slots found in the next two weeks — let the caller know you'll have someone reach out to schedule."
           }
         } catch (err) {
@@ -173,7 +175,7 @@ export async function POST(req: Request) {
       try {
         const { data: biz } = await supabase
           .from('businesses')
-          .select('id, name, twilio_phone_number')
+          .select('id, name, twilio_phone_number, timezone')
           .eq('vapi_assistant_id', message.call?.assistantId)
           .single()
 
@@ -194,13 +196,13 @@ export async function POST(req: Request) {
             console.error('Failed to insert appointment:', insertError)
             resultText = "Something went wrong saving that booking — let the caller know you'll confirm it manually."
           } else {
-            resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'} on ${fmtDate(args.dateTime as string)}.`
+            resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'} on ${fmtDate(args.dateTime as string, biz.timezone)}.`
 
             if (phone) {
               try {
                 await sendSms(
                   phone,
-                  `Hi ${args.customerName ?? ''}, your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for ${fmtDate(args.dateTime as string)}. Reply STOP to opt out.`,
+                  `Hi ${args.customerName ?? ''}, your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for ${fmtDate(args.dateTime as string, biz.timezone)}. Reply STOP to opt out.`,
                   biz.twilio_phone_number ?? undefined,
                 )
               } catch (smsError) {
@@ -228,7 +230,9 @@ export async function POST(req: Request) {
                   end,
                 })
 
-                await supabase.from('appointments').update({ calendar_event_id: event.id }).eq('id', inserted.id)
+                await supabase.from('appointments')
+                  .update({ calendar_event_id: event.id, calendar_event_link: event.htmlLink ?? null })
+                  .eq('id', inserted.id)
               }
             } catch (calErr) {
               console.error('Failed to create Google Calendar event — booking already saved locally:', calErr)
