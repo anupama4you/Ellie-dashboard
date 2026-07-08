@@ -41,6 +41,7 @@ export default async function AdminSystemPromptPage({
       city: biz.city ?? '',
       state: biz.state ?? '',
       postcode: biz.postcode ?? '',
+      googleMapsUrl: biz.google_maps_url ?? '',
     },
   }
 

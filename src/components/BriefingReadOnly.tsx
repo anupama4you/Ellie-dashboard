@@ -56,6 +56,17 @@ export default function BriefingReadOnly({
                 {location || '—'}
               </p>
             </div>
+            <div>
+              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Google Maps link</span>
+              {companyInfo.googleMapsUrl.trim() ? (
+                <a href={companyInfo.googleMapsUrl} target="_blank" rel="noopener noreferrer"
+                  className="underline break-all" style={{ color: 'var(--violet)' }}>
+                  {companyInfo.googleMapsUrl}
+                </a>
+              ) : (
+                <p style={{ color: 'var(--t3)' }}>—</p>
+              )}
+            </div>
           </div>
         </section>
 

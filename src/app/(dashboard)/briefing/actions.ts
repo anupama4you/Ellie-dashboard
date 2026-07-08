@@ -17,6 +17,7 @@ export type CompanyInfo = {
   city: string
   state: string
   postcode: string
+  googleMapsUrl: string
 }
 
 export type BriefingPayload = {

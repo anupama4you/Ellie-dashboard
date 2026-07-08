@@ -21,6 +21,7 @@ export async function applyBriefingWrite(supabase: SupabaseClient, businessId: s
       city: payload.companyInfo.city,
       state: payload.companyInfo.state,
       postcode: payload.companyInfo.postcode,
+      google_maps_url: payload.companyInfo.googleMapsUrl,
       briefing_needs_review: true,
       briefing_updated_at: new Date().toISOString(),
     })

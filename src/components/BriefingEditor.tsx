@@ -176,6 +176,20 @@ export default function BriefingEditor({
                   />
                 </div>
               </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Google Maps link</span>
+                <input
+                  value={companyInfo.googleMapsUrl}
+                  onChange={e => setCompanyInfo(c => ({ ...c, googleMapsUrl: e.target.value }))}
+                  placeholder="https://maps.app.goo.gl/..."
+                  className="w-full text-sm rounded-xl px-3 py-2"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                />
+                <span className="text-xs" style={{ color: 'var(--t4)' }}>
+                  Open your business on Google Maps, tap Share, and paste the link here — included in booking confirmation texts.
+                </span>
+              </div>
             </div>
           </section>
 

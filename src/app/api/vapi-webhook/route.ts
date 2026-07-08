@@ -33,6 +33,26 @@ function fmtDate(iso: string, timeZone: string) {
   return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
 }
 
+/**
+ * Prefers the business's own pasted Google Maps share link (accurate — points
+ * straight at their real listing) and only falls back to a constructed
+ * search-query URL from address fields if they haven't set one. Null if
+ * neither is available.
+ */
+function mapsLink(biz: {
+  name: string
+  google_maps_url?: string | null
+  address?: string | null
+  city?: string | null
+  state?: string | null
+  postcode?: string | null
+}): string | null {
+  if (biz.google_maps_url?.trim()) return biz.google_maps_url.trim()
+  const location = [biz.address, biz.city, biz.state, biz.postcode].filter(Boolean).join(', ')
+  if (!location) return null
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${biz.name}, ${location}`)}`
+}
+
 // end-of-call-report field extraction — Vapi has flattened some of these fields
 // directly onto `message` in different API versions, so check both the nested
 // (call/artifact/analysis) and flat shapes rather than trusting one.
@@ -175,7 +195,7 @@ export async function POST(req: Request) {
       try {
         const { data: biz } = await supabase
           .from('businesses')
-          .select('id, name, twilio_phone_number, timezone')
+          .select('id, name, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
           .eq('vapi_assistant_id', message.call?.assistantId)
           .single()
 
@@ -201,11 +221,18 @@ export async function POST(req: Request) {
 
             if (phone) {
               try {
-                await sendSms(
-                  phone,
-                  `Hi ${args.customerName ?? ''}, your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for ${fmtDate(args.dateTime as string, biz.timezone)}. Reply STOP to opt out.`,
-                  biz.twilio_phone_number ?? undefined,
-                )
+                const link = mapsLink(biz)
+                const smsBody = [
+                  `Hi ${args.customerName ?? ''} 👋`,
+                  '',
+                  `Your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for:`,
+                  `📅 ${fmtDate(args.dateTime as string, biz.timezone)}`,
+                  ...(link ? ['', `📍 ${link}`] : []),
+                  '',
+                  'See you then! ✅',
+                ].join('\n')
+
+                await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
               } catch (smsError) {
                 console.error('Failed to send confirmation SMS:', smsError)
                 // Booking already succeeded — don't fail the tool call over a text delivery issue.

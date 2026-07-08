@@ -86,13 +86,15 @@ export default async function TodayPage() {
       ? getLocalCalls(biz.id, { limit: 500, dateRange: { from: dateStrInZone(weekStart, timeZone), timeZone } }).catch(err => { console.error('Failed to fetch local weekly calls:', err); return noCalls })
       : Promise.resolve(noCalls),
   ])
-  const priceByService = new Map((services ?? []).map(s => [s.name, s.price_cents as number | null]))
+  // Lowercased keys — appointments' `service` is free text Ellie sent when
+  // booking, not guaranteed to match a configured service name's exact case.
+  const priceByService = new Map((services ?? []).map(s => [s.name.toLowerCase(), s.price_cents as number | null]))
 
   const todayAppts = (allAppts ?? []).filter(a => {
     const d = new Date(a.scheduled_at)
     return d >= dayStart && d <= dayEnd
   })
-  const revenueBookedCents = todayAppts.reduce((sum, a) => sum + (priceByService.get(a.service) ?? 0), 0)
+  const revenueBookedCents = todayAppts.reduce((sum, a) => sum + (priceByService.get(a.service?.toLowerCase() ?? '') ?? 0), 0)
 
   const todayCalls = allCalls.filter(c => {
     if (!c.started_at) return false
