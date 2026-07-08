@@ -38,6 +38,7 @@ type Appointment = {
   service?: string
   scheduled_at: string
   status: string
+  notes?: string | null
 }
 
 const STATUS_APPT: Record<string, { color: string; bg: string; border: string }> = {
@@ -280,7 +281,8 @@ export default async function TodayPage() {
                   const style = STATUS_APPT[appt.status] ?? STATUS_APPT.pending
                   return (
                     <div key={appt.id} className="flex items-center gap-3 px-5 py-3"
-                      style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}>
+                      style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
+                      title={appt.notes ?? undefined}>
                       <span className="text-xs font-mono font-bold shrink-0" style={{ color: 'var(--violet)', minWidth: 46 }}>{t}</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</p>

@@ -21,6 +21,7 @@ type Appointment = {
   service?: string
   scheduled_at: string
   status: string
+  notes?: string | null
   calendar_event_id?: string | null
   calendar_event_link?: string | null
 }
@@ -313,6 +314,12 @@ export default async function AppointmentsPage({
                           </a>
                         )}
                       </div>
+
+                      {appt.notes && (
+                        <p className="text-xs leading-relaxed px-2.5 py-2 rounded-lg" style={{ background: 'var(--paper)', color: 'var(--ink-2)' }}>
+                          {appt.notes}
+                        </p>
+                      )}
                     </div>
                   )
                 })}

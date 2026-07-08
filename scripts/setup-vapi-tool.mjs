@@ -50,6 +50,7 @@ const res = await fetch('https://api.vapi.ai/tool', {
           customerEmail: { type: 'string', description: "The caller's email address, if they gave one" },
           service:       { type: 'string', description: 'The service being booked' },
           dateTime:      { type: 'string', description: 'The appointment date and time as a full ISO 8601 datetime in the business\'s local timezone' },
+          notes:         { type: 'string', description: "A short, optional note about what the customer wants for this specific booking — e.g. a design/colour preference, an allergy/sensitivity mention, or any other detail they shared. Omit if they didn't mention anything specific." },
         },
         required: ['customerName', 'customerPhone', 'dateTime'],
       },

@@ -190,6 +190,7 @@ export async function POST(req: Request) {
             service:        args.service       ?? null,
             scheduled_at:   args.dateTime,
             status:         'confirmed',
+            notes:          args.notes ?? null,
           }).select('id').single()
 
           if (insertError) {
