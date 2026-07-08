@@ -51,7 +51,7 @@ export default async function CallsPage({
   }
 
   const calls: CallItem[] = rawCalls.map(call => {
-    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined)
+    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined, call.outcome === 'booked')
     const dt = call.started_at ? fmtTime(call.started_at, timeZone) : null
     // Web calls have no phone number on either end; real phone calls answer on the business's Ellie number.
     const assistantNumber = call.assistant_phone || (call.call_type !== 'webCall' ? biz?.phone ?? undefined : undefined)
@@ -73,6 +73,11 @@ export default async function CallsPage({
       badgeBg: bg,
       recordingUrl: call.recording_url ?? undefined,
       hasTranscript: !!call.transcript,
+      status: call.status ?? undefined,
+      endedReason: call.ended_reason ?? undefined,
+      successEvaluation: call.success_evaluation ?? undefined,
+      transcript: call.transcript ?? undefined,
+      vapiCallId: call.vapi_call_id ?? undefined,
     }
   })
 
@@ -145,7 +150,7 @@ export default async function CallsPage({
             <p className="text-sm" style={{ color: 'var(--ink-3)' }}>{fetchError}</p>
           </div>
         ) : (
-          <CallsExplorer calls={calls} />
+          <CallsExplorer calls={calls} timeZone={timeZone} />
         )}
       </div>
     </div>

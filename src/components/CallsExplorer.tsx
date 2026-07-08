@@ -1,10 +1,17 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Search, PhoneIncoming, ChevronUp, ChevronDown } from 'lucide-react'
 import CallRow, { type CallRowProps, ROW_COLUMNS } from './CallRow'
+import CallDetailPanel from './CallDetailPanel'
 
-export type CallItem = CallRowProps
+export type CallItem = CallRowProps & {
+  status?: string
+  endedReason?: string
+  successEvaluation?: string
+  transcript?: string
+  vapiCallId?: string
+}
 
 const CHIPS: { key: CallItem['category'] | 'all'; label: string }[] = [
   { key: 'all',         label: 'All'         },
@@ -30,13 +37,14 @@ function SortHeader({
   )
 }
 
-export default function CallsExplorer({ calls }: { calls: CallItem[] }) {
+export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; timeZone: string }) {
   const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
   const [page, setPage]               = useState(1)
   const [sortField, setSortField]     = useState<SortField>('startedAt')
   const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc')
+  const [expandedId, setExpandedId]   = useState<string | null>(null)
 
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: calls.length, booked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
@@ -135,14 +143,43 @@ export default function CallsExplorer({ calls }: { calls: CallItem[] }) {
         <span style={{ color: 'var(--ink-3)' }}>Customer</span>
         <span style={{ color: 'var(--ink-3)' }}>Assistant #</span>
         <span style={{ color: 'var(--ink-3)' }}>Outcome</span>
+        <span />
         <SortHeader label="Start time" active={sortField === 'startedAt'} dir={sortDir} onClick={() => toggleSort('startedAt')} />
         <SortHeader label="Duration" active={sortField === 'duration'} dir={sortDir} onClick={() => toggleSort('duration')} />
+        <span />
         <span />
       </div>
 
       {/* Rows */}
       <div>
-        {paged.map(call => <CallRow key={call.id} {...call} />)}
+        {paged.map(call => (
+          <Fragment key={call.id}>
+            <CallRow
+              {...call}
+              isExpanded={expandedId === call.id}
+              onToggle={() => setExpandedId(id => (id === call.id ? null : call.id))}
+            />
+            {expandedId === call.id && (
+              <CallDetailPanel
+                timeZone={timeZone}
+                call={{
+                  type: call.type,
+                  customerNumber: call.customerNumber,
+                  customerName: call.customerName,
+                  startedAtIso: call.startedAtIso,
+                  durationSecs: call.durationSecs,
+                  status: call.status,
+                  endedReason: call.endedReason,
+                  successEvaluation: call.successEvaluation,
+                  summary: call.summary,
+                  recordingUrl: call.recordingUrl,
+                  transcript: call.transcript,
+                  vapiCallId: call.vapiCallId,
+                }}
+              />
+            )}
+          </Fragment>
+        ))}
       </div>
 
       {filtered.length === 0 && (

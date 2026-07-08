@@ -1,8 +1,7 @@
-import Link from 'next/link'
-import { Globe, PhoneIncoming, PhoneOutgoing, Phone, AlertTriangle } from 'lucide-react'
+import { Globe, PhoneIncoming, PhoneOutgoing, Phone, AlertTriangle, ChevronDown } from 'lucide-react'
 import PlayButton from './PlayButton'
 
-export const ROW_COLUMNS = '90px 1fr 140px 110px 150px 70px 40px'
+export const ROW_COLUMNS = '80px 200px 150px 120px 1fr 130px 60px 24px 40px'
 
 function TypeIcon({ type }: { type?: string }) {
   if (type === 'webCall') return <Globe size={12} />
@@ -40,20 +39,26 @@ export type CallRowProps = {
 }
 
 export default function CallRow({
-  id, type, typeLabel, assistantNumber, customerNumber, customerName,
+  type, typeLabel, assistantNumber, customerNumber, customerName,
   startedDate, startedTime, durationSecs, category, badgeLabel, badgeColor, badgeBg,
-  recordingUrl, hasTranscript,
-}: CallRowProps) {
+  recordingUrl, hasTranscript, isExpanded, onToggle,
+}: CallRowProps & { isExpanded: boolean; onToggle: () => void }) {
   const errored   = category === 'errored'
-  const clickable = hasTranscript && !errored
+  const clickable = hasTranscript
 
-  const content = (
+  return (
     <div
-      className={`grid items-center gap-3 px-5 py-3 transition-colors ${clickable ? 'hover-row' : ''}`}
+      onClick={clickable ? onToggle : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } } : undefined}
+      role={clickable ? 'button' : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      aria-expanded={clickable ? isExpanded : undefined}
+      className={`grid items-center gap-3 px-5 py-3 transition-colors w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] ${clickable ? 'hover-row cursor-pointer' : ''}`}
       style={{
         gridTemplateColumns: ROW_COLUMNS,
-        background: errored ? 'rgba(221,81,64,0.04)' : undefined,
-        cursor: errored ? 'not-allowed' : undefined,
+        background: isExpanded ? 'var(--paper)' : errored ? 'rgba(221,81,64,0.04)' : undefined,
+        borderTop: '1px solid var(--line)',
+        outlineColor: 'var(--violet)',
       }}
     >
       <span className="flex items-center gap-1.5 text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>
@@ -79,22 +84,22 @@ export default function CallRow({
         {badgeLabel}
       </span>
 
+      <span />
+
       <div className="font-mono text-xs leading-relaxed" style={{ color: 'var(--ink-3)' }}>
         {startedDate ? (<>{startedDate}<br />{startedTime}</>) : '—'}
       </div>
 
       <span className="font-mono text-xs" style={{ color: 'var(--ink-3)' }}>{fmtDuration(durationSecs)}</span>
 
+      {clickable ? (
+        <ChevronDown
+          size={14}
+          style={{ color: 'var(--ink-3)', transform: isExpanded ? 'rotate(180deg)' : undefined, transition: 'transform 150ms ease' }}
+        />
+      ) : <span />}
+
       {recordingUrl ? <PlayButton src={recordingUrl} /> : <span className="w-8 h-8" />}
     </div>
   )
-
-  if (clickable) {
-    return (
-      <Link href={`/calls/${id}`} className="block" style={{ borderTop: '1px solid var(--line)' }}>
-        {content}
-      </Link>
-    )
-  }
-  return <div style={{ borderTop: '1px solid var(--line)' }}>{content}</div>
 }

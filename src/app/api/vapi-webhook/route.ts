@@ -188,8 +188,9 @@ export async function POST(req: Request) {
 
       if (name !== 'bookAppointment') continue
 
-      const args  = toolArgs(toolCall)
-      const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+      const args   = toolArgs(toolCall)
+      const phone  = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+      const callId = message.call?.id as string | undefined
       let resultText: string
 
       try {
@@ -211,6 +212,7 @@ export async function POST(req: Request) {
             scheduled_at:   args.dateTime,
             status:         'confirmed',
             notes:          args.notes ?? null,
+            vapi_call_id:   callId ?? null,
           }).select('id').single()
 
           if (insertError) {
@@ -305,6 +307,13 @@ export async function POST(req: Request) {
       const customer  = eocCustomer(report)
       const endedReason = report.endedReason as string | undefined
 
+      const { data: booking } = await supabase
+        .from('appointments')
+        .select('id')
+        .eq('vapi_call_id', callId)
+        .limit(1)
+      const hasBooking = !!booking?.length
+
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,
         vapi_call_id:       callId,
@@ -318,7 +327,7 @@ export async function POST(req: Request) {
         ended_at:           endedAt ?? null,
         duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
         ended_reason:       endedReason ?? null,
-        outcome:            classifyCall(endedReason).category,
+        outcome:            classifyCall(endedReason, hasBooking).category,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,

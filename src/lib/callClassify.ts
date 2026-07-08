@@ -18,9 +18,16 @@ const ERROR_REASONS = new Set([
   'unknown-error',
 ])
 
-/** Single source of truth for turning a Vapi `endedReason` into the category we store as `calls.outcome` and display everywhere. */
-export function classifyCall(endedReason?: string): { category: CallCategory; label: string; color: string; bg: string } {
-  if (endedReason === 'appointment-scheduled') {
+/**
+ * Single source of truth for turning a Vapi `endedReason` (plus whether a
+ * booking actually happened during the call) into the category we store as
+ * `calls.outcome` and display everywhere. `endedReason` alone can't detect a
+ * booking — `appointment-scheduled` is a Vapi-native flow value that's never
+ * emitted for our own custom `bookAppointment` tool call, so `hasBooking` is
+ * the real signal and takes priority over any `endedReason` match.
+ */
+export function classifyCall(endedReason?: string, hasBooking?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
+  if (hasBooking || endedReason === 'appointment-scheduled') {
     return { category: 'booked', label: 'Booked', color: 'var(--signal)', bg: 'var(--signal-soft)' }
   }
   if (endedReason === 'call-transferred') {
