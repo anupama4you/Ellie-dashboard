@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Plus, Pencil, Sparkles, Clock } from 'lucide-react'
+import { Plus, Pencil, Building2, Clock, PhoneCall } from 'lucide-react'
+import { getPlanUsage } from '@/lib/planUsage'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
@@ -18,6 +19,13 @@ export default async function ClientsPage() {
 
   const emailMap = Object.fromEntries((users ?? []).map(u => [u.id, u.email ?? '']))
   const list = businesses ?? []
+
+  const usageByBusiness = Object.fromEntries(
+    await Promise.all(list.map(async biz => [
+      biz.id,
+      await getPlanUsage(admin, biz.id, biz.plan, biz.timezone ?? 'Australia/Adelaide'),
+    ]))
+  )
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -46,7 +54,7 @@ export default async function ClientsPage() {
           {/* Column headers */}
           <div className="hidden md:grid px-5 py-3 text-xs font-bold tracking-widest uppercase"
             style={{
-              gridTemplateColumns: '2fr 2fr 1fr 1.3fr 80px',
+              gridTemplateColumns: '2fr 2fr 1fr 1.2fr 1.3fr 80px',
               color: 'var(--t5)',
               borderBottom: '1px solid var(--b3)',
               background: 'var(--b6)',
@@ -54,6 +62,7 @@ export default async function ClientsPage() {
             <span>Business</span>
             <span>Email</span>
             <span>Plan</span>
+            <span>Usage</span>
             <span>Assistant</span>
             <span />
           </div>
@@ -69,11 +78,12 @@ export default async function ClientsPage() {
             list.map((biz, i) => {
               const s = PLAN_STYLE[biz.plan] ?? PLAN_STYLE.core
               const hasAssistant = !!biz.vapi_assistant_id
+              const usage = usageByBusiness[biz.id]
               return (
                 <div key={biz.id}
                   className="hover-row grid items-center px-5 py-4 gap-3 transition-colors"
                   style={{
-                    gridTemplateColumns: '2fr 2fr 1fr 1.3fr 80px',
+                    gridTemplateColumns: '2fr 2fr 1fr 1.2fr 1.3fr 80px',
                     borderBottom: i < list.length - 1 ? '1px solid var(--b4)' : 'none',
                   }}>
                   <Link href={`/admin/clients/${biz.id}`} className="flex items-center gap-2 text-sm font-semibold truncate pr-2 hover:underline" style={{ color: 'var(--text)' }}>
@@ -95,6 +105,21 @@ export default async function ClientsPage() {
                       {biz.plan}
                     </span>
                   </span>
+                  <div className="flex flex-col gap-1 pr-2" title={`${usage.used} of ${usage.limit} calls used this month`}>
+                    <div className="flex items-center justify-between text-xs" style={{ color: 'var(--t3)' }}>
+                      <span className="flex items-center gap-1 font-semibold" style={{ color: usage.pct >= 100 ? 'var(--coral)' : usage.pct >= 80 ? 'var(--amber)' : 'var(--t2)' }}>
+                        <PhoneCall size={10} /> {usage.used}/{usage.limit}
+                      </span>
+                      <span>{usage.pct}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--b4)' }}>
+                      <div className="h-full rounded-full"
+                        style={{
+                          width: `${Math.min(usage.pct, 100)}%`,
+                          background: usage.pct >= 100 ? 'var(--coral)' : usage.pct >= 80 ? 'var(--amber)' : 'var(--signal)',
+                        }} />
+                    </div>
+                  </div>
                   <span className="text-xs font-semibold flex items-center gap-1.5"
                     style={{ color: hasAssistant ? 'var(--signal)' : 'var(--t5)' }}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: hasAssistant ? 'var(--signal)' : 'var(--t6)' }} />
@@ -104,8 +129,8 @@ export default async function ClientsPage() {
                     <Link href={`/admin/clients/${biz.id}/briefing`}
                       className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost shrink-0"
                       style={{ color: 'var(--t7)' }}
-                      title="Ellie's Briefing">
-                      <Sparkles size={13} />
+                      title="Company Information">
+                      <Building2 size={13} />
                     </Link>
                     <Link href={`/admin/clients/${biz.id}`}
                       className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost shrink-0"

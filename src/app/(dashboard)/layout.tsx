@@ -1,11 +1,17 @@
+import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCalls, type LocalCall } from '@/lib/calls'
-import { dateStrInZone, addDaysInZone } from '@/lib/timezone'
+import { dateStrInZone, addDaysInZone, formatInZone } from '@/lib/timezone'
+import { getPlanUsage } from '@/lib/planUsage'
 import Sidebar from '@/components/Sidebar'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business: biz } = await getCurrentBusiness()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
+
+  const usage = biz
+    ? await getPlanUsage(await createClient(), biz.id, biz.plan, timeZone).catch(() => null)
+    : null
 
   const WINDOW_DAYS = 14
   let coveragePct = 100
@@ -52,6 +58,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
         coveragePct={coveragePct}
         streakDays={streakDays}
         isAdmin={isAdmin}
+        usage={usage ? {
+          used: usage.used,
+          limit: usage.limit,
+          pct: usage.pct,
+          renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
+        } : null}
       />
       <div className="flex-1 overflow-hidden">
         {children}

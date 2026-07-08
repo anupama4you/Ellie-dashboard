@@ -57,6 +57,18 @@ export function startOfDayInZone(date: Date, timeZone: string): Date {
   return zonedTimeToUtc(timeZone, y, mo, d, 0, 0)
 }
 
+/** The UTC instant for 00:00:00 on the 1st of `date`'s calendar month, *in* `timeZone` — used for calendar-month billing/usage periods. */
+export function startOfMonthInZone(date: Date, timeZone: string): Date {
+  const [y, mo] = dateStrInZone(date, timeZone).split('-').map(Number)
+  return zonedTimeToUtc(timeZone, y, mo, 1, 0, 0)
+}
+
+/** The UTC instant for 00:00:00 on the 1st of the month *after* `date`'s, *in* `timeZone` — when a calendar-month usage period resets. */
+export function startOfNextMonthInZone(date: Date, timeZone: string): Date {
+  const [y, mo] = dateStrInZone(date, timeZone).split('-').map(Number)
+  return mo === 12 ? zonedTimeToUtc(timeZone, y + 1, 1, 1, 0, 0) : zonedTimeToUtc(timeZone, y, mo + 1, 1, 0, 0)
+}
+
 /**
  * The UTC instant for 00:00:00, `days` calendar days after `date`'s day *in*
  * `timeZone` — DST-safe day arithmetic. Unlike `Date.setDate()` (which

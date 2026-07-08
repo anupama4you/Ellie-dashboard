@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
 import type { LocalCall } from '@/lib/calls'
+import type { PlanUsage } from '@/lib/planUsage'
 import { dateStrInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 
 function getLast30Days(calls: LocalCall[], timeZone: string) {
@@ -64,7 +65,7 @@ const tooltipStyle = {
   fontSize: 12,
 }
 
-export default function AnalyticsCharts({ calls, plan, timeZone }: { calls: LocalCall[]; plan: string; timeZone: string }) {
+export default function AnalyticsCharts({ calls, plan, timeZone, usage }: { calls: LocalCall[]; plan: string; timeZone: string; usage: PlanUsage }) {
   const daily   = getLast30Days(calls, timeZone)
   const outcome = getOutcomeBreakdown(calls)
   const { grid: heatGrid, max: heatMax } = getDayHourHeatmap(calls, timeZone)
@@ -179,25 +180,26 @@ export default function AnalyticsCharts({ calls, plan, timeZone }: { calls: Loca
           </span>
         </div>
         {(() => {
-          const limits: Record<string, number> = { starter: 50, core: 120, professional: 250, enterprise: 500 }
-          const limit = limits[plan] ?? 120
-          const pct   = Math.min(Math.round((calls.length / limit) * 100), 100)
-          const color = pct >= 90 ? 'var(--coral)' : pct >= 70 ? 'var(--amber)' : 'var(--signal)'
+          const barPct = Math.min(usage.pct, 100)
+          const color  = usage.pct >= 90 ? 'var(--coral)' : usage.pct >= 70 ? 'var(--amber)' : 'var(--signal)'
           return (
             <div>
               <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
-                <span>{calls.length} calls used</span>
-                <span>{limit} call limit</span>
+                <span>{usage.used} calls used this month</span>
+                <span>{usage.limit} call limit</span>
               </div>
               <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--paper)' }}>
                 <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${color}, ${color}88)` }} />
+                  style={{ width: `${barPct}%`, background: `linear-gradient(90deg, ${color}, ${color}88)` }} />
               </div>
-              {pct >= 80 && (
+              {usage.pct >= 80 && (
                 <p className="text-xs mt-2" style={{ color: 'var(--amber)' }}>
-                  {pct >= 90 ? 'Almost at your plan limit — consider upgrading.' : '80% of your monthly calls used.'}
+                  {usage.pct >= 100 ? "You're over your plan's included calls — consider upgrading." : usage.pct >= 90 ? 'Almost at your plan limit — consider upgrading.' : '80% of your monthly calls used.'}
                 </p>
               )}
+              <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>
+                Usage renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}
+              </p>
             </div>
           )
         })()}

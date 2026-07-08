@@ -3,17 +3,17 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, BarChart3, Sparkles, Settings, LogOut, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, BarChart3, Building2, Settings, LogOut, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
-  { href: '/',             label: 'Dashboard',        icon: LayoutDashboard },
-  { href: '/calls',        label: 'Calls',            icon: Phone           },
-  { href: '/appointments', label: 'Appointments',     icon: CalendarDays    },
-  { href: '/recordings',   label: 'Recordings',       icon: Clock           },
-  { href: '/analytics',    label: 'Analytics',        icon: BarChart3       },
-  { href: '/briefing',     label: "Ellie's briefing", icon: Sparkles        },
-  { href: '/settings',     label: 'Settings',         icon: Settings        },
+  { href: '/',             label: 'Dashboard',           icon: LayoutDashboard },
+  { href: '/calls',        label: 'Calls',               icon: Phone           },
+  { href: '/appointments', label: 'Appointments',        icon: CalendarDays    },
+  { href: '/recordings',   label: 'Recordings',          icon: Clock           },
+  { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
+  { href: '/briefing',     label: 'Company Information', icon: Building2       },
+  { href: '/settings',     label: 'Settings',            icon: Settings        },
 ]
 
 function isActive(href: string, pathname: string) {
@@ -28,15 +28,18 @@ function initials(name: string) {
   return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 
+type PlanUsageSummary = { used: number; limit: number; pct: number; renewsLabel: string }
+
 type Props = {
   businessName: string
   userEmail: string
   coveragePct: number
   streakDays: number
   isAdmin?: boolean
+  usage?: PlanUsageSummary | null
 }
 
-export default function Sidebar({ businessName, userEmail, coveragePct, streakDays, isAdmin }: Props) {
+export default function Sidebar({ businessName, userEmail, coveragePct, streakDays, isAdmin, usage }: Props) {
   const pathname = usePathname()
   const router   = useRouter()
 
@@ -149,6 +152,31 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
           .
         </p>
       </div>
+
+      {/* Plan usage */}
+      {usage && (
+        <div
+          className="rounded-xl px-3.5 py-3 mt-1.5"
+          style={{ border: '1px solid var(--night-line)', background: 'var(--night-2)' }}
+        >
+          <div className="flex items-center justify-between mb-1.5">
+            <b className="text-[0.85rem] text-white font-semibold">Monthly usage</b>
+            <span className="text-[0.76rem] font-mono" style={{ color: '#8B84A6' }}>{usage.used}/{usage.limit}</span>
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+            <div
+              className="h-full rounded-full"
+              style={{
+                width: `${Math.min(usage.pct, 100)}%`,
+                background: usage.pct >= 100 ? 'var(--coral)' : usage.pct >= 80 ? 'var(--amber)' : 'var(--signal)',
+              }}
+            />
+          </div>
+          <p className="text-[0.72rem] mt-1.5" style={{ color: '#736C90' }}>
+            Renews {usage.renewsLabel}
+          </p>
+        </div>
+      )}
 
       {/* User */}
       <div className="flex items-center gap-2.5 px-2 pt-3.5">

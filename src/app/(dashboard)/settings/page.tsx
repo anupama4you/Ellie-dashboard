@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, Bell } from 'lucide-react'
-import NotificationToggles from '@/components/NotificationToggles'
+import { getPlanUsage } from '@/lib/planUsage'
+import { formatInZone } from '@/lib/timezone'
+import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, PhoneCall, RefreshCw } from 'lucide-react'
 import GoogleCalendarCard from '@/components/GoogleCalendarCard'
-import type { NotificationPrefs } from './actions'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
   'Business Name':     {
@@ -21,6 +21,16 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
     bg:     'var(--signal-soft)',
     border: 'rgba(15,163,122,0.2)',
   },
+  'Calls used this month': {
+    icon:   <PhoneCall size={13} style={{ color: 'var(--amber)' }} />,
+    bg:     'var(--amber-soft)',
+    border: 'rgba(217,138,11,0.2)',
+  },
+  'Usage renews':      {
+    icon:   <RefreshCw size={13} style={{ color: 'var(--signal)' }} />,
+    bg:     'var(--signal-soft)',
+    border: 'rgba(15,163,122,0.2)',
+  },
   'Vapi Assistant ID': {
     icon:   <Bot size={13} style={{ color: 'var(--violet)' }} />,
     bg:     'var(--violet-soft)',
@@ -33,13 +43,6 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
   },
 }
 
-const DEFAULT_PREFS: NotificationPrefs = {
-  bookingTexts: true,
-  morningBrief: true,
-  urgentAlerts: true,
-  weeklyReport: true,
-}
-
 export default async function SettingsPage({
   searchParams,
 }: {
@@ -48,20 +51,26 @@ export default async function SettingsPage({
   const { calendar } = await searchParams
   const { user, business: biz } = await getCurrentBusiness()
   const supabase = await createClient()
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
-  const { data: calendarConnection } = biz
-    ? await supabase.from('calendar_connections').select('google_email, status').eq('business_id', biz.id).single()
-    : { data: null }
+  const [{ data: calendarConnection }, usage] = await Promise.all([
+    biz
+      ? supabase.from('calendar_connections').select('google_email, status').eq('business_id', biz.id).single()
+      : Promise.resolve({ data: null }),
+    biz
+      ? getPlanUsage(supabase, biz.id, biz.plan, timeZone).catch(() => null)
+      : Promise.resolve(null),
+  ])
 
   const fields = [
     { label: 'Business Name',    value: biz?.name              },
     { label: 'Phone Number',     value: biz?.phone             },
     { label: 'Plan',             value: biz?.plan              },
+    { label: 'Calls used this month', value: usage ? `${usage.used} / ${usage.limit} (${usage.pct}%)` : undefined },
+    { label: 'Usage renews',     value: usage ? formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' }) : undefined },
     { label: 'Vapi Assistant ID',value: biz?.vapi_assistant_id },
     { label: 'Account Email',    value: user?.email            },
   ]
-
-  const prefs: NotificationPrefs = biz?.notification_prefs ?? DEFAULT_PREFS
 
   return (
     <div className="h-full overflow-y-auto">
@@ -120,18 +129,6 @@ export default async function SettingsPage({
                 )
               })}
             </div>
-          </section>
-
-          {/* Notifications */}
-          <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
-              <Bell size={14} style={{ color: 'var(--violet)' }} />
-              <div>
-                <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Notifications</h2>
-                <p className="text-xs" style={{ color: 'var(--ink-3)' }}>How Ellie keeps you in the loop</p>
-              </div>
-            </div>
-            {biz?.id && <NotificationToggles businessId={biz.id} initialPrefs={prefs} />}
           </section>
 
           {biz?.id && (

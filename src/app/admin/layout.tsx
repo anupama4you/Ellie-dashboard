@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getBusinessesOverUsageThreshold } from '@/lib/planUsage'
 import AdminNav from '@/components/AdminNav'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -11,14 +12,14 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (user.email !== process.env.ADMIN_EMAIL) redirect('/')
 
   const admin = createAdminClient()
-  const { count } = await admin
-    .from('businesses')
-    .select('id', { count: 'exact', head: true })
-    .eq('briefing_needs_review', true)
+  const [{ count }, overUsage] = await Promise.all([
+    admin.from('businesses').select('id', { count: 'exact', head: true }).eq('briefing_needs_review', true),
+    getBusinessesOverUsageThreshold(admin),
+  ])
 
   return (
     <div data-theme="admin" className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
-      <AdminNav pendingReviewCount={count ?? 0} />
+      <AdminNav pendingReviewCount={count ?? 0} usageAlertCount={overUsage.length} />
       <div className="flex-1 overflow-hidden">
         {children}
       </div>

@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { buildAssistantConfig } from '@/lib/assistantPrompt'
-import type { Hours, TransferRule, ServiceDraft, FaqDraft } from '@/app/(dashboard)/briefing/actions'
+import type { Hours, TransferRule, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 import { adminSaveSystemPrompt } from '@/app/admin/clients/[id]/prompt/actions'
 
 type Props = {
@@ -18,6 +18,7 @@ type Props = {
     transferRules: TransferRule[]
     services: ServiceDraft[]
     faqs: FaqDraft[]
+    companyInfo: CompanyInfo
   }
 }
 
@@ -36,6 +37,7 @@ export default function SystemPromptEditor({ businessId, businessName, initialFi
       services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
       faqs: briefing.faqs,
       transferRules: briefing.transferRules,
+      companyInfo: briefing.companyInfo,
     })
     setFirstMessage(generated.firstMessage)
     setSystemPrompt(generated.systemPrompt)

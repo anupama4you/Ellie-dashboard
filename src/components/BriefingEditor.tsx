@@ -2,8 +2,10 @@
 
 import { useState, useTransition } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { saveBriefing, type Hours, type TransferRule, type ServiceDraft, type FaqDraft } from '@/app/(dashboard)/briefing/actions'
+import { saveBriefing, type Hours, type TransferRule, type ServiceDraft, type FaqDraft, type CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
+
+const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']
 
 const DAY_LABELS: { key: keyof Hours; label: string }[] = [
   { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' }, { key: 'wed', label: 'Wed' },
@@ -29,6 +31,7 @@ type Props = {
   initialTransferRules: TransferRule[]
   initialServices: ServiceDraft[]
   initialFaqs: FaqDraft[]
+  initialCompanyInfo: CompanyInfo
 }
 
 const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
@@ -36,7 +39,7 @@ const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
 
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
-  initialHours, initialTransferRules, initialServices, initialFaqs,
+  initialHours, initialTransferRules, initialServices, initialFaqs, initialCompanyInfo,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
   const [greeting, setGreeting]                     = useState(initialGreeting)
@@ -45,13 +48,14 @@ export default function BriefingEditor({
   const [transferRules, setTransferRules]           = useState(initialTransferRules)
   const [services, setServices]                     = useState(initialServices)
   const [faqs, setFaqs]                              = useState(initialFaqs)
+  const [companyInfo, setCompanyInfo]               = useState(initialCompanyInfo)
   const [isPending, startTransition]                = useTransition()
   const [status, setStatus]                         = useState<'idle' | 'saved' | 'error'>('idle')
 
   function save() {
     startTransition(async () => {
       try {
-        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs })
+        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs, companyInfo })
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
@@ -65,9 +69,9 @@ export default function BriefingEditor({
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--text)' }}>
-            Ellie&apos;s briefing
+            Company Information
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: 'var(--t3)' }}>What Ellie knows about your business.</p>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--t3)' }}>Your business profile, and what Ellie knows when she answers calls.</p>
           <p className="text-xs mt-1" style={{ color: 'var(--t4)' }}>
             Changes here are reviewed by our team before they go live on real calls.
           </p>
@@ -88,6 +92,92 @@ export default function BriefingEditor({
 
       <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
         <div className="flex flex-col gap-4">
+
+          {/* Company Information */}
+          <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
+            <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Company Information</h2>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Tell Ellie (and us) about your business</p>
+            </div>
+            <div className="p-5 flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Business name</span>
+                <div className="text-sm rounded-xl px-3 py-2" style={{ border: '1px solid var(--border)', color: 'var(--t3)', background: 'var(--bg2)' }}>
+                  {businessName}
+                </div>
+                <span className="text-xs" style={{ color: 'var(--t4)' }}>Contact your Ellie account manager to change your business name.</span>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Description</span>
+                <textarea
+                  value={companyInfo.description}
+                  onChange={e => setCompanyInfo(c => ({ ...c, description: e.target.value }))}
+                  placeholder="A couple of sentences about what your business does"
+                  rows={3}
+                  className="w-full rounded-xl p-3 text-sm"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical' }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Website</span>
+                <input
+                  value={companyInfo.website}
+                  onChange={e => setCompanyInfo(c => ({ ...c, website: e.target.value }))}
+                  placeholder="https://yourbusiness.com.au"
+                  className="w-full text-sm rounded-xl px-3 py-2"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Street address</span>
+                <input
+                  value={companyInfo.address}
+                  onChange={e => setCompanyInfo(c => ({ ...c, address: e.target.value }))}
+                  placeholder="123 Example St"
+                  className="w-full text-sm rounded-xl px-3 py-2"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                />
+              </div>
+
+              <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>City</span>
+                  <input
+                    value={companyInfo.city}
+                    onChange={e => setCompanyInfo(c => ({ ...c, city: e.target.value }))}
+                    placeholder="Adelaide"
+                    className="w-full text-sm rounded-xl px-3 py-2"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>State</span>
+                  <select
+                    value={companyInfo.state}
+                    onChange={e => setCompanyInfo(c => ({ ...c, state: e.target.value }))}
+                    className="w-full text-sm rounded-xl px-3 py-2"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg3)' }}
+                  >
+                    <option value="">—</option>
+                    {AU_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Postcode</span>
+                  <input
+                    value={companyInfo.postcode}
+                    onChange={e => setCompanyInfo(c => ({ ...c, postcode: e.target.value }))}
+                    placeholder="5000"
+                    className="w-full text-sm rounded-xl px-3 py-2"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
 
           {/* Greeting */}
           <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>

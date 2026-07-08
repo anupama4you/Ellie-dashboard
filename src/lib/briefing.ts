@@ -15,6 +15,12 @@ export async function applyBriefingWrite(supabase: SupabaseClient, businessId: s
       custom_instructions: payload.customInstructions,
       hours: payload.hours,
       transfer_rules: payload.transferRules,
+      description: payload.companyInfo.description,
+      website: payload.companyInfo.website,
+      address: payload.companyInfo.address,
+      city: payload.companyInfo.city,
+      state: payload.companyInfo.state,
+      postcode: payload.companyInfo.postcode,
       briefing_needs_review: true,
       briefing_updated_at: new Date().toISOString(),
     })

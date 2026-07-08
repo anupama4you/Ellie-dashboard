@@ -14,8 +14,11 @@ function fmtTime(iso: string, timeZone: string) {
   }
 }
 
-const BATCH_SIZE = 300
-const DATE_RANGE_LIMIT = 500
+// Search/filter/sort in CallsExplorer runs over whatever's fetched here, so
+// this stays generous enough to cover recent history — just not the whole
+// table, which was the actual slow part.
+const BATCH_SIZE = 75
+const DATE_RANGE_LIMIT = 150
 
 export default async function CallsPage({
   searchParams,

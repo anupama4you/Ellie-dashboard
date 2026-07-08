@@ -22,7 +22,7 @@ export default async function RecordingsPage() {
   if (!biz) {
     fetchError = 'No business profile found.'
   } else {
-    try { calls = await getLocalCalls(biz.id, { limit: 200 }) } catch (err) {
+    try { calls = await getLocalCalls(biz.id, { limit: 100 }) } catch (err) {
       console.error('Failed to fetch local calls:', err)
       fetchError = 'Could not load recordings — please try again shortly.'
     }

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, IdCard, Sparkles, ScrollText } from 'lucide-react'
+import { ArrowLeft, IdCard, Building2, ScrollText } from 'lucide-react'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string }> = {
   starter:      { color: 'var(--t3)',     bg: 'rgba(139,133,160,0.1)' },
@@ -65,9 +65,9 @@ export default function AdminClientHeader({ id, name, email, plan, hasAssistant,
       {/* Tabs */}
       <div className="flex gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
         {[
-          { key: 'details' as const,  href: `/admin/clients/${id}`,          label: 'Details',          icon: IdCard    },
-          { key: 'briefing' as const, href: `/admin/clients/${id}/briefing`, label: "Ellie's Briefing", icon: Sparkles  },
-          { key: 'prompt' as const,   href: `/admin/clients/${id}/prompt`,   label: 'System Prompt',    icon: ScrollText },
+          { key: 'details' as const,  href: `/admin/clients/${id}`,          label: 'Details',              icon: IdCard     },
+          { key: 'briefing' as const, href: `/admin/clients/${id}/briefing`, label: 'Company Information',  icon: Building2  },
+          { key: 'prompt' as const,   href: `/admin/clients/${id}/prompt`,   label: 'System Prompt',        icon: ScrollText },
         ].map(({ key, href, label, icon: Icon }) => {
           const isActive = active === key
           return (

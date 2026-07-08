@@ -11,7 +11,7 @@ const NAV = [
   { href: '/admin/clients', label: 'Clients',  icon: Users,           exact: false },
 ]
 
-export default function AdminNav({ pendingReviewCount = 0 }: { pendingReviewCount?: number }) {
+export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }: { pendingReviewCount?: number; usageAlertCount?: number }) {
   const pathname = usePathname()
   const router   = useRouter()
 
@@ -51,8 +51,16 @@ export default function AdminNav({ pendingReviewCount = 0 }: { pendingReviewCoun
               <span className="flex-1">{label}</span>
               {href === '/admin/clients' && pendingReviewCount > 0 && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  title="Businesses with an unreviewed Briefing change"
                   style={{ color: 'var(--amber)', background: 'rgba(217,138,11,0.15)' }}>
                   {pendingReviewCount}
+                </span>
+              )}
+              {href === '/admin/clients' && usageAlertCount > 0 && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  title="Businesses near or over their monthly plan limit"
+                  style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.15)' }}>
+                  {usageAlertCount}
                 </span>
               )}
             </Link>

@@ -36,6 +36,24 @@ function fmtTransferRules(rules: TransferRule[]): string {
   return enabled.map(r => `- ${r.label}: ${r.description}`).join('\n')
 }
 
+type CompanyInfoInput = {
+  description?: string
+  website?: string
+  address?: string
+  city?: string
+  state?: string
+  postcode?: string
+}
+
+function fmtCompanyInfo(info?: CompanyInfoInput): string {
+  const lines: string[] = []
+  if (info?.description?.trim()) lines.push(info.description.trim())
+  const location = [info?.address, info?.city, info?.state, info?.postcode].filter(Boolean).join(', ')
+  if (location) lines.push(`Location: ${location}`)
+  if (info?.website?.trim()) lines.push(`Website: ${info.website.trim()}`)
+  return lines.length ? lines.join('\n') : ''
+}
+
 export function defaultGreeting(businessName: string): string {
   return `Thanks for calling ${businessName}, this is Ellie. How can I help you today?`
 }
@@ -48,15 +66,19 @@ export function buildAssistantConfig(input: {
   services: ServiceInput[]
   faqs: FaqInput[]
   transferRules: TransferRule[]
+  companyInfo?: CompanyInfoInput
 }): { firstMessage: string; systemPrompt: string } {
   const customSection = input.customInstructions?.trim()
     ? `\nAdditional instructions from the business owner — follow these closely, they override general guidance above if they conflict:\n${input.customInstructions.trim()}\n`
     : ''
 
+  const companyInfoText = fmtCompanyInfo(input.companyInfo)
+  const companyInfoSection = companyInfoText ? `\nAbout the business:\n${companyInfoText}\n` : ''
+
   const systemPrompt = `You are Ellie, the AI receptionist for ${input.businessName}.
 
 Persona: Warm, professional, calm under pressure. Speak in natural Australian English. Never sound robotic.
-
+${companyInfoSection}
 Business hours:
 ${fmtHours(input.hours)}
 Outside these hours, still answer the call and offer to book for the next open day.

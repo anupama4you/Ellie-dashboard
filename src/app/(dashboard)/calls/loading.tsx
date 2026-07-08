@@ -10,7 +10,7 @@ function TableRowSkeleton() {
     <div className="grid items-center px-5 gap-4 py-4"
       style={{
         gridTemplateColumns: '32px 1fr 160px 80px 140px 40px',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        borderBottom: '1px solid var(--line)',
       }}>
       <Sk w={32} h={32} r={8} />
       <div className="flex items-center gap-2">
@@ -38,12 +38,12 @@ export default function CallsLoading() {
       </div>
 
       <div className="rounded-xl overflow-hidden"
-        style={{ background: '#0d1117', border: '1px solid rgba(255,255,255,0.07)' }}>
+        style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
         {/* Header */}
         <div className="grid px-5 py-3 gap-4"
           style={{
             gridTemplateColumns: '32px 1fr 160px 80px 140px 40px',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: '1px solid var(--line)',
           }}>
           {[32, 80, 100, 50, 90, 40].map((w, i) => (
             <Sk key={i} w={w} h={10} r={3} />

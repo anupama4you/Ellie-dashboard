@@ -34,6 +34,14 @@ export default async function AdminSystemPromptPage({
     transferRules: biz.transfer_rules as TransferRule[],
     services: (services ?? []).map(s => ({ id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents })),
     faqs: (faqs ?? []).map(f => ({ id: f.id, question: f.question, answer: f.answer })),
+    companyInfo: {
+      description: biz.description ?? '',
+      website: biz.website ?? '',
+      address: biz.address ?? '',
+      city: biz.city ?? '',
+      state: biz.state ?? '',
+      postcode: biz.postcode ?? '',
+    },
   }
 
   let initialFirstMessage = defaultGreeting(biz.name)

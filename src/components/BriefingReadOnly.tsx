@@ -1,4 +1,4 @@
-import type { Hours, TransferRule, ServiceDraft, FaqDraft } from '@/app/(dashboard)/briefing/actions'
+import type { Hours, TransferRule, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
 
 const DAY_LABELS: { key: keyof Hours; label: string }[] = [
@@ -19,16 +19,45 @@ type Props = {
   transferRules: TransferRule[]
   services: ServiceDraft[]
   faqs: FaqDraft[]
+  companyInfo: CompanyInfo
 }
 
 export default function BriefingReadOnly({
-  businessName, greeting, customInstructions, hours, transferRules, services, faqs,
+  businessName, greeting, customInstructions, hours, transferRules, services, faqs, companyInfo,
 }: Props) {
   const placeholderGreeting = defaultGreeting(businessName)
+  const location = [companyInfo.address, companyInfo.city, companyInfo.state, companyInfo.postcode].filter(Boolean).join(', ')
 
   return (
     <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
       <div className="flex flex-col gap-4">
+
+        {/* Company Information */}
+        <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
+          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+            <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Company Information</h2>
+          </div>
+          <div className="p-5 flex flex-col gap-3 text-sm">
+            <div>
+              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Description</span>
+              <p style={{ color: companyInfo.description.trim() ? 'var(--text)' : 'var(--t3)' }}>
+                {companyInfo.description.trim() || 'None provided.'}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Website</span>
+              <p style={{ color: companyInfo.website.trim() ? 'var(--text)' : 'var(--t3)' }}>
+                {companyInfo.website.trim() || '—'}
+              </p>
+            </div>
+            <div>
+              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Location</span>
+              <p style={{ color: location ? 'var(--text)' : 'var(--t3)' }}>
+                {location || '—'}
+              </p>
+            </div>
+          </div>
+        </section>
 
         {/* Greeting */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>

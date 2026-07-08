@@ -3,9 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
 import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
+import { getPlanUsage } from '@/lib/planUsage'
 import TodayCallRow from '@/components/TodayCallRow'
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
-import { Phone, CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles } from 'lucide-react'
+import { Phone, CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles, AlertTriangle } from 'lucide-react'
 
 const BADGES: Record<string, { label: string; color: string; bg: string; border: string }> = {
   'appointment-scheduled':   { label: 'Booked',      color: 'var(--signal)', bg: 'var(--signal-soft)', border: 'rgba(15,163,122,0.25)'  },
@@ -68,7 +69,14 @@ export default async function TodayPage() {
     allCalls,
     weekCalls,
   ] = await Promise.all([
-    supabase.from('appointments').select('*').eq('business_id', biz?.id).order('scheduled_at', { ascending: true }),
+    // Scoped to the last 7 days (all this page ever displays) instead of the
+    // business's entire appointment history.
+    supabase.from('appointments').select('*')
+      .eq('business_id', biz?.id)
+      .neq('status', 'cancelled')
+      .gte('scheduled_at', weekStart.toISOString())
+      .lte('scheduled_at', dayEnd.toISOString())
+      .order('scheduled_at', { ascending: true }),
     supabase.from('business_services').select('name, price_cents').eq('business_id', biz?.id),
     biz
       ? getLocalCalls(biz.id, { limit: 100 }).catch(err => { console.error('Failed to fetch local calls:', err); return noCalls })
@@ -81,7 +89,7 @@ export default async function TodayPage() {
 
   const todayAppts = (allAppts ?? []).filter(a => {
     const d = new Date(a.scheduled_at)
-    return d >= dayStart && d <= dayEnd && a.status !== 'cancelled'
+    return d >= dayStart && d <= dayEnd
   })
   const revenueBookedCents = todayAppts.reduce((sum, a) => sum + (priceByService.get(a.service) ?? 0), 0)
 
@@ -101,7 +109,7 @@ export default async function TodayPage() {
     const key = dateStrInZone(d, timeZone)
     const dayCallsCount = weekCalls.filter(c => c.started_at && dateStrInZone(new Date(c.started_at), timeZone) === key).length
     const dayBookingsCount = (allAppts ?? []).filter(a =>
-      dateStrInZone(new Date(a.scheduled_at), timeZone) === key && a.status !== 'cancelled'
+      dateStrInZone(new Date(a.scheduled_at), timeZone) === key
     ).length
     const dow = dayOfWeekInZone(d, timeZone)
     return { label: WEEKDAY_LABELS[dow === 0 ? 6 : dow - 1], calls: dayCallsCount, bookings: dayBookingsCount }
@@ -111,6 +119,10 @@ export default async function TodayPage() {
   const weekConversion    = weekTotalCalls > 0 ? Math.round((weekTotalBookings / weekTotalCalls) * 100) : 0
 
   const dateLabel = formatInZone(now, timeZone, { weekday: 'long', day: 'numeric', month: 'long' })
+
+  const usage = biz
+    ? await getPlanUsage(supabase, biz.id, biz.plan, timeZone).catch(() => null)
+    : null
 
   return (
     <div className="h-full overflow-y-auto">
@@ -127,6 +139,25 @@ export default async function TodayPage() {
             </p>
           </div>
         </div>
+
+        {/* Plan usage warning */}
+        {usage && usage.pct >= 80 && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{
+              background: usage.pct >= 100 ? 'var(--coral-soft)' : 'var(--amber-soft)',
+              border: `1px solid ${usage.pct >= 100 ? 'rgba(221,81,64,0.25)' : 'rgba(217,138,11,0.25)'}`,
+              color: usage.pct >= 100 ? 'var(--coral)' : 'var(--amber)',
+            }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            <span>
+              {usage.pct >= 100
+                ? `You're over your plan's included calls this month (${usage.used} of ${usage.limit}).`
+                : `You've used ${usage.used} of ${usage.limit} calls included in your plan this month (${usage.pct}%).`}
+              {' '}Usage renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
+              {' '}Reach out to your Ellie account manager if you would like to upgrade.
+            </span>
+          </div>
+        )}
 
         {/* KPI cards */}
         <div className="grid grid-cols-4 gap-3.5">

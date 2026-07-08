@@ -8,7 +8,7 @@ function Sk({ w, h, r = 6 }: { w?: number | string; h?: number; r?: number }) {
 function ApptRowSkeleton() {
   return (
     <div className="flex items-center justify-between px-5 py-4 gap-4"
-      style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+      style={{ borderBottom: '1px solid var(--line)' }}>
       <div className="flex items-center gap-3">
         <Sk w={36} h={36} r={12} />
         <div className="flex flex-col gap-2">
@@ -30,9 +30,9 @@ function ApptRowSkeleton() {
 function SectionSkeleton({ count }: { count: number }) {
   return (
     <div className="rounded-2xl overflow-hidden"
-      style={{ background: '#0d1117', border: '1px solid rgba(255,255,255,0.07)' }}>
+      style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
       <div className="px-5 py-4 flex items-center gap-3"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        style={{ borderBottom: '1px solid var(--line)' }}>
         <div className="w-1 h-4 rounded-full skeleton" style={{ flexShrink: 0 }} />
         <Sk w={90} h={13} r={4} />
         <Sk w={24} h={20} r={999} />

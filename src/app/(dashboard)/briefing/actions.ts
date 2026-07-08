@@ -10,6 +10,15 @@ export type TransferRule = { label: string; description: string; enabled: boolea
 export type ServiceDraft = { id?: string; name: string; durationMinutes: number | null; priceCents: number | null }
 export type FaqDraft = { id?: string; question: string; answer: string }
 
+export type CompanyInfo = {
+  description: string
+  website: string
+  address: string
+  city: string
+  state: string
+  postcode: string
+}
+
 export type BriefingPayload = {
   greetingScript: string
   customInstructions: string
@@ -17,6 +26,7 @@ export type BriefingPayload = {
   transferRules: TransferRule[]
   services: ServiceDraft[]
   faqs: FaqDraft[]
+  companyInfo: CompanyInfo
 }
 
 export async function saveBriefing(businessId: string, payload: BriefingPayload): Promise<void> {

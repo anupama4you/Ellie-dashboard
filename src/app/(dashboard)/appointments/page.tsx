@@ -59,16 +59,19 @@ export default async function AppointmentsPage({
   const prevWeekDateStr = shiftDateStr(selectedDate, -7)
   const nextWeekDateStr = shiftDateStr(selectedDate, 7)
 
+  // Scoped to the displayed week only — this used to fetch the business's
+  // entire appointment history on every visit, which only gets slower as
+  // bookings accumulate over months/years.
   const { data: appointments } = await supabase
     .from('appointments')
     .select('*')
     .eq('business_id', biz?.id)
+    .neq('status', 'cancelled')
+    .gte('scheduled_at', weekRangeStart.toISOString())
+    .lte('scheduled_at', weekRangeEnd.toISOString())
     .order('scheduled_at', { ascending: true })
 
-  const weekAppts = ((appointments ?? []) as Appointment[]).filter(a => {
-    const t = new Date(a.scheduled_at)
-    return t >= weekRangeStart && t <= weekRangeEnd && a.status !== 'cancelled'
-  })
+  const weekAppts = (appointments ?? []) as Appointment[]
 
   // Merge in the connected Google Calendar (if any) so staff see everything —
   // Ellie's bookings alongside anything booked directly in their own calendar.

@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { Building2, Zap, Plus } from 'lucide-react'
+import { PLAN_LIMITS } from '@/lib/planUsage'
 
 const PLANS = ['starter', 'core', 'professional', 'enterprise'] as const
 
@@ -9,10 +10,6 @@ const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> 
   core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
   professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
   enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },
-}
-
-const PLAN_LIMITS: Record<string, number> = {
-  starter: 50, core: 120, professional: 250, enterprise: 500,
 }
 
 export default async function AdminPage() {
