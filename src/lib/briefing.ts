@@ -1,67 +1,69 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { BriefingPayload } from '@/app/(dashboard)/briefing/actions'
+import type { BriefingPayload, Hours, TransferRule } from '@/app/(dashboard)/briefing/actions'
 
 /**
- * Client's Briefing write path. Saves the structured fields to Postgres only
- * — it no longer pushes anything to the live Vapi assistant. Flags the
- * business for admin review so a human decides how (and whether) to fold
- * the change into the actual system prompt via the admin System Prompt tab.
+ * Client's Briefing write path. Stages the submitted fields in
+ * `draft_briefing` only — never touches the live businesses/business_services/
+ * business_faqs columns the call-handling webhook reads. Flags the business
+ * for admin review; a human decides whether/how to fold the change into the
+ * live tool data + hand-authored system prompt via the admin System Prompt
+ * tab's "Apply & Push" action.
  */
-export async function applyBriefingWrite(supabase: SupabaseClient, businessId: string, payload: BriefingPayload) {
-  const { error: bizError } = await supabase
+export async function saveDraftBriefing(supabase: SupabaseClient, businessId: string, payload: BriefingPayload) {
+  const { error } = await supabase
     .from('businesses')
     .update({
-      greeting_script: payload.greetingScript,
-      custom_instructions: payload.customInstructions,
-      hours: payload.hours,
-      transfer_rules: payload.transferRules,
-      description: payload.companyInfo.description,
-      website: payload.companyInfo.website,
-      address: payload.companyInfo.address,
-      city: payload.companyInfo.city,
-      state: payload.companyInfo.state,
-      postcode: payload.companyInfo.postcode,
-      google_maps_url: payload.companyInfo.googleMapsUrl,
+      draft_briefing: payload,
       briefing_needs_review: true,
       briefing_updated_at: new Date().toISOString(),
     })
     .eq('id', businessId)
-  if (bizError) throw new Error(bizError.message)
+  if (error) throw new Error(error.message)
+}
 
-  const { error: delServicesError } = await supabase
-    .from('business_services')
-    .delete()
-    .eq('business_id', businessId)
-  if (delServicesError) throw new Error(delServicesError.message)
+type BizBriefingRow = {
+  greeting_script: string | null
+  custom_instructions: string | null
+  hours: unknown
+  transfer_rules: unknown
+  description: string | null
+  website: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  postcode: string | null
+  google_maps_url: string | null
+  draft_briefing: unknown
+}
 
-  if (payload.services.length > 0) {
-    const { error: insServicesError } = await supabase.from('business_services').insert(
-      payload.services.map((s, i) => ({
-        business_id: businessId,
-        name: s.name,
-        duration_minutes: s.durationMinutes,
-        price_cents: s.priceCents,
-        sort_order: i,
-      }))
-    )
-    if (insServicesError) throw new Error(insServicesError.message)
+type LiveServiceRow = { id: string; name: string; duration_minutes: number | null; price_cents: number | null }
+type LiveFaqRow = { id: string; question: string; answer: string }
+
+/** Always the *live* values, ignoring any pending draft — used as the diff baseline. */
+export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[]): BriefingPayload {
+  return {
+    greetingScript: biz.greeting_script ?? '',
+    customInstructions: biz.custom_instructions ?? '',
+    hours: biz.hours as Hours,
+    transferRules: biz.transfer_rules as TransferRule[],
+    services: liveServices.map(s => ({ id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents })),
+    faqs: liveFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer })),
+    companyInfo: {
+      description: biz.description ?? '',
+      website: biz.website ?? '',
+      address: biz.address ?? '',
+      city: biz.city ?? '',
+      state: biz.state ?? '',
+      postcode: biz.postcode ?? '',
+      googleMapsUrl: biz.google_maps_url ?? '',
+    },
   }
+}
 
-  const { error: delFaqsError } = await supabase
-    .from('business_faqs')
-    .delete()
-    .eq('business_id', businessId)
-  if (delFaqsError) throw new Error(delFaqsError.message)
-
-  if (payload.faqs.length > 0) {
-    const { error: insFaqsError } = await supabase.from('business_faqs').insert(
-      payload.faqs.map((f, i) => ({
-        business_id: businessId,
-        question: f.question,
-        answer: f.answer,
-        sort_order: i,
-      }))
-    )
-    if (insFaqsError) throw new Error(insFaqsError.message)
-  }
+/** Draft-preferred: returns the pending client draft if one exists, else falls back to live values. */
+export function resolveBriefing(
+  biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[],
+): BriefingPayload & { isDraft: boolean } {
+  if (biz.draft_briefing) return { ...(biz.draft_briefing as BriefingPayload), isDraft: true }
+  return { ...liveBriefing(biz, liveServices, liveFaqs), isDraft: false }
 }

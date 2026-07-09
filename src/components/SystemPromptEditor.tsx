@@ -2,9 +2,9 @@
 
 import { useState, useTransition } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { buildAssistantConfig } from '@/lib/assistantPrompt'
+import { buildAssistantConfig, patchPromptSections } from '@/lib/assistantPrompt'
 import type { Hours, TransferRule, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
-import { adminSaveSystemPrompt } from '@/app/admin/clients/[id]/prompt/actions'
+import { adminSaveSystemPrompt, applyDraftAndPushPrompt } from '@/app/admin/clients/[id]/prompt/actions'
 
 type Props = {
   businessId: string
@@ -20,27 +20,67 @@ type Props = {
     faqs: FaqDraft[]
     companyInfo: CompanyInfo
   }
+  hasDraft: boolean
+  expectedBriefingUpdatedAt: string | null
 }
 
-export default function SystemPromptEditor({ businessId, businessName, initialFirstMessage, initialSystemPrompt, briefing }: Props) {
+const SECTION_LABEL: Record<string, string> = {
+  description: 'description', location: 'location', website: 'website',
+  hours: 'hours', services: 'services', faqs: 'FAQs', transferRules: 'transfer rules',
+}
+
+export default function SystemPromptEditor({
+  businessId, businessName, initialFirstMessage, initialSystemPrompt, briefing, hasDraft, expectedBriefingUpdatedAt,
+}: Props) {
   const [firstMessage, setFirstMessage] = useState(initialFirstMessage)
   const [systemPrompt, setSystemPrompt] = useState(initialSystemPrompt)
   const [isPending, startTransition]    = useTransition()
   const [status, setStatus]             = useState<'idle' | 'saved' | 'error'>('idle')
 
+  const [applyPending, startApplyTransition] = useTransition()
+  const [applyStatus, setApplyStatus]         = useState<'idle' | 'saved' | 'error'>('idle')
+  const [applyError, setApplyError]           = useState('')
+
+  const [regenerateNote, setRegenerateNote] = useState<string | null>(null)
+
   function regenerateFromBriefing() {
-    const generated = buildAssistantConfig({
-      businessName,
-      greeting: briefing.greeting,
-      customInstructions: briefing.customInstructions,
+    // No hand-authored prompt yet (brand-new client) — safe to generate a
+    // fresh, marker-ready starting point from scratch.
+    if (!systemPrompt.trim()) {
+      const generated = buildAssistantConfig({
+        businessName,
+        greeting: briefing.greeting,
+        customInstructions: briefing.customInstructions,
+        hours: briefing.hours,
+        services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
+        faqs: briefing.faqs,
+        transferRules: briefing.transferRules,
+        companyInfo: briefing.companyInfo,
+      })
+      setFirstMessage(generated.firstMessage)
+      setSystemPrompt(generated.systemPrompt)
+      setRegenerateNote(null)
+      return
+    }
+
+    // Existing hand-authored prompt — never overwrite it wholesale. Only
+    // swap the text inside <!-- briefing:key --> markers the admin has
+    // placed around data sections; everything else is left untouched.
+    const { patched, appliedSections, missingSections } = patchPromptSections(systemPrompt, {
       hours: briefing.hours,
       services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
       faqs: briefing.faqs,
       transferRules: briefing.transferRules,
       companyInfo: briefing.companyInfo,
     })
-    setFirstMessage(generated.firstMessage)
-    setSystemPrompt(generated.systemPrompt)
+    setSystemPrompt(patched)
+
+    const appliedLabels = appliedSections.map(k => SECTION_LABEL[k])
+    const missingLabels = missingSections.map(k => SECTION_LABEL[k])
+    const parts: string[] = []
+    if (appliedLabels.length) parts.push(`Updated: ${appliedLabels.join(', ')}.`)
+    if (missingLabels.length) parts.push(`No <!-- briefing:key --> markers found for: ${missingLabels.join(', ')} — wrap that section in the prompt to enable updates.`)
+    setRegenerateNote(parts.join(' '))
   }
 
   function save() {
@@ -51,6 +91,19 @@ export default function SystemPromptEditor({ businessId, businessName, initialFi
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
         setStatus('error')
+      }
+    })
+  }
+
+  function applyAndPush() {
+    startApplyTransition(async () => {
+      try {
+        await applyDraftAndPushPrompt(businessId, { firstMessage, systemPrompt }, expectedBriefingUpdatedAt)
+        setApplyStatus('saved')
+        setTimeout(() => setApplyStatus('idle'), 2500)
+      } catch (err) {
+        setApplyError(err instanceof Error ? err.message : 'Failed to apply')
+        setApplyStatus('error')
       }
     })
   }
@@ -69,12 +122,23 @@ export default function SystemPromptEditor({ businessId, businessName, initialFi
         <div className="flex items-center gap-3">
           {status === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Saved &amp; pushed to Vapi</span>}
           {status === 'error' && <span className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Failed to save</span>}
+          {applyStatus === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Draft applied &amp; pushed to Vapi</span>}
+          {applyStatus === 'error' && <span className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>{applyError}</span>}
           <button
             onClick={regenerateFromBriefing}
             className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg"
             style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
           >
-            <RefreshCw size={12} /> Regenerate from Briefing
+            <RefreshCw size={12} /> Regenerate from Briefing{hasDraft && <span style={{ color: 'var(--amber)' }}> (pending draft)</span>}
+          </button>
+          <button
+            onClick={applyAndPush}
+            disabled={!hasDraft || applyPending}
+            title={!hasDraft ? 'No pending client changes to apply' : undefined}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60"
+            style={{ background: 'var(--amber)' }}
+          >
+            {applyPending ? 'Applying…' : 'Apply & Push'}
           </button>
           <button
             onClick={save}
@@ -86,6 +150,10 @@ export default function SystemPromptEditor({ businessId, businessName, initialFi
           </button>
         </div>
       </div>
+
+      {regenerateNote && (
+        <p className="text-xs" style={{ color: 'var(--t4)' }}>{regenerateNote}</p>
+      )}
 
       <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
         <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>

@@ -1,10 +1,12 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { CheckCircle2, Clock } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { resolveBriefing, liveBriefing } from '@/lib/briefing'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import BriefingReadOnly from '@/components/BriefingReadOnly'
-import { dismissBriefingReview } from './actions'
-import type { Hours, TransferRule } from '@/app/(dashboard)/briefing/actions'
+import AdminCompanyInfoEditor from '@/components/AdminCompanyInfoEditor'
+import { rejectDraftBriefing } from './actions'
 
 export default async function AdminBriefingPage({
   params,
@@ -26,7 +28,10 @@ export default async function AdminBriefingPage({
     admin.auth.admin.getUserById(biz.user_id),
   ])
 
-  const dismiss = dismissBriefingReview.bind(null, biz.id)
+  const reject = rejectDraftBriefing.bind(null, biz.id)
+  const hasDraft = !!biz.draft_briefing
+  const draft = resolveBriefing(biz, services ?? [], faqs ?? [])
+  const live = liveBriefing(biz, services ?? [], faqs ?? [])
 
   return (
     <div className="h-full overflow-y-auto p-6">
@@ -57,14 +62,18 @@ export default async function AdminBriefingPage({
             style={{ background: 'rgba(217,138,11,0.08)', border: '1px solid rgba(217,138,11,0.25)', color: 'var(--amber)' }}>
             <Clock size={15} className="shrink-0" />
             <span className="flex-1">
-              {biz.name} updated this
+              {biz.name} submitted changes
               {biz.briefing_updated_at && (
                 <> on {new Date(biz.briefing_updated_at).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</>
-              )} — not yet reflected in Ellie&apos;s live system prompt.
+              )} — not yet applied to Ellie&apos;s live behaviour or system prompt.
             </span>
-            <form action={dismiss}>
-              <button type="submit" className="text-xs font-semibold underline shrink-0" style={{ color: 'var(--amber)' }}>
-                Dismiss
+            <Link href={`/admin/clients/${biz.id}/prompt`} className="text-xs font-semibold shrink-0" style={{ color: 'var(--amber)' }}>
+              Review &amp; Apply →
+            </Link>
+            <form action={reject}>
+              <button type="submit" className="text-xs font-semibold underline shrink-0" style={{ color: 'var(--coral)' }}
+                title="Discards these pending changes. Live data and the system prompt are left untouched.">
+                Reject changes
               </button>
             </form>
           </div>
@@ -76,23 +85,17 @@ export default async function AdminBriefingPage({
 
         <BriefingReadOnly
           businessName={biz.name}
-          greeting={biz.greeting_script ?? ''}
-          customInstructions={biz.custom_instructions ?? ''}
-          hours={biz.hours as Hours}
-          transferRules={biz.transfer_rules as TransferRule[]}
-          services={(services ?? []).map(s => ({
-            id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents,
-          }))}
-          faqs={(faqs ?? []).map(f => ({ id: f.id, question: f.question, answer: f.answer }))}
-          companyInfo={{
-            description: biz.description ?? '',
-            website: biz.website ?? '',
-            address: biz.address ?? '',
-            city: biz.city ?? '',
-            state: biz.state ?? '',
-            postcode: biz.postcode ?? '',
-            googleMapsUrl: biz.google_maps_url ?? '',
-          }}
+          hasDraft={hasDraft}
+          draft={draft}
+          live={live}
+          companyInfoSlot={
+            <AdminCompanyInfoEditor
+              businessId={biz.id}
+              hasDraft={hasDraft}
+              draftCompanyInfo={draft.companyInfo}
+              liveCompanyInfo={live.companyInfo}
+            />
+          }
         />
       </div>
     </div>

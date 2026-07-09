@@ -1,4 +1,5 @@
-import type { Hours, TransferRule, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
+import type { ReactNode } from 'react'
+import type { Hours, BriefingPayload } from '@/app/(dashboard)/briefing/actions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
 
 const DAY_LABELS: { key: keyof Hours; label: string }[] = [
@@ -11,70 +12,61 @@ function fmtCents(cents: number | null) {
   return `$${(cents / 100).toFixed(2)}`
 }
 
-type Props = {
-  businessName: string
-  greeting: string
-  customInstructions: string
-  hours: Hours
-  transferRules: TransferRule[]
-  services: ServiceDraft[]
-  faqs: FaqDraft[]
-  companyInfo: CompanyInfo
+/** Draft ids are stale/incidental (array-index-keyed in the editor) while live ids are real DB UUIDs — strip before diffing so real edits aren't masked by id noise. */
+function stripIds<T extends { id?: string }>(arr: T[]): Omit<T, 'id'>[] {
+  return arr.map(item => {
+    const copy: Record<string, unknown> = { ...item }
+    delete copy.id
+    return copy as Omit<T, 'id'>
+  })
 }
 
-export default function BriefingReadOnly({
-  businessName, greeting, customInstructions, hours, transferRules, services, faqs, companyInfo,
-}: Props) {
+function ChangedPill({ show }: { show: boolean | undefined }) {
+  if (!show) return null
+  return (
+    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+      style={{ color: 'var(--amber)', background: 'rgba(217,138,11,0.12)' }}>
+      Changed
+    </span>
+  )
+}
+
+type Props = {
+  businessName: string
+  hasDraft: boolean
+  draft: BriefingPayload
+  live: BriefingPayload
+  /** Company Information is admin-editable (AdminCompanyInfoEditor), not rendered by this component — injected as the first left-column section. */
+  companyInfoSlot: ReactNode
+}
+
+export default function BriefingReadOnly({ businessName, hasDraft, draft, live, companyInfoSlot }: Props) {
+  const { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs } = draft
   const placeholderGreeting = defaultGreeting(businessName)
-  const location = [companyInfo.address, companyInfo.city, companyInfo.state, companyInfo.postcode].filter(Boolean).join(', ')
+
+  const changed = hasDraft ? {
+    greeting: greeting.trim() !== live.greetingScript.trim(),
+    services: JSON.stringify(stripIds(services)) !== JSON.stringify(stripIds(live.services)),
+    customInstructions: customInstructions.trim() !== live.customInstructions.trim(),
+    hours: JSON.stringify(hours) !== JSON.stringify(live.hours),
+    faqs: JSON.stringify(stripIds(faqs)) !== JSON.stringify(stripIds(live.faqs)),
+    transferRules: JSON.stringify(transferRules) !== JSON.stringify(live.transferRules),
+  } : null
 
   return (
     <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
       <div className="flex flex-col gap-4">
 
-        {/* Company Information */}
-        <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
-            <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Company Information</h2>
-          </div>
-          <div className="p-5 flex flex-col gap-3 text-sm">
-            <div>
-              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Description</span>
-              <p style={{ color: companyInfo.description.trim() ? 'var(--text)' : 'var(--t3)' }}>
-                {companyInfo.description.trim() || 'None provided.'}
-              </p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Website</span>
-              <p style={{ color: companyInfo.website.trim() ? 'var(--text)' : 'var(--t3)' }}>
-                {companyInfo.website.trim() || '—'}
-              </p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Location</span>
-              <p style={{ color: location ? 'var(--text)' : 'var(--t3)' }}>
-                {location || '—'}
-              </p>
-            </div>
-            <div>
-              <span className="text-xs font-semibold block" style={{ color: 'var(--t3)' }}>Google Maps link</span>
-              {companyInfo.googleMapsUrl.trim() ? (
-                <a href={companyInfo.googleMapsUrl} target="_blank" rel="noopener noreferrer"
-                  className="underline break-all" style={{ color: 'var(--violet)' }}>
-                  {companyInfo.googleMapsUrl}
-                </a>
-              ) : (
-                <p style={{ color: 'var(--t3)' }}>—</p>
-              )}
-            </div>
-          </div>
-        </section>
+        {companyInfoSlot}
 
         {/* Greeting */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
-            <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Greeting</h2>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>What the client wants Ellie to open with</p>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div>
+              <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Greeting</h2>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>What the client wants Ellie to open with</p>
+            </div>
+            <ChangedPill show={changed?.greeting} />
           </div>
           <div className="p-5">
             <div className="rounded-xl p-3.5" style={{ background: 'var(--night)', color: '#DCD6EC' }}>
@@ -85,8 +77,9 @@ export default function BriefingReadOnly({
 
         {/* Services */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Services &amp; prices</h2>
+            <ChangedPill show={changed?.services} />
           </div>
           {services.length === 0 && <p className="px-5 py-6 text-sm" style={{ color: 'var(--t3)' }}>No services added</p>}
           {services.map((svc, i) => (
@@ -100,8 +93,9 @@ export default function BriefingReadOnly({
 
         {/* Custom instructions */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Custom instructions</h2>
+            <ChangedPill show={changed?.customInstructions} />
           </div>
           <div className="p-5">
             <p className="text-sm whitespace-pre-wrap" style={{ color: customInstructions.trim() ? 'var(--text)' : 'var(--t3)' }}>
@@ -115,8 +109,9 @@ export default function BriefingReadOnly({
 
         {/* Hours */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Business hours</h2>
+            <ChangedPill show={changed?.hours} />
           </div>
           {DAY_LABELS.map(({ key, label }, i) => {
             const d = hours[key]
@@ -133,8 +128,9 @@ export default function BriefingReadOnly({
 
         {/* FAQs */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Questions Ellie can answer</h2>
+            <ChangedPill show={changed?.faqs} />
           </div>
           {faqs.length === 0 && <p className="px-5 py-6 text-sm" style={{ color: 'var(--t3)' }}>No questions added</p>}
           {faqs.map((faq, i) => (
@@ -147,8 +143,9 @@ export default function BriefingReadOnly({
 
         {/* Transfer rules */}
         <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
             <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>When to put callers through</h2>
+            <ChangedPill show={changed?.transferRules} />
           </div>
           {transferRules.map((rule, i) => (
             <div key={rule.label} className="flex items-center gap-3.5 px-5 py-3.5 text-sm" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>

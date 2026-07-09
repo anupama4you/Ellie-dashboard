@@ -32,6 +32,7 @@ type Props = {
   initialServices: ServiceDraft[]
   initialFaqs: FaqDraft[]
   initialCompanyInfo: CompanyInfo
+  isPendingReview?: boolean
 }
 
 const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
@@ -40,6 +41,7 @@ const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
   initialHours, initialTransferRules, initialServices, initialFaqs, initialCompanyInfo,
+  isPendingReview,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
   const [greeting, setGreeting]                     = useState(initialGreeting)
@@ -73,7 +75,9 @@ export default function BriefingEditor({
           </h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--t3)' }}>Your business profile, and what Ellie knows when she answers calls.</p>
           <p className="text-xs mt-1" style={{ color: 'var(--t4)' }}>
-            Changes here are reviewed by our team before they go live on real calls.
+            {isPendingReview
+              ? 'You have changes pending review — this is what you last submitted, not yet live on real calls.'
+              : 'Changes here are reviewed by our team before they go live on real calls.'}
           </p>
         </div>
         <div className="flex items-center gap-3">

@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
-import { applyBriefingWrite } from '@/lib/briefing'
+import { saveDraftBriefing } from '@/lib/briefing'
 
 export type DayHours = { open: boolean; opensAt: string; closesAt: string }
 export type Hours = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', DayHours>
@@ -32,6 +32,9 @@ export type BriefingPayload = {
 
 export async function saveBriefing(businessId: string, payload: BriefingPayload): Promise<void> {
   const supabase = await createClient()
-  await applyBriefingWrite(supabase, businessId, payload)
+  await saveDraftBriefing(supabase, businessId, payload)
   revalidatePath('/briefing')
+  revalidatePath(`/admin/clients/${businessId}/briefing`)
+  revalidatePath(`/admin/clients/${businessId}/prompt`)
+  revalidatePath('/admin/clients')
 }

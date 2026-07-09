@@ -195,7 +195,7 @@ function requiredToolIds(): string[] {
  * separately).
  */
 function requiredServerConfig(current?: VapiAssistant['server']): VapiAssistant['server'] | undefined {
-  const base = process.env.APP_URL
+  const base = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL
   if (!base) return current
   const url = `${base.replace(/\/$/, '')}/api/vapi-webhook`
   const secret = process.env.VAPI_WEBHOOK_SECRET

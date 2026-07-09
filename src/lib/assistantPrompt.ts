@@ -8,7 +8,7 @@ const DAY_LABEL: Record<keyof Hours, string> = {
 }
 const DAY_ORDER: (keyof Hours)[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
 
-function fmtHours(hours: Hours): string {
+export function fmtHours(hours: Hours): string {
   return DAY_ORDER.map(day => {
     const d = hours[day]
     const label = DAY_LABEL[day]
@@ -16,7 +16,7 @@ function fmtHours(hours: Hours): string {
   }).join('\n')
 }
 
-function fmtServices(services: ServiceInput[]): string {
+export function fmtServices(services: ServiceInput[]): string {
   if (services.length === 0) return '(No services configured yet.)'
   return services.map(s => {
     const duration = s.durationMinutes ? ` (${s.durationMinutes} min)` : ''
@@ -25,12 +25,12 @@ function fmtServices(services: ServiceInput[]): string {
   }).join('\n')
 }
 
-function fmtFaqs(faqs: FaqInput[]): string {
+export function fmtFaqs(faqs: FaqInput[]): string {
   if (faqs.length === 0) return '(No common questions configured yet.)'
   return faqs.map(f => `- Q: ${f.question}\n  A: ${f.answer}`).join('\n')
 }
 
-function fmtTransferRules(rules: TransferRule[]): string {
+export function fmtTransferRules(rules: TransferRule[]): string {
   const enabled = rules.filter(r => r.enabled)
   if (enabled.length === 0) return '(No transfer rules — handle every call yourself.)'
   return enabled.map(r => `- ${r.label}: ${r.description}`).join('\n')
@@ -45,17 +45,93 @@ type CompanyInfoInput = {
   postcode?: string
 }
 
-function fmtCompanyInfo(info?: CompanyInfoInput): string {
-  const lines: string[] = []
-  if (info?.description?.trim()) lines.push(info.description.trim())
+export function fmtDescription(info?: CompanyInfoInput): string {
+  return info?.description?.trim() || '(No description provided yet.)'
+}
+
+export function fmtLocation(info?: CompanyInfoInput): string {
   const location = [info?.address, info?.city, info?.state, info?.postcode].filter(Boolean).join(', ')
-  if (location) lines.push(`Location: ${location}`)
-  if (info?.website?.trim()) lines.push(`Website: ${info.website.trim()}`)
-  return lines.length ? lines.join('\n') : ''
+  return location || '(No address provided yet.)'
+}
+
+export function fmtWebsite(info?: CompanyInfoInput): string {
+  return info?.website?.trim() || '(No website provided yet.)'
 }
 
 export function defaultGreeting(businessName: string): string {
   return `Thanks for calling ${businessName}, this is Ellie. How can I help you today?`
+}
+
+/**
+ * Data sections a hand-authored prompt can opt into surgical, marker-scoped
+ * updates for (see patchPromptSections below), instead of a full rewrite.
+ * Company info is split into three independent markers (rather than one
+ * appended blob) so each can be placed and phrased wherever it makes sense
+ * in a given prompt — e.g. description as its own paragraph, location inline
+ * after a "Location:" label the admin writes themselves.
+ */
+export type BriefingSectionKey = 'description' | 'location' | 'website' | 'hours' | 'services' | 'faqs' | 'transferRules'
+
+const SECTION_KEYS: BriefingSectionKey[] = ['description', 'location', 'website', 'hours', 'services', 'faqs', 'transferRules']
+
+/** Sections meant to sit inline within hand-written text (e.g. after a "Location:" label) — patched without surrounding newlines. Everything else is a standalone block. */
+const INLINE_SECTIONS = new Set<BriefingSectionKey>(['location', 'website'])
+
+export function sectionMarkers(key: BriefingSectionKey): { open: string; close: string } {
+  return { open: `<!-- briefing:${key} -->`, close: `<!-- /briefing:${key} -->` }
+}
+
+export type BriefingSectionData = {
+  hours: Hours
+  services: ServiceInput[]
+  faqs: FaqInput[]
+  transferRules: TransferRule[]
+  companyInfo?: CompanyInfoInput
+}
+
+function sectionContent(key: BriefingSectionKey, data: BriefingSectionData): string {
+  switch (key) {
+    case 'description':    return fmtDescription(data.companyInfo)
+    case 'location':        return fmtLocation(data.companyInfo)
+    case 'website':          return fmtWebsite(data.companyInfo)
+    case 'hours':             return fmtHours(data.hours)
+    case 'services':          return fmtServices(data.services)
+    case 'faqs':               return fmtFaqs(data.faqs)
+    case 'transferRules':     return fmtTransferRules(data.transferRules)
+  }
+}
+
+/**
+ * Surgically replaces only the text between matching `<!-- briefing:key -->`
+ * / `<!-- /briefing:key -->` markers with freshly formatted data — everything
+ * else in a hand-authored prompt is left byte-for-byte untouched. Sections
+ * with no markers present are reported as missing rather than guessed at, so
+ * a prompt that hasn't been marked up yet is never silently rewritten.
+ */
+export function patchPromptSections(
+  promptText: string,
+  data: BriefingSectionData,
+): { patched: string; appliedSections: BriefingSectionKey[]; missingSections: BriefingSectionKey[] } {
+  let patched = promptText
+  const appliedSections: BriefingSectionKey[] = []
+  const missingSections: BriefingSectionKey[] = []
+
+  for (const key of SECTION_KEYS) {
+    const { open, close } = sectionMarkers(key)
+    const openIdx = patched.indexOf(open)
+    const closeIdx = patched.indexOf(close)
+    if (openIdx === -1 || closeIdx === -1 || closeIdx < openIdx) {
+      missingSections.push(key)
+      continue
+    }
+    const before = patched.slice(0, openIdx + open.length)
+    const after = patched.slice(closeIdx)
+    const content = sectionContent(key, data)
+    patched = INLINE_SECTIONS.has(key) ? `${before}${content}${after}` : `${before}\n${content}\n${after}`
+    appliedSections.push(key)
+  }
+
+  return { patched, appliedSections, missingSections }
 }
 
 export function buildAssistantConfig(input: {
@@ -72,25 +148,47 @@ export function buildAssistantConfig(input: {
     ? `\nAdditional instructions from the business owner — follow these closely, they override general guidance above if they conflict:\n${input.customInstructions.trim()}\n`
     : ''
 
-  const companyInfoText = fmtCompanyInfo(input.companyInfo)
-  const companyInfoSection = companyInfoText ? `\nAbout the business:\n${companyInfoText}\n` : ''
+  const m = {
+    description: sectionMarkers('description'),
+    location: sectionMarkers('location'),
+    website: sectionMarkers('website'),
+    hours: sectionMarkers('hours'),
+    services: sectionMarkers('services'),
+    faqs: sectionMarkers('faqs'),
+    transferRules: sectionMarkers('transferRules'),
+  }
 
   const systemPrompt = `You are Ellie, the AI receptionist for ${input.businessName}.
 
 Persona: Warm, professional, calm under pressure. Speak in natural Australian English. Never sound robotic.
-${companyInfoSection}
+
+About the business:
+${m.description.open}
+${fmtDescription(input.companyInfo)}
+${m.description.close}
+Location: ${m.location.open}${fmtLocation(input.companyInfo)}${m.location.close}
+Website: ${m.website.open}${fmtWebsite(input.companyInfo)}${m.website.close}
+
 Business hours:
+${m.hours.open}
 ${fmtHours(input.hours)}
+${m.hours.close}
 Outside these hours, still answer the call and offer to book for the next open day.
 
 Services & prices:
+${m.services.open}
 ${fmtServices(input.services)}
+${m.services.close}
 
 Common questions you can answer directly:
+${m.faqs.open}
 ${fmtFaqs(input.faqs)}
+${m.faqs.close}
 
 When to transfer the caller to the business owner instead of handling it yourself:
+${m.transferRules.open}
 ${fmtTransferRules(input.transferRules)}
+${m.transferRules.close}
 ${customSection}
 How to handle every call:
 - Greet callers warmly and get straight to helping them.

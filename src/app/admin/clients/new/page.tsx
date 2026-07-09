@@ -1,7 +1,23 @@
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+
+/**
+ * NEXT_PUBLIC_SITE_URL wins when set — trust the environment over guessing.
+ * Otherwise fall back to the request's own host/protocol (respecting
+ * x-forwarded-proto behind a reverse proxy). Defaults to http rather than
+ * https for unrecognized hosts, since this app is also served plain-http on
+ * a custom domain, not just localhost.
+ */
+async function siteUrl() {
+  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
+  const h = await headers()
+  const host = h.get('host') ?? 'localhost:3000'
+  const protocol = h.get('x-forwarded-proto') ?? 'http'
+  return `${protocol}://${host}`
+}
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -20,15 +36,21 @@ export default async function NewClientPage({
   async function createClientAction(formData: FormData) {
     'use server'
     const admin = createAdminClient()
-    const email = (formData.get('email') as string).trim()
+    const email        = (formData.get('email') as string).trim()
+    const businessName = (formData.get('name') as string).trim()
 
-    // Invite user — Supabase sends an email with a set-password link
-    const { data: { user }, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email)
+    // Invite user — Supabase sends an email with a set-password link that
+    // lands on /auth/set-password after the invite session is established.
+    // business_name feeds {{ .Data.business_name }} in the Invite email template.
+    const { data: { user }, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+      redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password`,
+      data: { business_name: businessName },
+    })
     if (inviteErr || !user) redirect('/admin/clients/new?error=user')
 
     const { data: biz, error: bizErr } = await admin.from('businesses').insert({
       user_id:           user.id,
-      name:              (formData.get('name') as string).trim(),
+      name:              businessName,
       phone:             (formData.get('phone') as string).trim() || null,
       plan:              formData.get('plan') as string,
       vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,

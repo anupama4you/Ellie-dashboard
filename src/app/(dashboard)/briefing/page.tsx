@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
+import { resolveBriefing } from '@/lib/briefing'
 import BriefingEditor from '@/components/BriefingEditor'
-import type { Hours, TransferRule } from './actions'
 
 export default async function BriefingPage() {
   const { business: biz } = await getCurrentBusiness()
@@ -22,29 +22,22 @@ export default async function BriefingPage() {
     supabase.from('business_faqs').select('*').eq('business_id', biz.id).order('sort_order'),
   ])
 
+  const resolved = resolveBriefing(biz, services ?? [], faqs ?? [])
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-6 max-w-[1220px] mx-auto">
         <BriefingEditor
           businessId={biz.id}
           businessName={biz.name}
-          initialGreeting={biz.greeting_script ?? ''}
-          initialCustomInstructions={biz.custom_instructions ?? ''}
-          initialHours={biz.hours as Hours}
-          initialTransferRules={biz.transfer_rules as TransferRule[]}
-          initialServices={(services ?? []).map(s => ({
-            id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents,
-          }))}
-          initialFaqs={(faqs ?? []).map(f => ({ id: f.id, question: f.question, answer: f.answer }))}
-          initialCompanyInfo={{
-            description: biz.description ?? '',
-            website: biz.website ?? '',
-            address: biz.address ?? '',
-            city: biz.city ?? '',
-            state: biz.state ?? '',
-            postcode: biz.postcode ?? '',
-            googleMapsUrl: biz.google_maps_url ?? '',
-          }}
+          initialGreeting={resolved.greetingScript}
+          initialCustomInstructions={resolved.customInstructions}
+          initialHours={resolved.hours}
+          initialTransferRules={resolved.transferRules}
+          initialServices={resolved.services}
+          initialFaqs={resolved.faqs}
+          initialCompanyInfo={resolved.companyInfo}
+          isPendingReview={resolved.isDraft}
         />
       </div>
     </div>

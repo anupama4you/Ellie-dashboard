@@ -9,7 +9,12 @@
       "Bash(cat node_modules/react-day-picker/src/style.css)",
       "Bash(find node_modules/react-day-picker -name \"*.css\")",
       "Bash(node -e \"const pkg = require\\('./node_modules/react-day-picker/package.json'\\); console.log\\(JSON.stringify\\(pkg.exports, null, 2\\)\\)\")",
-      "PowerShell(npx tsc --noEmit)"
+      "PowerShell(npx tsc --noEmit)",
+      "Bash(wc -l /tmp_tsc_out.txt)",
+      "Bash(npx eslint *)",
+      "Read(//tmp/**)",
+      "Bash(grep -n \"NEXT_PUBLIC\\\\|SITE_URL\\\\|VERCEL_URL\" .env.local)",
+      "Bash(grep -rn \"NEXT_PUBLIC_SITE_URL\\\\|process.env.URL\\\\|VERCEL_URL\" src)"
     ],
     "additionalDirectories": [
       "c:\\Users\\dilshana\\Documents\\projects\\ellie-dashboard\\src\\app\\admin\\clients"
