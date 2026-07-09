@@ -56,11 +56,8 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
     >
       {/* Brand */}
       <div className="flex items-center gap-2.5 px-2 pb-5">
-        <div
-          className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center shrink-0"
-          style={{ background: 'linear-gradient(135deg, var(--violet), #9E7BFF)' }}
-        >
-          <Image src="/logo.png" alt="" width={20} height={20} className="opacity-95" style={{ width: 20, height: 20 }} />
+        <div className="w-[34px] h-[34px] rounded-[10px] overflow-hidden shrink-0">
+          <Image src="/favicon.png" alt="" width={34} height={34} className="w-full h-full object-cover" />
         </div>
         <div>
           <div className="flex items-center gap-1.5">

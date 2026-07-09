@@ -94,7 +94,22 @@ export default async function TodayPage() {
     const d = new Date(a.scheduled_at)
     return d >= dayStart && d <= dayEnd
   })
-  const revenueBookedCents = todayAppts.reduce((sum, a) => sum + (priceByService.get(a.service?.toLowerCase() ?? '') ?? 0), 0)
+  // "Revenue saved" — the value of business that would've walked away (to a
+  // missed call, a competitor, or voicemail) had Ellie not answered and
+  // booked it. Uses each service's real configured price where known;
+  // otherwise this business hasn't priced its services yet, so we fall back
+  // to the average of whatever prices *are* configured, or a flat estimate
+  // if none are — an approximation, not an invoice, hence the "~" shown with it.
+  const configuredPrices = (services ?? [])
+    .map(s => s.price_cents as number | null)
+    .filter((c): c is number => c != null && c > 0)
+  const fallbackPriceCents = configuredPrices.length
+    ? Math.round(configuredPrices.reduce((a, b) => a + b, 0) / configuredPrices.length)
+    : 5000
+  const revenueSavedCents = todayAppts.reduce((sum, a) => {
+    const known = priceByService.get(a.service?.toLowerCase() ?? '')
+    return sum + (known ?? fallbackPriceCents)
+  }, 0)
 
   const todayCalls = allCalls.filter(c => {
     if (!c.started_at) return false
@@ -186,14 +201,15 @@ export default async function TodayPage() {
 
           <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Revenue booked</span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Revenue saved</span>
               <span className="w-6.5 h-6.5 rounded-lg flex items-center justify-center" style={{ background: 'var(--amber-soft)' }}>
                 <DollarSign size={13} style={{ color: 'var(--amber)' }} />
               </span>
             </div>
-            <p className="font-extrabold mt-2" style={{ fontFamily: 'var(--font-display)', fontSize: '1.7rem', color: 'var(--ink)' }}>
-              ${(revenueBookedCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+            <p className="font-extrabold mt-2" style={{ fontFamily: 'var(--font-display)', fontSize: '1.7rem', color: 'var(--signal)' }}>
+              +${(revenueSavedCents / 100).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
             </p>
+            <p className="text-[11px] mt-1" style={{ color: 'var(--ink-3)' }}>Business Ellie didn&apos;t let slip away today</p>
           </div>
 
           <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>

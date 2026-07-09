@@ -66,7 +66,7 @@ export default function SetPasswordPage() {
 
       <div className="w-full max-w-sm relative">
         <div className="flex justify-center mb-8">
-          <Image src="/logo.png" alt="Ellie" width={590} height={343} className="h-16 w-auto" />
+          <Image src="/favicon.png" alt="Ellie" width={128} height={128} className="h-16 w-16" />
         </div>
 
         <div className="rounded-2xl p-8 relative overflow-hidden"

@@ -28,7 +28,8 @@ export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }
       {/* Logo + admin badge */}
       <div className="px-4 h-14 flex items-center gap-2.5 shrink-0"
         style={{ borderBottom: '1px solid var(--b3)' }}>
-        <Image src="/logo.png" alt="Ellie" width={100} height={32} className="h-7 w-auto" />
+        <Image src="/favicon.png" alt="Ellie" width={64} height={64} className="h-7 w-7 rounded-md" />
+        <span className="font-extrabold text-sm" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Ellie</span>
         <span className="text-xs px-1.5 py-0.5 rounded-md font-bold tracking-wide"
           style={{ background: 'rgba(217,138,11,0.12)', color: 'var(--amber)', border: '1px solid rgba(217,138,11,0.25)' }}>
           ADMIN

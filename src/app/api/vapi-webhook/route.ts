@@ -203,7 +203,13 @@ export async function POST(req: Request) {
         if (!biz) {
           resultText = "I couldn't find this business's account — let the caller know you'll have someone call them back to confirm."
         } else {
-          const { data: inserted, error: insertError } = await supabase.from('appointments').insert({
+          const { data: services } = await supabase
+            .from('business_services')
+            .select('name, duration_minutes')
+            .eq('business_id', biz.id)
+          const durationMins = durationFor(args.service as string | undefined, services ?? [])
+
+          const appointmentRow = {
             business_id:    biz.id,
             customer_name:  args.customerName  ?? 'Unknown',
             customer_phone: phone ?? null,
@@ -213,7 +219,17 @@ export async function POST(req: Request) {
             status:         'confirmed',
             notes:          args.notes ?? null,
             vapi_call_id:   callId ?? null,
-          }).select('id').single()
+          }
+
+          let { data: inserted, error: insertError } = await supabase.from('appointments').insert(appointmentRow).select('id').single()
+
+          // `vapi_call_id` is a recently-added column — if the migration hasn't been
+          // run in this environment yet, don't let that break the actual booking.
+          if (insertError?.code === '42703') {
+            console.error('appointments.vapi_call_id column missing — run supabase-schema-appointments-call-link.sql. Retrying without it.')
+            const withoutCallId = { ...appointmentRow, vapi_call_id: undefined }
+            ;({ data: inserted, error: insertError } = await supabase.from('appointments').insert(withoutCallId).select('id').single())
+          }
 
           if (insertError) {
             console.error('Failed to insert appointment:', insertError)
@@ -229,6 +245,7 @@ export async function POST(req: Request) {
                   '',
                   `Your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for:`,
                   `📅 ${fmtDate(args.dateTime as string, biz.timezone)}`,
+                  `⏱️ ${durationMins} minutes`,
                   ...(link ? ['', `📍 ${link}`] : []),
                   '',
                   'See you then! ✅',
@@ -244,12 +261,7 @@ export async function POST(req: Request) {
             try {
               const google = await getValidAccessToken(supabase, biz.id)
               if (google) {
-                const { data: services } = await supabase
-                  .from('business_services')
-                  .select('name, duration_minutes')
-                  .eq('business_id', biz.id)
                 const start = new Date(args.dateTime as string)
-                const durationMins = durationFor(args.service as string | undefined, services ?? [])
                 const end = new Date(start.getTime() + durationMins * 60_000)
 
                 const event = await createCalendarEvent(google.accessToken, google.calendarId, {
@@ -262,7 +274,7 @@ export async function POST(req: Request) {
 
                 await supabase.from('appointments')
                   .update({ calendar_event_id: event.id, calendar_event_link: event.htmlLink ?? null })
-                  .eq('id', inserted.id)
+                  .eq('id', inserted!.id)
               }
             } catch (calErr) {
               console.error('Failed to create Google Calendar event — booking already saved locally:', calErr)

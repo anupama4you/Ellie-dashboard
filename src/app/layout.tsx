@@ -9,6 +9,9 @@ const mono    = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'
 export const metadata: Metadata = {
   title: 'Ellie Dashboard',
   description: 'Your AI receptionist command centre',
+  icons: {
+    icon: '/favicon.png',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

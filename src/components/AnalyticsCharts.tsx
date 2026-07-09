@@ -190,7 +190,7 @@ export default function AnalyticsCharts({ calls, plan, timeZone, usage }: { call
               </div>
               <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--paper)' }}>
                 <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${barPct}%`, background: `linear-gradient(90deg, ${color}, ${color}88)` }} />
+                  style={{ width: `${barPct}%`, background: color }} />
               </div>
               {usage.pct >= 80 && (
                 <p className="text-xs mt-2" style={{ color: 'var(--amber)' }}>
