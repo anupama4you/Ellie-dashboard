@@ -26,6 +26,7 @@ type BizBriefingRow = {
   custom_instructions: string | null
   hours: unknown
   transfer_rules: unknown
+  transfer_phone_number: string | null
   description: string | null
   website: string | null
   address: string | null
@@ -46,6 +47,7 @@ export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[]
     customInstructions: biz.custom_instructions ?? '',
     hours: biz.hours as Hours,
     transferRules: biz.transfer_rules as TransferRule[],
+    transferPhoneNumber: biz.transfer_phone_number ?? '',
     services: liveServices.map(s => ({ id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents })),
     faqs: liveFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer })),
     companyInfo: {

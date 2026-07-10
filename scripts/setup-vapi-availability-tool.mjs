@@ -45,6 +45,11 @@ const res = await fetch('https://api.vapi.ai/tool', {
         required: [],
       },
     },
+    messages: [
+      { type: 'request-start', blocking: true, content: 'Please hold for just a moment while I check our appointment calendar.' },
+      { type: 'request-failed', role: 'system', content: 'The calendar check failed — apologise briefly without giving technical detail, then call the transferCall tool to connect the caller with the team instead of retrying.' },
+      { type: 'request-complete', role: 'system', content: 'Offer the caller the returned time options naturally in one or two sentences — never read out ISO timestamps.' },
+    ],
     server,
   }),
 })

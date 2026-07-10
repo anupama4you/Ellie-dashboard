@@ -1,5 +1,6 @@
 import { AlertTriangle, ChevronDown, Clock3 } from 'lucide-react'
 import PlayButton from './PlayButton'
+import CopyButton from './CopyButton'
 import { initials, avatarColor } from '@/lib/avatar'
 
 function fmtDuration(secs: number) {
@@ -70,9 +71,13 @@ export default function CallRow({
               <Clock3 size={11} style={{ color: 'var(--ink-3)' }} />
             </span>
           )}
+          {customerNumber && !customerName && <CopyButton text={customerNumber} />}
         </div>
         {customerName && customerNumber && (
-          <p className="text-xs truncate mt-0.5 font-mono" style={{ color: 'var(--ink-3)' }}>{customerNumber}</p>
+          <div className="flex items-center gap-1 mt-0.5">
+            <p className="text-xs truncate font-mono" style={{ color: 'var(--ink-3)' }}>{customerNumber}</p>
+            <CopyButton text={customerNumber} />
+          </div>
         )}
         {summary && (
           <p className="text-xs truncate mt-0.5" style={{ color: 'var(--ink-3)' }}>{summary}</p>

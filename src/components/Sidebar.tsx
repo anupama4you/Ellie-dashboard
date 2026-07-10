@@ -13,7 +13,7 @@ const NAV = [
   { href: '/recordings',   label: 'Recordings',          icon: Clock           },
   { href: '/sms',          label: 'SMS log',             icon: MessageSquare   },
   { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
-  { href: '/briefing',     label: 'Company Information', icon: Building2       },
+  { href: '/briefing',     label: 'Business', icon: Building2       },
   { href: '/settings',     label: 'Settings',            icon: Settings        },
 ]
 

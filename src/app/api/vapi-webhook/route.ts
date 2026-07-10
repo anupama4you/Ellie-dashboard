@@ -121,6 +121,37 @@ export async function POST(req: Request) {
   const { message } = body
   if (!message) return json({ ok: true })
 
+  // Native transferCall tool with no configured `destinations` — Vapi asks
+  // us where to send the call at transfer time instead of us hand-rolling a
+  // custom tool. Response shape is `{ destination }` or `{ error }`, not the
+  // `{ results: [...] }` shape every other tool-calls response uses.
+  if (message.type === 'transfer-destination-request') {
+    const assistantId = message.call?.assistantId as string | undefined
+
+    try {
+      const { data: biz } = await supabase
+        .from('businesses')
+        .select('transfer_phone_number')
+        .eq('vapi_assistant_id', assistantId)
+        .single()
+
+      if (!biz?.transfer_phone_number) {
+        return json({ error: 'No transfer number configured for this business — take a message instead.' })
+      }
+
+      return json({
+        destination: {
+          type: 'number',
+          number: biz.transfer_phone_number,
+          transferPlan: { mode: 'warm-transfer-say-summary' },
+        },
+      })
+    } catch (err) {
+      console.error('transfer-destination-request handling failed:', err)
+      return json({ error: 'Something went wrong looking up the transfer number.' })
+    }
+  }
+
   if (message.type === 'tool-calls') {
     const results: { toolCallId: string; result: string }[] = []
 

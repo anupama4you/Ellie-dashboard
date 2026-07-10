@@ -60,6 +60,7 @@ export async function applyDraftAndPushPrompt(
     custom_instructions: draft.customInstructions,
     hours: draft.hours,
     transfer_rules: draft.transferRules,
+    transfer_phone_number: draft.transferPhoneNumber || null,
     description: draft.companyInfo.description,
     website: draft.companyInfo.website,
     address: draft.companyInfo.address,

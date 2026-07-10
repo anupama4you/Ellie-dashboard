@@ -3,6 +3,7 @@ import {
   PhoneIncoming, PhoneOutgoing, Globe,
 } from 'lucide-react'
 import WaveformPlayer from './WaveformPlayer'
+import CopyButton from './CopyButton'
 import { formatInZone } from '@/lib/timezone'
 
 function fmtDuration(secs: number) {
@@ -84,8 +85,11 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
               <Phone size={15} style={{ color: 'var(--violet)' }} />
             </div>
             <div>
-              <div className="text-base font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-                {call.customerNumber ?? call.customerName ?? 'Unknown caller'}
+              <div className="flex items-center gap-1.5">
+                <div className="text-base font-bold leading-tight" style={{ color: 'var(--ink)' }}>
+                  {call.customerNumber ?? call.customerName ?? 'Unknown caller'}
+                </div>
+                {call.customerNumber && <CopyButton text={call.customerNumber} />}
               </div>
               <div className="flex items-center gap-3 mt-1">
                 <CallTypeLabel type={call.type} />

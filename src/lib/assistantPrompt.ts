@@ -189,6 +189,7 @@ When to transfer the caller to the business owner instead of handling it yoursel
 ${m.transferRules.open}
 ${fmtTransferRules(input.transferRules)}
 ${m.transferRules.close}
+Also call the transferCall tool — the same as for the situations above — if the caller asks for "the team," a specific person by name, or any human, if you've made a genuine attempt to understand or help them and the conversation still isn't going anywhere, or if any tool call fails (checkAvailability, bookAppointment, or anything else). Call the tool to actually connect them — don't just say you'll transfer them without calling it. If the tool comes back unable to transfer, apologise briefly and take a message instead (first name, number, brief reason), and reassure them someone will call back.
 ${customSection}
 How to handle every call:
 - Greet callers warmly and get straight to helping them.

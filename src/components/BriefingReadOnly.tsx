@@ -41,7 +41,7 @@ type Props = {
 }
 
 export default function BriefingReadOnly({ businessName, hasDraft, draft, live, companyInfoSlot }: Props) {
-  const { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs } = draft
+  const { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services, faqs } = draft
   const placeholderGreeting = defaultGreeting(businessName)
 
   const changed = hasDraft ? {
@@ -51,6 +51,7 @@ export default function BriefingReadOnly({ businessName, hasDraft, draft, live, 
     hours: JSON.stringify(hours) !== JSON.stringify(live.hours),
     faqs: JSON.stringify(stripIds(faqs)) !== JSON.stringify(stripIds(live.faqs)),
     transferRules: JSON.stringify(transferRules) !== JSON.stringify(live.transferRules),
+    transferPhoneNumber: transferPhoneNumber.trim() !== live.transferPhoneNumber.trim(),
   } : null
 
   return (
@@ -159,6 +160,15 @@ export default function BriefingReadOnly({ businessName, hasDraft, draft, live, 
               </span>
             </div>
           ))}
+          <div className="flex items-center justify-between gap-3 px-5 py-3.5 text-sm" style={{ borderTop: '1px solid var(--border)' }}>
+            <div>
+              <b style={{ color: 'var(--text)' }}>Transfer number</b>
+              <span className="block text-xs mt-0.5" style={{ color: transferPhoneNumber.trim() ? 'var(--text)' : 'var(--t3)' }}>
+                {transferPhoneNumber.trim() || 'Not set — Ellie takes a message instead'}
+              </span>
+            </div>
+            <ChangedPill show={changed?.transferPhoneNumber} />
+          </div>
         </section>
       </div>
     </div>

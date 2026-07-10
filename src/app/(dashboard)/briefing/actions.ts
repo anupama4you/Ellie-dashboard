@@ -25,6 +25,7 @@ export type BriefingPayload = {
   customInstructions: string
   hours: Hours
   transferRules: TransferRule[]
+  transferPhoneNumber: string
   services: ServiceDraft[]
   faqs: FaqDraft[]
   companyInfo: CompanyInfo

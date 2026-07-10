@@ -51,6 +51,11 @@ const res = await fetch('https://api.vapi.ai/tool', {
         required: ['appointmentId', 'newDateTime'],
       },
     },
+    messages: [
+      { type: 'request-start', blocking: true, content: 'Perfect. Please hold for just a moment while I update your booking.' },
+      { type: 'request-failed', role: 'system', content: 'The reschedule failed — apologise briefly without giving technical detail, then call the transferCall tool to connect the caller with the team instead of retrying.' },
+      { type: 'request-complete', role: 'system', content: 'Confirm the appointment has been moved, warmly, in one short sentence using the result just returned.' },
+    ],
     server,
   }),
 })

@@ -29,6 +29,7 @@ type Props = {
   initialCustomInstructions: string
   initialHours: Hours
   initialTransferRules: TransferRule[]
+  initialTransferPhoneNumber: string
   initialServices: ServiceDraft[]
   initialFaqs: FaqDraft[]
   initialCompanyInfo: CompanyInfo
@@ -40,7 +41,7 @@ const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
 
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
-  initialHours, initialTransferRules, initialServices, initialFaqs, initialCompanyInfo,
+  initialHours, initialTransferRules, initialTransferPhoneNumber, initialServices, initialFaqs, initialCompanyInfo,
   isPendingReview,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
@@ -48,6 +49,7 @@ export default function BriefingEditor({
   const [customInstructions, setCustomInstructions] = useState(initialCustomInstructions)
   const [hours, setHours]                           = useState(initialHours)
   const [transferRules, setTransferRules]           = useState(initialTransferRules)
+  const [transferPhoneNumber, setTransferPhoneNumber] = useState(initialTransferPhoneNumber)
   const [services, setServices]                     = useState(initialServices)
   const [faqs, setFaqs]                              = useState(initialFaqs)
   const [companyInfo, setCompanyInfo]               = useState(initialCompanyInfo)
@@ -57,7 +59,7 @@ export default function BriefingEditor({
   function save() {
     startTransition(async () => {
       try {
-        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, services, faqs, companyInfo })
+        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services, faqs, companyInfo })
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
@@ -390,6 +392,20 @@ export default function BriefingEditor({
                 </button>
               </div>
             ))}
+            <div className="flex flex-col gap-1.5 px-5 py-3.5" style={{ borderTop: '1px solid var(--border)' }}>
+              <label className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Number to transfer calls to</label>
+              <span className="text-xs" style={{ color: 'var(--t3)' }}>
+                When one of the above situations comes up, Ellie connects the caller to this number. Leave blank and she&apos;ll take a message instead.
+              </span>
+              <input
+                type="tel"
+                value={transferPhoneNumber}
+                onChange={e => setTransferPhoneNumber(e.target.value)}
+                placeholder="e.g. 0412 345 678"
+                className="text-sm rounded-lg px-2.5 py-1.5 mt-1"
+                style={{ border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg2)' }}
+              />
+            </div>
           </section>
         </div>
       </div>

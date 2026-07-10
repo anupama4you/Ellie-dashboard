@@ -50,6 +50,11 @@ const res = await fetch('https://api.vapi.ai/tool', {
         required: [],
       },
     },
+    messages: [
+      { type: 'request-start', blocking: true, content: 'No problem, let me just pull up your booking. One moment.' },
+      { type: 'request-failed', role: 'system', content: 'The lookup failed — apologise briefly without giving technical detail, then call the transferCall tool to connect the caller with the team.' },
+      { type: 'request-complete', role: 'system', content: 'Describe the appointment(s) found naturally by service and day/time only — never mention internal reference ids. Ask which one they mean if there is more than one.' },
+    ],
     server,
   }),
 })

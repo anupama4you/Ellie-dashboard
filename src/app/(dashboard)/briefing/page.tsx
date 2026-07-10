@@ -34,6 +34,7 @@ export default async function BriefingPage() {
           initialCustomInstructions={resolved.customInstructions}
           initialHours={resolved.hours}
           initialTransferRules={resolved.transferRules}
+          initialTransferPhoneNumber={resolved.transferPhoneNumber}
           initialServices={resolved.services}
           initialFaqs={resolved.faqs}
           initialCompanyInfo={resolved.companyInfo}

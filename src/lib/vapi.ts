@@ -184,6 +184,7 @@ function requiredToolIds(): string[] {
     process.env.VAPI_CHECK_AVAILABILITY_TOOL_ID,
     process.env.VAPI_FIND_APPOINTMENTS_TOOL_ID,
     process.env.VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID,
+    process.env.VAPI_TRANSFER_CALL_TOOL_ID,
   ].filter((id): id is string => !!id)
 }
 
