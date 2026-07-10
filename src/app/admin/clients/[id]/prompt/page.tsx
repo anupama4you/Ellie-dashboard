@@ -64,6 +64,7 @@ export default async function AdminSystemPromptPage({
           name={biz.name}
           email={clientUser?.email ?? ''}
           plan={biz.plan}
+          planStatus={biz.plan_status}
           hasAssistant={!!biz.vapi_assistant_id}
           active="prompt"
         />

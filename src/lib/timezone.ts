@@ -88,3 +88,40 @@ export function shiftDateStr(dateStr: string, days: number): string {
   const shifted = new Date(Date.UTC(y, mo - 1, d + days))
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`
 }
+
+function daysInMonth(y: number, m: number): number {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+/** `anchorDay` clamped to the last real day of month `y`-`m` (1-indexed, may fall outside [1,12] — normalized), at 00:00 in `timeZone`. */
+function anchoredDateInZone(anchorDay: number, y: number, m: number, timeZone: string): Date {
+  const normY = y + Math.floor((m - 1) / 12)
+  const normM = ((m - 1) % 12 + 12) % 12 + 1
+  const day = Math.min(anchorDay, daysInMonth(normY, normM))
+  return zonedTimeToUtc(timeZone, normY, normM, day, 0, 0)
+}
+
+/**
+ * Start (00:00, in `timeZone`) of the current monthly billing cycle anchored
+ * to `anchor`'s calendar day — e.g. a plan that started on the 14th renews
+ * on the 14th of each month, not the 1st. Clamps to the last day of shorter
+ * months (an anchor of the 31st renews on the 30th in April).
+ */
+export function startOfBillingCycleInZone(anchor: Date, now: Date, timeZone: string): Date {
+  const [ay, am, ad] = dateStrInZone(anchor, timeZone).split('-').map(Number)
+  const [ny, nm]     = dateStrInZone(now, timeZone).split('-').map(Number)
+
+  let monthsElapsed = (ny - ay) * 12 + (nm - am)
+  if (anchoredDateInZone(ad, ay, am + monthsElapsed, timeZone) > now) monthsElapsed -= 1
+  return anchoredDateInZone(ad, ay, am + monthsElapsed, timeZone)
+}
+
+/** Start of the *next* monthly billing cycle after `now`, anchored the same way as `startOfBillingCycleInZone` — when the current cycle's usage count resets. */
+export function startOfNextBillingCycleInZone(anchor: Date, now: Date, timeZone: string): Date {
+  const [ay, am, ad] = dateStrInZone(anchor, timeZone).split('-').map(Number)
+  const [ny, nm]     = dateStrInZone(now, timeZone).split('-').map(Number)
+
+  let monthsElapsed = (ny - ay) * 12 + (nm - am)
+  if (anchoredDateInZone(ad, ay, am + monthsElapsed, timeZone) <= now) monthsElapsed += 1
+  return anchoredDateInZone(ad, ay, am + monthsElapsed, timeZone)
+}

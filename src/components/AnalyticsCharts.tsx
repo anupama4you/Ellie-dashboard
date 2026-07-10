@@ -176,25 +176,39 @@ export default function AnalyticsCharts({ calls, plan, timeZone, usage }: { call
           <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Monthly plan usage</h2>
           <span className="text-xs capitalize px-2.5 py-0.5 rounded-full font-semibold"
             style={{ background: 'var(--violet-soft)', color: 'var(--violet)', border: '1px solid rgba(109,74,255,0.2)' }}>
-            {plan}
+            {usage.isTrial ? 'Free trial' : plan}
           </span>
         </div>
-        {(() => {
-          const barPct = Math.min(usage.pct, 100)
-          const color  = usage.pct >= 90 ? 'var(--coral)' : usage.pct >= 70 ? 'var(--amber)' : 'var(--signal)'
+        {usage.isTrial ? (
+          <div>
+            <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
+              <span>{usage.used} calls used so far</span>
+              <span>Unlimited during trial</span>
+            </div>
+            <p className="text-xs mt-2" style={{ color: 'var(--violet)' }}>
+              {usage.trialDaysLeft != null && usage.trialDaysLeft > 0
+                ? `${usage.trialDaysLeft} day${usage.trialDaysLeft !== 1 ? 's' : ''} left in your trial.`
+                : 'Your trial has ended.'}
+              {' '}Ends {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
+            </p>
+          </div>
+        ) : (() => {
+          const pct    = usage.pct ?? 0
+          const barPct = Math.min(pct, 100)
+          const color  = pct >= 90 ? 'var(--coral)' : pct >= 70 ? 'var(--amber)' : 'var(--signal)'
           return (
             <div>
               <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
-                <span>{usage.used} calls used this month</span>
+                <span>{usage.used} calls used this cycle</span>
                 <span>{usage.limit} call limit</span>
               </div>
               <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--paper)' }}>
                 <div className="h-full rounded-full transition-all duration-700"
                   style={{ width: `${barPct}%`, background: color }} />
               </div>
-              {usage.pct >= 80 && (
+              {pct >= 80 && (
                 <p className="text-xs mt-2" style={{ color: 'var(--amber)' }}>
-                  {usage.pct >= 100 ? "You're over your plan's included calls — consider upgrading." : usage.pct >= 90 ? 'Almost at your plan limit — consider upgrading.' : '80% of your monthly calls used.'}
+                  {pct >= 100 ? "You're over your plan's included calls — consider upgrading." : pct >= 90 ? 'Almost at your plan limit — consider upgrading.' : '80% of this cycle\'s calls used.'}
                 </p>
               )}
               <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>

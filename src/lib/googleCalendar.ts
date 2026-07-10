@@ -89,6 +89,11 @@ export async function getValidAccessToken(
   supabase: SupabaseClient,
   businessId: string,
 ): Promise<{ accessToken: string; calendarId: string } | null> {
+  // No encryption key configured in this environment — Google Calendar sync
+  // simply isn't available here yet, same as "no connection". Not an error:
+  // don't attempt decrypt() (which throws) or log anything for it.
+  if (!process.env.ENCRYPTION_KEY) return null
+
   const { data: conn } = await supabase
     .from('calendar_connections')
     .select('calendar_id, access_token_encrypted, refresh_token_encrypted, token_expiry, status')
@@ -99,7 +104,12 @@ export async function getValidAccessToken(
 
   const expiresSoon = new Date(conn.token_expiry).getTime() - Date.now() < 5 * 60_000
   if (!expiresSoon) {
-    return { accessToken: decrypt(conn.access_token_encrypted), calendarId: conn.calendar_id }
+    try {
+      return { accessToken: decrypt(conn.access_token_encrypted), calendarId: conn.calendar_id }
+    } catch (err) {
+      console.error('Failed to decrypt stored Google Calendar access token:', err)
+      return null
+    }
   }
 
   try {

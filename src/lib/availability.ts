@@ -1,5 +1,5 @@
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
-import { zonedTimeToUtc, dateStrInZone, formatInZone } from '@/lib/timezone'
+import { zonedTimeToUtc, dateStrInZone, dayOfWeekInZone, formatInZone } from '@/lib/timezone'
 
 const DAY_KEYS: (keyof Hours)[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
 
@@ -93,4 +93,13 @@ export function findNextAvailableSlots(opts: {
 
 export function formatSlot(d: Date, timeZone: string): string {
   return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
+}
+
+/** Whether `date` falls outside the business's configured hours for its day of week. */
+export function isAfterHours(date: Date, hours: Hours | null | undefined, timeZone: string): boolean {
+  if (!hours) return false
+  const day = hours[DAY_KEYS[dayOfWeekInZone(date, timeZone)]]
+  if (!day?.open) return true
+  const hhmm = formatInZone(date, timeZone, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  return hhmm < day.opensAt || hhmm >= day.closesAt
 }

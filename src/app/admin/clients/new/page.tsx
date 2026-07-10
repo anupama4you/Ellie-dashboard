@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { TRIAL_DAYS } from '@/lib/planUsage'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 
@@ -48,12 +49,18 @@ export default async function NewClientPage({
     })
     if (inviteErr || !user) redirect('/admin/clients/new?error=user')
 
+    const startTrial = formData.get('start_trial') === 'on'
+    const now = new Date().toISOString()
+
     const { data: biz, error: bizErr } = await admin.from('businesses').insert({
       user_id:           user.id,
       name:              businessName,
       phone:             (formData.get('phone') as string).trim() || null,
       plan:              formData.get('plan') as string,
       vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
+      plan_status:       startTrial ? 'trial' : 'active',
+      trial_started_at:  startTrial ? now : null,
+      plan_started_at:   now,
     }).select('id').single()
 
     if (bizErr || !biz) {
@@ -135,7 +142,24 @@ export default async function NewClientPage({
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
               </select>
+              <p className="text-xs" style={{ color: 'var(--t6)' }}>
+                Which plan this converts to once the trial ends (if starting one below) — call limits don&apos;t apply until then.
+              </p>
             </div>
+
+            <label className="flex items-start gap-2.5 px-3.5 py-3 rounded-xl cursor-pointer"
+              style={{ background: 'rgba(109,74,255,0.06)', border: '1px solid rgba(109,74,255,0.18)' }}>
+              <input type="checkbox" name="start_trial" defaultChecked
+                className="mt-0.5" style={{ accentColor: 'var(--violet)' }} />
+              <span>
+                <span className="text-xs font-semibold block" style={{ color: 'var(--text)' }}>
+                  Start {TRIAL_DAYS}-day free trial
+                </span>
+                <span className="text-xs" style={{ color: 'var(--t5)' }}>
+                  Unlimited calls during the trial (still counted on the dashboard). Payments are handled separately — convert or cancel from the client&apos;s Details tab once they decide.
+                </span>
+              </span>
+            </label>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Vapi Assistant ID</label>

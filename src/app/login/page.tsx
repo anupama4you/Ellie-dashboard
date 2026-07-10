@@ -52,7 +52,7 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Image src="/favicon.png" alt="Ellie" width={128} height={128} className="h-16 w-16" />
+          <Image src="/logo.png" alt="Ellie" width={590} height={343} className="h-16 w-auto" />
         </div>
 
         {/* Card */}

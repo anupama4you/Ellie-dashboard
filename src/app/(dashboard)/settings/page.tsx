@@ -31,6 +31,11 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
     bg:     'var(--signal-soft)',
     border: 'rgba(15,163,122,0.2)',
   },
+  'Trial ends':        {
+    icon:   <RefreshCw size={13} style={{ color: 'var(--violet)' }} />,
+    bg:     'var(--violet-soft)',
+    border: 'rgba(109,74,255,0.2)',
+  },
   'Vapi Assistant ID': {
     icon:   <Bot size={13} style={{ color: 'var(--violet)' }} />,
     bg:     'var(--violet-soft)',
@@ -58,16 +63,28 @@ export default async function SettingsPage({
       ? supabase.from('calendar_connections').select('google_email, status').eq('business_id', biz.id).single()
       : Promise.resolve({ data: null }),
     biz
-      ? getPlanUsage(supabase, biz.id, biz.plan, timeZone).catch(() => null)
+      ? getPlanUsage(
+          supabase, biz.id,
+          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          timeZone,
+        ).catch(() => null)
       : Promise.resolve(null),
   ])
 
   const fields = [
     { label: 'Business Name',    value: biz?.name              },
     { label: 'Phone Number',     value: biz?.phone             },
-    { label: 'Plan',             value: biz?.plan              },
-    { label: 'Calls used this month', value: usage ? `${usage.used} / ${usage.limit} (${usage.pct}%)` : undefined },
-    { label: 'Usage renews',     value: usage ? formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' }) : undefined },
+    { label: 'Plan',             value: usage?.isTrial ? 'Free trial' : biz?.plan },
+    {
+      label: 'Calls used this month',
+      value: usage
+        ? usage.isTrial ? `${usage.used} (unlimited during trial)` : `${usage.used} / ${usage.limit} (${usage.pct}%)`
+        : undefined,
+    },
+    {
+      label: usage?.isTrial ? 'Trial ends' : 'Usage renews',
+      value: usage ? formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' }) : undefined,
+    },
     { label: 'Vapi Assistant ID',value: biz?.vapi_assistant_id },
     { label: 'Account Email',    value: user?.email            },
   ]

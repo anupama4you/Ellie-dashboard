@@ -12,6 +12,15 @@ AI receptionist SaaS. Each client business gets a Vapi voice assistant ("Ellie")
   - `tool-calls`: `checkAvailability` (reads live `businesses.hours` + `business_services` + `appointments`, plus Google Calendar free/busy if connected) and `bookAppointment` (inserts `appointments`, sends Twilio SMS, creates a Google Calendar event).
   - `end-of-call-report`: upserts into the local `calls` table (`onConflict: vapi_call_id`). **This is the only thing that populates `calls`** — the Calls/Today/Analytics pages otherwise read call history live from Vapi's API, not this table.
 
+## Trials and billing-cycle anchoring (why usage isn't calendar-month-based)
+
+Every business now has `plan_status` (`trial | active | cancelled`), `trial_started_at`, and `plan_started_at` (the billing-cycle anchor day). Payments happen entirely outside this app — the admin is the only one who starts a trial, converts it to paid, or cancels it (`src/app/admin/clients/[id]/page.tsx`: `startTrialAction`/`convertToPaidAction`/`cancelPlanAction`), never the client.
+
+- **Trial**: unlimited calls, but still counted — `getPlanUsage()` (`src/lib/planUsage.ts`) returns `limit: null, pct: null, isTrial: true` and counts every call since `trial_started_at`. UI branches on `isTrial` everywhere usage is shown (Sidebar, Analytics, Settings, Today page, admin clients list) rather than rendering a percentage bar against nothing.
+- **Active/cancelled**: usage counts against `PLAN_LIMITS[plan]` for the *current monthly billing cycle anchored to `plan_started_at`'s calendar day* — via `startOfBillingCycleInZone()`/`startOfNextBillingCycleInZone()` in `src/lib/timezone.ts` — **not** the 1st of the calendar month. A plan that started on the 14th renews on the 14th (clamped to the last day of shorter months). This replaced the old `startOfMonthInZone()`-based counting, which was wrong for every business that didn't happen to start on the 1st.
+- Converting a trial to paid resets `plan_started_at` to the conversion date (new billing anchor); starting a trial (fresh or restarted after cancellation) resets both `trial_started_at` and `plan_started_at` to that moment.
+- None of this blocks calls — same as before, it's purely for visibility (usage bars, the admin "over usage threshold" alert in `getBusinessesOverUsageThreshold()`, which now skips trial businesses since they have no `pct` to threshold against).
+
 ## The Briefing draft/live split (why it exists)
 
 Client edits to hours/services/FAQs/company info used to write straight into the same columns the webhook reads live — meaning a client's change took effect on real calls instantly, while the hand-authored Vapi system prompt (what Ellie actually *says*) stayed stale until an admin manually noticed and pushed an update. Two sources of truth, no guaranteed sync.

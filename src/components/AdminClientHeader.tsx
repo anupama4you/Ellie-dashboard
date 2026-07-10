@@ -20,11 +20,12 @@ type Props = {
   name: string
   email: string
   plan: string
+  planStatus?: string | null
   hasAssistant: boolean
   active: 'details' | 'briefing' | 'prompt'
 }
 
-export default function AdminClientHeader({ id, name, email, plan, hasAssistant, active }: Props) {
+export default function AdminClientHeader({ id, name, email, plan, planStatus, hasAssistant, active }: Props) {
   const planStyle = PLAN_STYLE[plan] ?? PLAN_STYLE.core
 
   return (
@@ -47,6 +48,16 @@ export default function AdminClientHeader({ id, name, email, plan, hasAssistant,
             <span className="text-xs font-bold px-2 py-0.5 rounded-full capitalize" style={{ color: planStyle.color, background: planStyle.bg }}>
               {plan}
             </span>
+            {planStatus === 'trial' && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.12)' }}>
+                Trial
+              </span>
+            )}
+            {planStatus === 'cancelled' && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.1)' }}>
+                Cancelled
+              </span>
+            )}
             <span
               className="text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1.5"
               style={{

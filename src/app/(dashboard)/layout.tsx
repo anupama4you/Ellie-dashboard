@@ -10,7 +10,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   const usage = biz
-    ? await getPlanUsage(await createClient(), biz.id, biz.plan, timeZone).catch(() => null)
+    ? await getPlanUsage(
+        await createClient(), biz.id,
+        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+        timeZone,
+      ).catch(() => null)
     : null
 
   const WINDOW_DAYS = 14
@@ -62,6 +66,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           used: usage.used,
           limit: usage.limit,
           pct: usage.pct,
+          isTrial: usage.isTrial,
+          trialDaysLeft: usage.trialDaysLeft,
           renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
         } : null}
       />

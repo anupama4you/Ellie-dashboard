@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, BarChart3, Building2, Settings, LogOut, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Settings, LogOut, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
@@ -11,6 +11,7 @@ const NAV = [
   { href: '/calls',        label: 'Calls',               icon: Phone           },
   { href: '/appointments', label: 'Appointments',        icon: CalendarDays    },
   { href: '/recordings',   label: 'Recordings',          icon: Clock           },
+  { href: '/sms',          label: 'SMS log',             icon: MessageSquare   },
   { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
   { href: '/briefing',     label: 'Company Information', icon: Building2       },
   { href: '/settings',     label: 'Settings',            icon: Settings        },
@@ -28,7 +29,14 @@ function initials(name: string) {
   return (parts[0][0] + parts[1][0]).toUpperCase()
 }
 
-type PlanUsageSummary = { used: number; limit: number; pct: number; renewsLabel: string }
+type PlanUsageSummary = {
+  used: number
+  limit: number | null
+  pct: number | null
+  isTrial: boolean
+  trialDaysLeft: number | null
+  renewsLabel: string
+}
 
 type Props = {
   businessName: string
@@ -156,22 +164,38 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
           className="rounded-xl px-3.5 py-3 mt-1.5"
           style={{ border: '1px solid var(--night-line)', background: 'var(--night-2)' }}
         >
-          <div className="flex items-center justify-between mb-1.5">
-            <b className="text-[0.85rem] text-white font-semibold">Monthly usage</b>
-            <span className="text-[0.76rem] font-mono" style={{ color: '#8B84A6' }}>{usage.used}/{usage.limit}</span>
-          </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.min(usage.pct, 100)}%`,
-                background: usage.pct >= 100 ? 'var(--coral)' : usage.pct >= 80 ? 'var(--amber)' : 'var(--signal)',
-              }}
-            />
-          </div>
-          <p className="text-[0.72rem] mt-1.5" style={{ color: '#736C90' }}>
-            Renews {usage.renewsLabel}
-          </p>
+          {usage.isTrial ? (
+            <>
+              <div className="flex items-center justify-between mb-1.5">
+                <b className="text-[0.85rem] text-white font-semibold">Free trial</b>
+                <span className="text-[0.76rem] font-mono" style={{ color: 'var(--amber)' }}>{usage.used} calls</span>
+              </div>
+              <p className="text-[0.72rem]" style={{ color: '#736C90' }}>
+                Unlimited calls · {usage.trialDaysLeft != null && usage.trialDaysLeft > 0
+                  ? `${usage.trialDaysLeft} day${usage.trialDaysLeft !== 1 ? 's' : ''} left`
+                  : 'trial ended'}
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-1.5">
+                <b className="text-[0.85rem] text-white font-semibold">Monthly usage</b>
+                <span className="text-[0.76rem] font-mono" style={{ color: '#8B84A6' }}>{usage.used}/{usage.limit}</span>
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                <div
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.min(usage.pct ?? 0, 100)}%`,
+                    background: (usage.pct ?? 0) >= 100 ? 'var(--coral)' : (usage.pct ?? 0) >= 80 ? 'var(--amber)' : 'var(--signal)',
+                  }}
+                />
+              </div>
+              <p className="text-[0.72rem] mt-1.5" style={{ color: '#736C90' }}>
+                Renews {usage.renewsLabel}
+              </p>
+            </>
+          )}
         </div>
       )}
 

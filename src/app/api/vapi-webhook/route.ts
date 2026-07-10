@@ -252,6 +252,7 @@ export async function POST(req: Request) {
                 ].join('\n')
 
                 await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
+                await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)
               } catch (smsError) {
                 console.error('Failed to send confirmation SMS:', smsError)
                 // Booking already succeeded — don't fail the tool call over a text delivery issue.

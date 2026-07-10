@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Building2, Zap, Plus } from 'lucide-react'
+import { Building2, Zap, Plus, Sparkles } from 'lucide-react'
 import { PLAN_LIMITS } from '@/lib/planUsage'
 
 const PLANS = ['starter', 'core', 'professional', 'enterprise'] as const
@@ -41,10 +41,11 @@ export default async function AdminPage() {
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           {[
             { label: 'Total Clients',     value: list.length,                                       color: 'var(--violet)', icon: Building2 },
             { label: 'Active Assistants', value: list.filter(b => b.vapi_assistant_id).length,      color: 'var(--signal)', icon: Zap       },
+            { label: 'On Free Trial',     value: list.filter(b => b.plan_status === 'trial').length, color: 'var(--amber)',  icon: Sparkles   },
           ].map(({ label, value, color, icon: Icon }) => (
             <div key={label} className="rounded-2xl px-6 py-5 flex items-center gap-4"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>

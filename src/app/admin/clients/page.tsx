@@ -23,7 +23,11 @@ export default async function ClientsPage() {
   const usageByBusiness = Object.fromEntries(
     await Promise.all(list.map(async biz => [
       biz.id,
-      await getPlanUsage(admin, biz.id, biz.plan, biz.timezone ?? 'Australia/Adelaide'),
+      await getPlanUsage(
+        admin, biz.id,
+        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+        biz.timezone ?? 'Australia/Adelaide',
+      ),
     ]))
   )
 
@@ -99,27 +103,44 @@ export default async function ClientsPage() {
                   <span className="text-xs truncate pr-2" style={{ color: 'var(--t3)' }}>
                     {emailMap[biz.user_id] ?? '—'}
                   </span>
-                  <span>
+                  <span className="flex items-center gap-1.5 flex-wrap">
                     <span className="text-xs px-2.5 py-1 rounded-full font-semibold capitalize"
                       style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}` }}>
                       {biz.plan}
                     </span>
-                  </span>
-                  <div className="flex flex-col gap-1 pr-2" title={`${usage.used} of ${usage.limit} calls used this month`}>
-                    <div className="flex items-center justify-between text-xs" style={{ color: 'var(--t3)' }}>
-                      <span className="flex items-center gap-1 font-semibold" style={{ color: usage.pct >= 100 ? 'var(--coral)' : usage.pct >= 80 ? 'var(--amber)' : 'var(--t2)' }}>
-                        <PhoneCall size={10} /> {usage.used}/{usage.limit}
+                    {usage.isTrial && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.12)' }}>
+                        Trial
                       </span>
-                      <span>{usage.pct}%</span>
+                    )}
+                  </span>
+                  {usage.isTrial ? (
+                    <div className="flex flex-col gap-1 pr-2">
+                      <span className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--violet)' }}>
+                        <PhoneCall size={10} /> {usage.used} calls (unlimited)
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--t4)' }}>
+                        {usage.trialDaysLeft != null && usage.trialDaysLeft > 0 ? `${usage.trialDaysLeft}d left` : 'Trial ended'}
+                      </span>
                     </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--b4)' }}>
-                      <div className="h-full rounded-full"
-                        style={{
-                          width: `${Math.min(usage.pct, 100)}%`,
-                          background: usage.pct >= 100 ? 'var(--coral)' : usage.pct >= 80 ? 'var(--amber)' : 'var(--signal)',
-                        }} />
+                  ) : (
+                    <div className="flex flex-col gap-1 pr-2" title={`${usage.used} of ${usage.limit} calls used this cycle`}>
+                      <div className="flex items-center justify-between text-xs" style={{ color: 'var(--t3)' }}>
+                        <span className="flex items-center gap-1 font-semibold" style={{ color: (usage.pct ?? 0) >= 100 ? 'var(--coral)' : (usage.pct ?? 0) >= 80 ? 'var(--amber)' : 'var(--t2)' }}>
+                          <PhoneCall size={10} /> {usage.used}/{usage.limit}
+                        </span>
+                        <span>{usage.pct}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--b4)' }}>
+                        <div className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(usage.pct ?? 0, 100)}%`,
+                            background: (usage.pct ?? 0) >= 100 ? 'var(--coral)' : (usage.pct ?? 0) >= 80 ? 'var(--amber)' : 'var(--signal)',
+                          }} />
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <span className="text-xs font-semibold flex items-center gap-1.5"
                     style={{ color: hasAssistant ? 'var(--signal)' : 'var(--t5)' }}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: hasAssistant ? 'var(--signal)' : 'var(--t6)' }} />

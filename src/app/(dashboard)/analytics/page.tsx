@@ -9,12 +9,16 @@ export default async function AnalyticsPage() {
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   let calls: LocalCall[] = []
-  let usage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date() }
+  let usage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date(), isTrial: false, trialDaysLeft: null }
   if (biz) {
     try { calls = await getLocalCalls(biz.id, { limit: 200 }) } catch (err) { console.error('Failed to fetch local calls:', err) }
     try {
       const supabase = await createClient()
-      usage = await getPlanUsage(supabase, biz.id, biz.plan, timeZone)
+      usage = await getPlanUsage(
+        supabase, biz.id,
+        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+        timeZone,
+      )
     } catch (err) { console.error('Failed to compute plan usage:', err) }
   }
 
