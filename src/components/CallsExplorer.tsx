@@ -1,8 +1,8 @@
 'use client'
 
 import { Fragment, useMemo, useState } from 'react'
-import { Search, PhoneIncoming, ChevronUp, ChevronDown } from 'lucide-react'
-import CallRow, { type CallRowProps, ROW_COLUMNS } from './CallRow'
+import { Search, PhoneIncoming, ArrowUpDown } from 'lucide-react'
+import CallRow, { type CallRowProps } from './CallRow'
 import CallDetailPanel from './CallDetailPanel'
 
 export type CallItem = CallRowProps & {
@@ -16,25 +16,34 @@ export type CallItem = CallRowProps & {
 const CHIPS: { key: CallItem['category'] | 'all'; label: string }[] = [
   { key: 'all',         label: 'All'         },
   { key: 'booked',      label: 'Booked'      },
+  { key: 'rebooked',    label: 'Rebooked'    },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },
   { key: 'errored',     label: 'Errored'     },
 ]
 
-const PAGE_SIZE = 25
+const PAGE_SIZE = 10
 
-type SortField = 'startedAt' | 'duration'
+type SortOption = 'startedAt-desc' | 'startedAt-asc' | 'duration-desc' | 'duration-asc'
+const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+  { value: 'startedAt-desc', label: 'Newest first' },
+  { value: 'startedAt-asc',  label: 'Oldest first' },
+  { value: 'duration-desc',  label: 'Longest first' },
+  { value: 'duration-asc',   label: 'Shortest first' },
+]
 
-function SortHeader({
-  label, active, dir, onClick,
-}: { label: string; active: boolean; dir: 'asc' | 'desc'; onClick: () => void }) {
-  return (
-    <button onClick={onClick} className="flex items-center gap-1 text-left" style={{ color: active ? 'var(--ink)' : 'var(--ink-3)' }}>
-      {label}
-      {active ? (dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />) : <ChevronDown size={12} style={{ opacity: 0.35 }} />}
-    </button>
-  )
+/** Windowed page numbers with an ellipsis for far-away pages, e.g. 1 2 3 … 15. */
+function pageWindow(current: number, total: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages = new Set([1, total, current, current - 1, current + 1])
+  const sorted = [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b)
+  const result: (number | '…')[] = []
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0 && sorted[i] - sorted[i - 1] > 1) result.push('…')
+    result.push(sorted[i])
+  }
+  return result
 }
 
 export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; timeZone: string }) {
@@ -42,12 +51,13 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
   const [page, setPage]               = useState(1)
-  const [sortField, setSortField]     = useState<SortField>('startedAt')
-  const [sortDir, setSortDir]         = useState<'asc' | 'desc'>('desc')
+  const [sort, setSort]               = useState<SortOption>('startedAt-desc')
   const [expandedId, setExpandedId]   = useState<string | null>(null)
 
+  const [sortField, sortDir] = sort.split('-') as ['startedAt' | 'duration', 'asc' | 'desc']
+
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: calls.length, booked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
+    const c: Record<string, number> = { all: calls.length, booked: 0, rebooked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
     for (const call of calls) c[call.category]++
     return c
   }, [calls])
@@ -81,14 +91,10 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
     setPage(1)
   }
   function updateChip(c: typeof chip) { setChip(c); setPage(1) }
-  function toggleSort(field: SortField) {
-    if (sortField === field) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDir('desc') }
-  }
 
   return (
     <div className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-      {/* Search */}
+      {/* Search + sort */}
       <form onSubmit={applySearch} className="p-4 flex gap-2">
         <div
           className="flex-1 flex items-center gap-2.5 rounded-xl px-3.5 py-2.5"
@@ -111,6 +117,17 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
         >
           <Search size={13} /> Search
         </button>
+        <div className="flex items-center gap-1.5 rounded-xl px-3 shrink-0" style={{ border: '1px solid var(--line)' }}>
+          <ArrowUpDown size={13} style={{ color: 'var(--ink-3)' }} />
+          <select
+            value={sort}
+            onChange={e => setSort(e.target.value as SortOption)}
+            className="bg-transparent text-sm font-semibold py-2 outline-none"
+            style={{ color: 'var(--ink-2)' }}
+          >
+            {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
       </form>
 
       {/* Chips */}
@@ -134,24 +151,8 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
         })}
       </div>
 
-      {/* Column headers */}
-      <div
-        className="grid items-center gap-3 px-5 py-2.5 text-xs font-bold uppercase tracking-wide"
-        style={{ gridTemplateColumns: ROW_COLUMNS, borderTop: '1px solid var(--line)', borderBottom: '1px solid var(--line)', background: 'var(--paper)' }}
-      >
-        <span style={{ color: 'var(--ink-3)' }}>Type</span>
-        <span style={{ color: 'var(--ink-3)' }}>Customer</span>
-        <span style={{ color: 'var(--ink-3)' }}>Assistant #</span>
-        <span style={{ color: 'var(--ink-3)' }}>Outcome</span>
-        <span />
-        <SortHeader label="Start time" active={sortField === 'startedAt'} dir={sortDir} onClick={() => toggleSort('startedAt')} />
-        <SortHeader label="Duration" active={sortField === 'duration'} dir={sortDir} onClick={() => toggleSort('duration')} />
-        <span />
-        <span />
-      </div>
-
       {/* Rows */}
-      <div>
+      <div style={{ borderTop: '1px solid var(--line)' }}>
         {paged.map(call => (
           <Fragment key={call.id}>
             <CallRow
@@ -196,13 +197,13 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
       {/* Pagination */}
       {filtered.length > 0 && (
         <div
-          className="flex items-center justify-between px-5 py-3.5 text-sm"
+          className="flex items-center justify-between px-5 py-3.5 text-sm flex-wrap gap-2"
           style={{ borderTop: '1px solid var(--line)', color: 'var(--ink-3)' }}
         >
           <span>
             Showing {(currentPage - 1) * PAGE_SIZE + 1} to {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length} calls
           </span>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 items-center">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
@@ -211,6 +212,22 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
             >
               Previous
             </button>
+            {pageWindow(currentPage, totalPages).map((p, i) => p === '…' ? (
+              <span key={`ellipsis-${i}`} className="px-1.5" style={{ color: 'var(--ink-3)' }}>…</span>
+            ) : (
+              <button
+                key={p}
+                onClick={() => setPage(p)}
+                className="w-8 h-8 rounded-lg font-medium"
+                style={{
+                  background: p === currentPage ? 'var(--ink)' : undefined,
+                  color: p === currentPage ? '#fff' : 'var(--ink)',
+                  border: p === currentPage ? '1px solid var(--ink)' : '1px solid var(--line)',
+                }}
+              >
+                {p}
+              </button>
+            ))}
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}

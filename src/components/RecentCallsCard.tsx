@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { AudioWaveform, FileText, Clock3 } from 'lucide-react'
+import { initials, avatarColor } from '@/lib/avatar'
 
-export type RecentCallCategory = 'booked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+export type RecentCallCategory = 'booked' | 'rebooked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
 
 export type RecentCallItem = {
   id: string
@@ -25,17 +26,11 @@ export type RecentCallItem = {
 const FILTERS: { key: 'all' | RecentCallCategory; label: string }[] = [
   { key: 'all',         label: 'All'         },
   { key: 'booked',      label: 'Booked'      },
+  { key: 'rebooked',    label: 'Rebooked'    },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },
 ]
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
-  return (parts[0][0] + parts[1][0]).toUpperCase()
-}
 
 /** `missed`/`errored` are folded into one "Missed" filter pill — both mean the call didn't reach a useful outcome — but each row still shows its true badge (Missed vs Error). */
 function matchesFilter(category: RecentCallCategory, filter: 'all' | RecentCallCategory): boolean {
@@ -49,7 +44,7 @@ export default function RecentCallsCard({ calls }: { calls: RecentCallItem[] }) 
 
   const counts: Record<'all' | RecentCallCategory, number> = {
     all: calls.length,
-    booked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
+    booked: 0, rebooked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
   }
   for (const c of calls) {
     counts[c.category]++
@@ -87,11 +82,13 @@ export default function RecentCallsCard({ calls }: { calls: RecentCallItem[] }) 
             <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No calls in this category</p>
           </div>
         ) : (
-          visible.map((c, i) => (
+          visible.map((c, i) => {
+            const avatar = avatarColor(c.displayName)
+            return (
             <div key={c.id} className="flex items-center gap-3 px-5 py-3.5"
               style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}>
               <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                style={{ background: 'var(--violet-soft)', color: 'var(--violet)' }}>
+                style={{ background: avatar.bg, color: avatar.color }}>
                 {initials(c.displayName)}
               </div>
               <div className="flex-1 min-w-0">
@@ -124,7 +121,8 @@ export default function RecentCallsCard({ calls }: { calls: RecentCallItem[] }) 
                 <div className="w-7 h-7 shrink-0" />
               )}
             </div>
-          ))
+            )
+          })
         )}
       </div>
     </>

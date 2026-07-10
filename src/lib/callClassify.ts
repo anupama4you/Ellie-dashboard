@@ -1,4 +1,4 @@
-export type CallCategory = 'booked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+export type CallCategory = 'booked' | 'rebooked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
 
 const ERROR_REASONS = new Set([
   'exceeded-max-duration',
@@ -20,13 +20,17 @@ const ERROR_REASONS = new Set([
 
 /**
  * Single source of truth for turning a Vapi `endedReason` (plus whether a
- * booking actually happened during the call) into the category we store as
- * `calls.outcome` and display everywhere. `endedReason` alone can't detect a
- * booking — `appointment-scheduled` is a Vapi-native flow value that's never
- * emitted for our own custom `bookAppointment` tool call, so `hasBooking` is
- * the real signal and takes priority over any `endedReason` match.
+ * booking/reschedule actually happened during the call) into the category we
+ * store as `calls.outcome` and display everywhere. `endedReason` alone can't
+ * detect either — `appointment-scheduled` is a Vapi-native flow value that's
+ * never emitted for our own custom `bookAppointment`/`rescheduleAppointment`
+ * tool calls, so `hasBooking`/`hasReschedule` are the real signals.
+ * `hasReschedule` takes priority over `hasBooking` (more specific/informative).
  */
-export function classifyCall(endedReason?: string, hasBooking?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
+export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
+  if (hasReschedule) {
+    return { category: 'rebooked', label: 'Rebooked', color: 'var(--violet)', bg: 'var(--violet-soft)' }
+  }
   if (hasBooking || endedReason === 'appointment-scheduled') {
     return { category: 'booked', label: 'Booked', color: 'var(--signal)', bg: 'var(--signal-soft)' }
   }

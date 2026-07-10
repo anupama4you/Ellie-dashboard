@@ -175,6 +175,24 @@ export async function createCalendarEvent(
   return res.json()
 }
 
+export async function updateCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+  event: { start: Date; end: Date },
+): Promise<{ id: string; htmlLink?: string }> {
+  const res = await fetch(`${CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start: { dateTime: event.start.toISOString() },
+      end: { dateTime: event.end.toISOString() },
+    }),
+  })
+  if (!res.ok) throw new Error(`Google event update failed: ${res.status} ${await res.text()}`)
+  return res.json()
+}
+
 export type GoogleCalendarEvent = {
   id: string
   summary?: string

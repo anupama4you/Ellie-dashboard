@@ -1,9 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
+import { phoneDigitsKey } from '@/lib/sms'
 import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
-import { getValidAccessToken, freeBusyQuery, createCalendarEvent } from '@/lib/googleCalendar'
+import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone } from '@/lib/timezone'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -63,7 +64,7 @@ type EndOfCallReport = Record<string, unknown> & {
     phoneNumber?: { number?: string } | string
   }
   artifact?: { transcript?: string; recordingUrl?: string }
-  analysis?: { summary?: string; successEvaluation?: string }
+  analysis?: { summary?: string; successEvaluation?: string; structuredData?: { callerName?: string | null } }
 }
 
 function eocCustomer(message: EndOfCallReport): { number?: string; name?: string } {
@@ -180,6 +181,141 @@ export async function POST(req: Request) {
         } catch (err) {
           console.error('checkAvailability tool call failed:', err)
           resultText = "Something went wrong checking the calendar — let the caller know you'll confirm a time shortly."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      if (name === 'findUpcomingAppointments') {
+        const args  = toolArgs(toolCall)
+        const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+        let resultText: string
+
+        try {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('id, timezone')
+            .eq('vapi_assistant_id', message.call?.assistantId)
+            .single()
+
+          if (!biz) {
+            resultText = "I couldn't reach this business's account — let the caller know you'll have someone call them back."
+          } else if (!phone) {
+            resultText = "There's no phone number to search under — ask the caller to confirm the number their appointment is booked under."
+          } else {
+            const { data: candidates } = await supabase
+              .from('appointments')
+              .select('id, service, scheduled_at, customer_phone')
+              .eq('business_id', biz.id)
+              .neq('status', 'cancelled')
+              .gte('scheduled_at', new Date().toISOString())
+              .order('scheduled_at')
+              .limit(50)
+
+            const key = phoneDigitsKey(phone)
+            const matches = (candidates ?? []).filter(a => a.customer_phone && phoneDigitsKey(a.customer_phone) === key)
+
+            resultText = matches.length
+              ? `Upcoming appointments found: ${matches.map(a => `${a.service ?? 'appointment'} on ${fmtDate(a.scheduled_at, biz.timezone)} (ref: ${a.id})`).join('; ')}. Read these out to the caller in natural speech without mentioning the refs, ask which one they mean, then call rescheduleAppointment with that exact ref as appointmentId.`
+              : "No upcoming appointments found for that number — let the caller know you couldn't find a booking to reschedule, and offer to book a new one instead."
+          }
+        } catch (err) {
+          console.error('findUpcomingAppointments tool call failed:', err)
+          resultText = "Something went wrong looking up the calendar — let the caller know you'll confirm shortly."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      if (name === 'rescheduleAppointment') {
+        const args          = toolArgs(toolCall)
+        const appointmentId = args.appointmentId as string | undefined
+        const callId        = message.call?.id as string | undefined
+        let resultText: string
+
+        try {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('id, name, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
+            .eq('vapi_assistant_id', message.call?.assistantId)
+            .single()
+
+          if (!biz) {
+            resultText = "I couldn't find this business's account — let the caller know you'll confirm the change manually."
+          } else if (!appointmentId) {
+            resultText = "There's no valid appointment reference — call findUpcomingAppointments again and confirm which booking the caller means."
+          } else {
+            const { data: existing } = await supabase
+              .from('appointments')
+              .select('id, service, customer_name, customer_phone, calendar_event_id')
+              .eq('id', appointmentId)
+              .eq('business_id', biz.id)
+              .single()
+
+            if (!existing) {
+              resultText = "I couldn't find that appointment — let the caller know you'll confirm the change manually."
+            } else {
+              const { data: services } = await supabase
+                .from('business_services')
+                .select('name, duration_minutes')
+                .eq('business_id', biz.id)
+              const durationMins = durationFor(existing.service, services ?? [])
+
+              const { error: updateError } = await supabase.from('appointments').update({
+                scheduled_at: args.newDateTime,
+                status:       'rescheduled',
+                vapi_call_id: callId ?? null,
+              }).eq('id', existing.id)
+
+              if (updateError) {
+                console.error('Failed to reschedule appointment:', updateError)
+                resultText = "Something went wrong moving that booking — let the caller know you'll confirm it manually."
+              } else {
+                resultText = `Rescheduled${existing.service ? ` ${existing.service}` : ''} for ${existing.customer_name ?? 'the caller'} to ${fmtDate(args.newDateTime as string, biz.timezone)}.`
+
+                const phone = existing.customer_phone
+                if (phone) {
+                  try {
+                    const link = mapsLink(biz)
+                    const smsBody = [
+                      `Hi ${existing.customer_name ?? ''} 👋`,
+                      '',
+                      `Your ${existing.service ?? 'appointment'} with ${biz.name} has been moved to:`,
+                      `📅 ${fmtDate(args.newDateTime as string, biz.timezone)}`,
+                      `⏱️ ${durationMins} minutes`,
+                      ...(link ? ['', `📍 ${link}`] : []),
+                      '',
+                      'See you then! ✅',
+                    ].join('\n')
+
+                    await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
+                    await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
+                  } catch (smsError) {
+                    console.error('Failed to send reschedule confirmation SMS:', smsError)
+                    // Reschedule already succeeded — don't fail the tool call over a text delivery issue.
+                  }
+                }
+
+                if (existing.calendar_event_id) {
+                  try {
+                    const google = await getValidAccessToken(supabase, biz.id)
+                    if (google) {
+                      const start = new Date(args.newDateTime as string)
+                      const end = new Date(start.getTime() + durationMins * 60_000)
+                      await updateCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id, { start, end })
+                    }
+                  } catch (calErr) {
+                    console.error('Failed to update Google Calendar event — reschedule already saved locally:', calErr)
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('rescheduleAppointment tool call failed:', err)
+          resultText = "Something went wrong on our end — let the caller know you'll confirm the change shortly."
         }
 
         results.push({ toolCallId: toolCall.id, result: resultText })
@@ -320,12 +456,17 @@ export async function POST(req: Request) {
       const customer  = eocCustomer(report)
       const endedReason = report.endedReason as string | undefined
 
-      const { data: booking } = await supabase
+      const { data: correlated } = await supabase
         .from('appointments')
-        .select('id')
+        .select('id, status, customer_name')
         .eq('vapi_call_id', callId)
         .limit(1)
-      const hasBooking = !!booking?.length
+      const hasBooking    = !!correlated?.length
+      const hasReschedule = correlated?.[0]?.status === 'rescheduled'
+      // Priority: Vapi's own customer metadata (rare for phone calls) > the
+      // name confirmed out loud during a booking/reschedule on this call
+      // (most reliable) > an LLM guess from the raw transcript (least certain).
+      const callerName = customer.name ?? correlated?.[0]?.customer_name ?? report.analysis?.structuredData?.callerName ?? null
 
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,
@@ -333,14 +474,14 @@ export async function POST(req: Request) {
         vapi_assistant_id:  assistantId,
         call_type:          report.call?.type ?? null,
         status:             'ended',
-        caller_name:        customer.name ?? null,
+        caller_name:        callerName,
         caller_phone:       customer.number ?? null,
         assistant_phone:    eocAssistantPhone(report) ?? null,
         started_at:         startedAt ?? null,
         ended_at:           endedAt ?? null,
         duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
         ended_reason:       endedReason ?? null,
-        outcome:            classifyCall(endedReason, hasBooking).category,
+        outcome:            classifyCall(endedReason, hasBooking, hasReschedule).category,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,

@@ -182,6 +182,8 @@ function requiredToolIds(): string[] {
   return [
     process.env.VAPI_BOOK_APPOINTMENT_TOOL_ID,
     process.env.VAPI_CHECK_AVAILABILITY_TOOL_ID,
+    process.env.VAPI_FIND_APPOINTMENTS_TOOL_ID,
+    process.env.VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID,
   ].filter((id): id is string => !!id)
 }
 
@@ -209,6 +211,24 @@ function requiredServerConfig(current?: VapiAssistant['server']): VapiAssistant[
  * rather than risked, and any tool IDs already on the assistant (e.g. added
  * manually in the Vapi dashboard) are kept alongside ours.
  */
+/**
+ * Vapi's summary is blank by default unless the assistant has an explicit
+ * summaryPrompt — same deal for caller-name capture, which isn't something
+ * Vapi resolves on its own for phone calls and has to be extracted from the
+ * transcript via structuredDataSchema. Both land in the end-of-call-report's
+ * `analysis` field (`analysis.summary`, `analysis.structuredData.callerName`).
+ */
+const ANALYSIS_PLAN = {
+  summaryPrompt: "Summarize this call in one short line (under 12 words) describing what the caller wanted and the outcome — e.g. \"Booked haircut & blow dry, asked about parking\" or \"Asked about pricing, sent price list by SMS\". Plain text, no quotes, no mention that this is an AI or phone call.",
+  structuredDataPrompt: "Extract the caller's first name if they mentioned it at any point during the call. If they never gave a name, return null.",
+  structuredDataSchema: {
+    type: 'object',
+    properties: {
+      callerName: { type: 'string', description: "The caller's first name, or null if never mentioned" },
+    },
+  },
+}
+
 export async function syncAssistantPrompt(
   assistantId: string,
   opts: { firstMessage: string; systemPrompt: string },
@@ -219,6 +239,7 @@ export async function syncAssistantPrompt(
     firstMessage: opts.firstMessage,
     model: { ...current.model, messages: [{ role: 'system', content: opts.systemPrompt }], toolIds },
     server: requiredServerConfig(current.server),
+    analysisPlan: ANALYSIS_PLAN,
   })
 }
 

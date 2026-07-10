@@ -236,7 +236,7 @@ export default async function EditClientPage({
                   const timeZone   = biz.timezone ?? 'Australia/Adelaide'
                   const trialStart = new Date(biz.trial_started_at)
                   const trialEnd   = addDaysInZone(trialStart, TRIAL_DAYS, timeZone)
-                  const daysLeft   = Math.ceil((trialEnd.getTime() - Date.now()) / (24 * 60 * 60_000))
+                  const daysLeft   = Math.ceil((trialEnd.getTime() - new Date().getTime()) / (24 * 60 * 60_000))
                   return (
                     <p className="text-xs leading-relaxed" style={{ color: 'var(--t3)' }}>
                       Started {formatInZone(trialStart, timeZone, { day: 'numeric', month: 'short' })} — ends{' '}

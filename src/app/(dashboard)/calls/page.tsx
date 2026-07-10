@@ -1,10 +1,12 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, type LocalCall } from '@/lib/calls'
+import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
 import { classifyCall, callTypeLabel } from '@/lib/callClassify'
 import { formatInZone } from '@/lib/timezone'
+import { isAfterHours } from '@/lib/availability'
 import { PhoneOff, Search } from 'lucide-react'
 import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
+import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 function fmtTime(iso: string, timeZone: string) {
   const d = new Date(iso)
@@ -50,8 +52,9 @@ export default async function CallsPage({
     }
   }
 
+  const bizHours = (biz?.hours as Hours | undefined) ?? null
   const calls: CallItem[] = rawCalls.map(call => {
-    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined, call.outcome === 'booked')
+    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined, call.outcome === 'booked' || call.outcome === 'rebooked', call.outcome === 'rebooked')
     const dt = call.started_at ? fmtTime(call.started_at, timeZone) : null
     // Web calls have no phone number on either end; real phone calls answer on the business's Ellie number.
     const assistantNumber = call.assistant_phone || (call.call_type !== 'webCall' ? biz?.phone ?? undefined : undefined)
@@ -66,13 +69,14 @@ export default async function CallsPage({
       startedDate: dt?.date,
       startedTime: dt?.time,
       durationSecs: call.duration_seconds ?? 0,
-      summary: call.summary ?? undefined,
+      summary: category === 'missed' ? undefined : callSummary(call).text,
       category,
       badgeLabel: label,
       badgeColor: color,
       badgeBg: bg,
       recordingUrl: call.recording_url ?? undefined,
       hasTranscript: !!call.transcript,
+      isAfterHours: call.started_at ? isAfterHours(new Date(call.started_at), bizHours, timeZone) : false,
       status: call.status ?? undefined,
       endedReason: call.ended_reason ?? undefined,
       successEvaluation: call.success_evaluation ?? undefined,

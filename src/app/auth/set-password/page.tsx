@@ -3,13 +3,15 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Lock } from 'lucide-react'
 
 export default function SetPasswordPage() {
   const router = useRouter()
-  const [checking, setChecking]   = useState(true)
+  const [checking, setChecking]     = useState(true)
   const [hasSession, setHasSession] = useState(false)
+  const [alreadySet, setAlreadySet] = useState(false)
   const [password, setPassword]   = useState('')
   const [confirm, setConfirm]     = useState('')
   const [loading, setLoading]     = useState(false)
@@ -19,6 +21,7 @@ export default function SetPasswordPage() {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       setHasSession(!!user)
+      setAlreadySet(!!user?.user_metadata?.password_set)
       setChecking(false)
     })
   }, [])
@@ -38,7 +41,7 @@ export default function SetPasswordPage() {
 
     setLoading(true)
     const supabase = createClient()
-    const { error: updateErr } = await supabase.auth.updateUser({ password })
+    const { error: updateErr } = await supabase.auth.updateUser({ password, data: { password_set: true } })
 
     if (updateErr) {
       setError(updateErr.message)
@@ -66,7 +69,7 @@ export default function SetPasswordPage() {
 
       <div className="w-full max-w-sm relative">
         <div className="flex justify-center mb-8">
-          <Image src="/favicon.png" alt="Ellie" width={128} height={128} className="h-16 w-16" />
+          <Image src="/logo.png" alt="Ellie" width={590} height={343} className="h-16 w-auto" />
         </div>
 
         <div className="rounded-2xl p-8 relative overflow-hidden"
@@ -91,6 +94,17 @@ export default function SetPasswordPage() {
                   style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
                   Go to sign in
                 </a>
+              </>
+            ) : alreadySet ? (
+              <>
+                <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>You&apos;re all set</h1>
+                <p className="text-sm mb-6" style={{ color: 'var(--t4)' }}>
+                  This account already has a password — this invite link has already been used. Head to your dashboard, or contact your account manager if you need your password reset.
+                </p>
+                <Link href="/" className="block text-center w-full rounded-xl py-3 text-sm font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
+                  Go to dashboard
+                </Link>
               </>
             ) : (
               <>
