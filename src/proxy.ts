@@ -24,7 +24,11 @@ export async function proxy(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname } = request.nextUrl
 
-  if (!user && pathname !== '/login') {
+  // Publicly accessible regardless of auth state — legal pages need to be
+  // reachable by anyone (Google's OAuth verification reviewer included),
+  // not just signed-in users.
+  const PUBLIC_PATHS = ['/login', '/privacy', '/terms']
+  if (!user && !PUBLIC_PATHS.includes(pathname)) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
   if (user && pathname === '/login') {
