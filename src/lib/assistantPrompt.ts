@@ -1,4 +1,4 @@
-import type { Hours, TransferRule } from '@/app/(dashboard)/briefing/actions'
+import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 type ServiceInput = { name: string; durationMinutes: number | null; priceCents: number | null }
 type FaqInput = { question: string; answer: string }
@@ -30,10 +30,8 @@ export function fmtFaqs(faqs: FaqInput[]): string {
   return faqs.map(f => `- Q: ${f.question}\n  A: ${f.answer}`).join('\n')
 }
 
-export function fmtTransferRules(rules: TransferRule[]): string {
-  const enabled = rules.filter(r => r.enabled)
-  if (enabled.length === 0) return '(No transfer rules — handle every call yourself.)'
-  return enabled.map(r => `- ${r.label}: ${r.description}`).join('\n')
+export function fmtTransferRules(instructions: string): string {
+  return instructions.trim() || '(No transfer instructions — handle every call yourself.)'
 }
 
 type CompanyInfoInput = {
@@ -85,7 +83,7 @@ export type BriefingSectionData = {
   hours: Hours
   services: ServiceInput[]
   faqs: FaqInput[]
-  transferRules: TransferRule[]
+  transferRules: string
   companyInfo?: CompanyInfoInput
 }
 
@@ -141,7 +139,7 @@ export function buildAssistantConfig(input: {
   hours: Hours
   services: ServiceInput[]
   faqs: FaqInput[]
-  transferRules: TransferRule[]
+  transferRules: string
   companyInfo?: CompanyInfoInput
 }): { firstMessage: string; systemPrompt: string } {
   const customSection = input.customInstructions?.trim()

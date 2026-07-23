@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { RefreshCw } from 'lucide-react'
-import { buildAssistantConfig, patchPromptSections } from '@/lib/assistantPrompt'
-import type { Hours, TransferRule, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
+import { buildAssistantConfig, patchPromptSections, defaultGreeting } from '@/lib/assistantPrompt'
+import type { Hours, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 import { adminSaveSystemPrompt, applyDraftAndPushPrompt } from '@/app/admin/clients/[id]/prompt/actions'
 
 type Props = {
@@ -15,7 +15,7 @@ type Props = {
     greeting: string
     customInstructions: string
     hours: Hours
-    transferRules: TransferRule[]
+    transferRules: string
     services: ServiceDraft[]
     faqs: FaqDraft[]
     companyInfo: CompanyInfo
@@ -75,7 +75,13 @@ export default function SystemPromptEditor({
     })
     setSystemPrompt(patched)
 
-    const appliedLabels = appliedSections.map(k => SECTION_LABEL[k])
+    // firstMessage lives outside the system prompt text (a separate Vapi
+    // field), so it can't be marker-wrapped like the sections above — always
+    // sync it here too, or it silently never picks up what the client typed
+    // in their Greeting box once a hand-authored prompt already exists.
+    setFirstMessage(briefing.greeting.trim() || defaultGreeting(businessName))
+
+    const appliedLabels = ['Greeting', ...appliedSections.map(k => SECTION_LABEL[k])]
     const missingLabels = missingSections.map(k => SECTION_LABEL[k])
     const parts: string[] = []
     if (appliedLabels.length) parts.push(`Updated: ${appliedLabels.join(', ')}.`)

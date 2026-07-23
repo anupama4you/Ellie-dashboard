@@ -6,7 +6,6 @@ import { saveDraftBriefing } from '@/lib/briefing'
 
 export type DayHours = { open: boolean; opensAt: string; closesAt: string }
 export type Hours = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', DayHours>
-export type TransferRule = { label: string; description: string; enabled: boolean }
 export type ServiceDraft = { id?: string; name: string; durationMinutes: number | null; priceCents: number | null }
 export type FaqDraft = { id?: string; question: string; answer: string }
 
@@ -24,7 +23,7 @@ export type BriefingPayload = {
   greetingScript: string
   customInstructions: string
   hours: Hours
-  transferRules: TransferRule[]
+  transferRules: string
   transferPhoneNumber: string
   services: ServiceDraft[]
   faqs: FaqDraft[]

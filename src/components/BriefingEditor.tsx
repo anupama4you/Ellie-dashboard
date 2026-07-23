@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { saveBriefing, type Hours, type TransferRule, type ServiceDraft, type FaqDraft, type CompanyInfo } from '@/app/(dashboard)/briefing/actions'
+import { saveBriefing, type Hours, type ServiceDraft, type FaqDraft, type CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
 
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']
@@ -12,15 +12,23 @@ const DAY_LABELS: { key: keyof Hours; label: string }[] = [
   { key: 'thu', label: 'Thu' }, { key: 'fri', label: 'Fri' }, { key: 'sat', label: 'Sat' }, { key: 'sun', label: 'Sun' },
 ]
 
-function fmtCents(cents: number | null) {
-  if (cents == null) return ''
-  return (cents / 100).toFixed(2)
+// Services are edited with the price kept as a raw dollar string (not cents)
+// so the input can be typed freely — round-tripping every keystroke through
+// cents and reformatting to a fixed "x.00" shape (the old approach) fights
+// the cursor and makes it impossible to type more than one digit.
+type ServiceRow = { id?: string; name: string; durationMinutes: number | null; price: string }
+
+function toServiceRow(s: ServiceDraft): ServiceRow {
+  return { id: s.id, name: s.name, durationMinutes: s.durationMinutes, price: s.priceCents != null ? (s.priceCents / 100).toFixed(2) : '' }
 }
 
-function parseDollars(str: string): number | null {
-  const n = parseFloat(str)
-  return isNaN(n) ? null : Math.round(n * 100)
+function toServiceDraft(r: ServiceRow): ServiceDraft {
+  const n = parseFloat(r.price)
+  return { id: r.id, name: r.name, durationMinutes: r.durationMinutes, priceCents: isNaN(n) ? null : Math.round(n * 100) }
 }
+
+/** Only ever lets a valid partial decimal (whole dollars, or up to 2 decimal places) through. */
+const PRICE_INPUT_RE = /^\d*\.?\d{0,2}$/
 
 type Props = {
   businessId: string
@@ -28,7 +36,7 @@ type Props = {
   initialGreeting: string
   initialCustomInstructions: string
   initialHours: Hours
-  initialTransferRules: TransferRule[]
+  initialTransferRules: string
   initialTransferPhoneNumber: string
   initialServices: ServiceDraft[]
   initialFaqs: FaqDraft[]
@@ -38,6 +46,9 @@ type Props = {
 
 const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
   `e.g. We don't take same-day bookings on Mondays.\nMention our 10% first-time customer discount when quoting prices.\nIf someone asks about parking, tell them there's free 2-hour parking out back.\nWe only service the northern suburbs — politely decline anything further out.`
+
+const TRANSFER_INSTRUCTIONS_PLACEHOLDER =
+  `e.g. Put the caller through if they ask for me by name.\nIf someone has a complaint or sounds unhappy, take a message and text me a summary straight away.\nPolitely decline media enquiries and sales calls — don't put those through.`
 
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
@@ -50,7 +61,7 @@ export default function BriefingEditor({
   const [hours, setHours]                           = useState(initialHours)
   const [transferRules, setTransferRules]           = useState(initialTransferRules)
   const [transferPhoneNumber, setTransferPhoneNumber] = useState(initialTransferPhoneNumber)
-  const [services, setServices]                     = useState(initialServices)
+  const [services, setServices]                     = useState(() => initialServices.map(toServiceRow))
   const [faqs, setFaqs]                              = useState(initialFaqs)
   const [companyInfo, setCompanyInfo]               = useState(initialCompanyInfo)
   const [isPending, startTransition]                = useTransition()
@@ -59,7 +70,7 @@ export default function BriefingEditor({
   function save() {
     startTransition(async () => {
       try {
-        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services, faqs, companyInfo })
+        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services: services.map(toServiceDraft), faqs, companyInfo })
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
@@ -229,7 +240,7 @@ export default function BriefingEditor({
                 <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Ellie quotes these when callers ask</p>
               </div>
               <button
-                onClick={() => setServices(s => [...s, { name: '', durationMinutes: 30, priceCents: 0 }])}
+                onClick={() => setServices(s => [...s, { name: '', durationMinutes: 30, price: '' }])}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                 style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
               >
@@ -237,6 +248,14 @@ export default function BriefingEditor({
               </button>
             </div>
             {services.length === 0 && <p className="px-5 py-6 text-sm" style={{ color: 'var(--t3)' }}>No services added yet</p>}
+            {services.length > 0 && (
+              <div className="flex items-center gap-2 px-5 pt-3">
+                <span className="flex-1 text-[0.65rem] font-bold tracking-wide" style={{ color: 'var(--t4)' }}>SERVICE</span>
+                <span className="w-24 text-[0.65rem] font-bold tracking-wide" style={{ color: 'var(--t4)' }}>DURATION</span>
+                <span className="w-24 text-[0.65rem] font-bold tracking-wide" style={{ color: 'var(--t4)' }}>PRICE</span>
+                <span className="w-3.5 shrink-0" aria-hidden />
+              </div>
+            )}
             {services.map((svc, i) => (
               <div key={i} className="flex items-center gap-2 px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
                 <input
@@ -246,21 +265,35 @@ export default function BriefingEditor({
                   className="flex-1 text-sm rounded-lg px-2.5 py-1.5 min-w-0"
                   style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
                 />
-                <input
-                  type="number"
-                  value={svc.durationMinutes ?? ''}
-                  onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, durationMinutes: e.target.value ? parseInt(e.target.value) : null } : x))}
-                  placeholder="Min"
-                  className="w-16 text-sm rounded-lg px-2 py-1.5 font-mono"
-                  style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                />
-                <input
-                  value={fmtCents(svc.priceCents)}
-                  onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, priceCents: parseDollars(e.target.value) } : x))}
-                  placeholder="$"
-                  className="w-20 text-sm rounded-lg px-2 py-1.5 font-mono"
-                  style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                />
+                <div className="w-24 flex items-center gap-1.5">
+                  <input
+                    type="number"
+                    min={0}
+                    step={5}
+                    value={svc.durationMinutes ?? ''}
+                    onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, durationMinutes: e.target.value ? parseInt(e.target.value) : null } : x))}
+                    placeholder="30"
+                    className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                  <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>min</span>
+                </div>
+                <div className="w-24 flex items-center gap-1">
+                  <span className="text-sm shrink-0" style={{ color: 'var(--t3)' }}>$</span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={svc.price}
+                    onChange={e => {
+                      const v = e.target.value
+                      if (PRICE_INPUT_RE.test(v)) setServices(s => s.map((x, j) => j === i ? { ...x, price: v } : x))
+                    }}
+                    onBlur={() => setServices(s => s.map((x, j) => j === i && x.price ? { ...x, price: (parseFloat(x.price) || 0).toFixed(2) } : x))}
+                    placeholder="0.00"
+                    className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
+                </div>
                 <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="shrink-0" style={{ color: 'var(--coral)' }}>
                   <Trash2 size={14} />
                 </button>
@@ -305,18 +338,18 @@ export default function BriefingEditor({
                   {d.open ? (
                     <div className="flex items-center gap-1.5 flex-1 font-mono text-sm" style={{ color: 'var(--text)' }}>
                       <input type="time" value={d.opensAt}
-                        onChange={e => setHours(h => ({ ...h, [key]: { ...d, opensAt: e.target.value } }))}
+                        onChange={e => setHours(h => ({ ...h, [key]: { ...h[key], opensAt: e.target.value } }))}
                         className="rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
                       <span style={{ color: 'var(--t3)' }}>–</span>
                       <input type="time" value={d.closesAt}
-                        onChange={e => setHours(h => ({ ...h, [key]: { ...d, closesAt: e.target.value } }))}
+                        onChange={e => setHours(h => ({ ...h, [key]: { ...h[key], closesAt: e.target.value } }))}
                         className="rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
                     </div>
                   ) : (
                     <span className="flex-1 text-sm italic" style={{ color: 'var(--t3)' }}>Closed</span>
                   )}
                   <button
-                    onClick={() => setHours(h => ({ ...h, [key]: { ...d, open: !d.open } }))}
+                    onClick={() => setHours(h => ({ ...h, [key]: { ...h[key], open: !h[key].open } }))}
                     role="switch" aria-checked={d.open}
                     className="w-[38px] h-[22px] rounded-full relative shrink-0"
                     style={{ background: d.open ? 'var(--signal)' : 'var(--border)' }}
@@ -374,24 +407,18 @@ export default function BriefingEditor({
           <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
             <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
               <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>When to put callers through to you</h2>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Ellie handles everything else herself</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Describe in your own words when Ellie should connect a caller to you — she handles everything else herself</p>
             </div>
-            {transferRules.map((rule, i) => (
-              <div key={rule.label} className="flex items-center gap-3.5 px-5 py-3.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
-                <div className="flex-1">
-                  <b className="block text-sm font-semibold" style={{ color: 'var(--text)' }}>{rule.label}</b>
-                  <span className="block text-xs mt-0.5" style={{ color: 'var(--t3)' }}>{rule.description}</span>
-                </div>
-                <button
-                  onClick={() => setTransferRules(rules => rules.map((r, j) => j === i ? { ...r, enabled: !r.enabled } : r))}
-                  role="switch" aria-checked={rule.enabled}
-                  className="w-[38px] h-[22px] rounded-full relative shrink-0"
-                  style={{ background: rule.enabled ? 'var(--signal)' : 'var(--border)' }}
-                >
-                  <span className="absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all" style={{ left: rule.enabled ? 19 : 3 }} />
-                </button>
-              </div>
-            ))}
+            <div className="p-5">
+              <textarea
+                value={transferRules}
+                onChange={e => setTransferRules(e.target.value)}
+                placeholder={TRANSFER_INSTRUCTIONS_PLACEHOLDER}
+                rows={5}
+                className="w-full rounded-xl p-3 text-sm"
+                style={{ border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical' }}
+              />
+            </div>
             <div className="flex flex-col gap-1.5 px-5 py-3.5" style={{ borderTop: '1px solid var(--border)' }}>
               <label className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Number to transfer calls to</label>
               <span className="text-xs" style={{ color: 'var(--t3)' }}>

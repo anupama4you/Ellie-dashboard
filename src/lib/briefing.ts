@@ -1,5 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { BriefingPayload, Hours, TransferRule } from '@/app/(dashboard)/briefing/actions'
+import type { BriefingPayload, Hours } from '@/app/(dashboard)/briefing/actions'
+
+/**
+ * `transferRules` used to be a fixed array of toggleable rules — now it's
+ * free text. Old shape can still show up in a live `transfer_rules` column
+ * that hasn't been migrated yet, or a client draft saved before this change
+ * shipped, so coerce rather than trust the stored type.
+ */
+function normalizeTransferRules(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    return value
+      .filter((r): r is { label?: string; description?: string; enabled?: boolean } => !!r && typeof r === 'object' && r.enabled)
+      .map(r => [r.label, r.description].filter(Boolean).join(': '))
+      .join('\n')
+  }
+  return ''
+}
 
 /**
  * Client's Briefing write path. Stages the submitted fields in
@@ -46,7 +63,7 @@ export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[]
     greetingScript: biz.greeting_script ?? '',
     customInstructions: biz.custom_instructions ?? '',
     hours: biz.hours as Hours,
-    transferRules: biz.transfer_rules as TransferRule[],
+    transferRules: normalizeTransferRules(biz.transfer_rules),
     transferPhoneNumber: biz.transfer_phone_number ?? '',
     services: liveServices.map(s => ({ id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents })),
     faqs: liveFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer })),
@@ -66,6 +83,9 @@ export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[]
 export function resolveBriefing(
   biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[],
 ): BriefingPayload & { isDraft: boolean } {
-  if (biz.draft_briefing) return { ...(biz.draft_briefing as BriefingPayload), isDraft: true }
+  if (biz.draft_briefing) {
+    const draft = biz.draft_briefing as BriefingPayload
+    return { ...draft, transferRules: normalizeTransferRules(draft.transferRules), isDraft: true }
+  }
   return { ...liveBriefing(biz, liveServices, liveFaqs), isDraft: false }
 }

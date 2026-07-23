@@ -50,7 +50,7 @@ export default function BriefingReadOnly({ businessName, hasDraft, draft, live, 
     customInstructions: customInstructions.trim() !== live.customInstructions.trim(),
     hours: JSON.stringify(hours) !== JSON.stringify(live.hours),
     faqs: JSON.stringify(stripIds(faqs)) !== JSON.stringify(stripIds(live.faqs)),
-    transferRules: JSON.stringify(transferRules) !== JSON.stringify(live.transferRules),
+    transferRules: transferRules.trim() !== live.transferRules.trim(),
     transferPhoneNumber: transferPhoneNumber.trim() !== live.transferPhoneNumber.trim(),
   } : null
 
@@ -148,18 +148,11 @@ export default function BriefingReadOnly({ businessName, hasDraft, draft, live, 
             <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>When to put callers through</h2>
             <ChangedPill show={changed?.transferRules} />
           </div>
-          {transferRules.map((rule, i) => (
-            <div key={rule.label} className="flex items-center gap-3.5 px-5 py-3.5 text-sm" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
-              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: rule.enabled ? 'var(--signal)' : 'var(--t6)' }} />
-              <div className="flex-1">
-                <b style={{ color: 'var(--text)' }}>{rule.label}</b>
-                <span className="block text-xs mt-0.5" style={{ color: 'var(--t3)' }}>{rule.description}</span>
-              </div>
-              <span className="text-xs font-semibold" style={{ color: rule.enabled ? 'var(--signal)' : 'var(--t4)' }}>
-                {rule.enabled ? 'Enabled' : 'Off'}
-              </span>
-            </div>
-          ))}
+          <div className="p-5">
+            <p className="text-sm whitespace-pre-wrap" style={{ color: transferRules.trim() ? 'var(--text)' : 'var(--t3)' }}>
+              {transferRules.trim() || 'None provided — Ellie handles every call herself.'}
+            </p>
+          </div>
           <div className="flex items-center justify-between gap-3 px-5 py-3.5 text-sm" style={{ borderTop: '1px solid var(--border)' }}>
             <div>
               <b style={{ color: 'var(--text)' }}>Transfer number</b>
