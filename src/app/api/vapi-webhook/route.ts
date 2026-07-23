@@ -4,7 +4,7 @@ import { sendSms } from '@/lib/twilio'
 import { phoneDigitsKey } from '@/lib/sms'
 import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
-import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent } from '@/lib/googleCalendar'
+import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone } from '@/lib/timezone'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -248,8 +248,8 @@ export async function POST(req: Request) {
             const matches = (candidates ?? []).filter(a => a.customer_phone && phoneDigitsKey(a.customer_phone) === key)
 
             resultText = matches.length
-              ? `Upcoming appointments found: ${matches.map(a => `${a.service ?? 'appointment'} on ${fmtDate(a.scheduled_at, biz.timezone)} (ref: ${a.id})`).join('; ')}. Read these out to the caller in natural speech without mentioning the refs, ask which one they mean, then call rescheduleAppointment with that exact ref as appointmentId.`
-              : "No upcoming appointments found for that number — let the caller know you couldn't find a booking to reschedule, and offer to book a new one instead."
+              ? `Upcoming appointments found: ${matches.map(a => `${a.service ?? 'appointment'} on ${fmtDate(a.scheduled_at, biz.timezone)} (ref: ${a.id})`).join('; ')}. Read these out to the caller in natural speech without mentioning the refs, ask which one they mean, then call rescheduleAppointment (if they want a new time) or cancelAppointment (if they want it cancelled entirely) with that exact ref as appointmentId.`
+              : "No upcoming appointments found for that number — let the caller know you couldn't find a booking to change or cancel, and offer to book a new one instead."
           }
         } catch (err) {
           console.error('findUpcomingAppointments tool call failed:', err)
@@ -347,6 +347,83 @@ export async function POST(req: Request) {
         } catch (err) {
           console.error('rescheduleAppointment tool call failed:', err)
           resultText = "Something went wrong on our end — let the caller know you'll confirm the change shortly."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      if (name === 'cancelAppointment') {
+        const args          = toolArgs(toolCall)
+        const appointmentId = args.appointmentId as string | undefined
+        let resultText: string
+
+        try {
+          const { data: biz } = await supabase
+            .from('businesses')
+            .select('id, name, twilio_phone_number, timezone')
+            .eq('vapi_assistant_id', message.call?.assistantId)
+            .single()
+
+          if (!biz) {
+            resultText = "I couldn't find this business's account — let the caller know you'll confirm the cancellation manually."
+          } else if (!appointmentId) {
+            resultText = "There's no valid appointment reference — call findUpcomingAppointments again and confirm which booking the caller means."
+          } else {
+            const { data: existing } = await supabase
+              .from('appointments')
+              .select('id, service, customer_name, customer_phone, scheduled_at, calendar_event_id')
+              .eq('id', appointmentId)
+              .eq('business_id', biz.id)
+              .single()
+
+            if (!existing) {
+              resultText = "I couldn't find that appointment — let the caller know you'll confirm the cancellation manually."
+            } else {
+              const { error: updateError } = await supabase.from('appointments').update({
+                status: 'cancelled',
+              }).eq('id', existing.id)
+
+              if (updateError) {
+                console.error('Failed to cancel appointment:', updateError)
+                resultText = "Something went wrong cancelling that booking — let the caller know you'll confirm it manually."
+              } else {
+                resultText = `Cancelled${existing.service ? ` the ${existing.service}` : ''} appointment for ${existing.customer_name ?? 'the caller'}.`
+
+                const phone = existing.customer_phone
+                if (phone) {
+                  try {
+                    const smsBody = [
+                      `Hi ${existing.customer_name ?? ''} 👋`,
+                      '',
+                      `Your ${existing.service ?? 'appointment'} with ${biz.name} on ${fmtDate(existing.scheduled_at, biz.timezone)} has been cancelled.`,
+                      '',
+                      "Let us know if you'd like to rebook.",
+                    ].join('\n')
+
+                    await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
+                  } catch (smsError) {
+                    console.error('Failed to send cancellation SMS:', smsError)
+                    // Cancellation already succeeded — don't fail the tool call over a text delivery issue.
+                  }
+                }
+
+                if (existing.calendar_event_id) {
+                  try {
+                    const google = await getValidAccessToken(supabase, biz.id)
+                    if (google) {
+                      await deleteCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id)
+                    }
+                  } catch (calErr) {
+                    console.error('Failed to delete Google Calendar event — cancellation already saved locally:', calErr)
+                  }
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error('cancelAppointment tool call failed:', err)
+          resultText = "Something went wrong on our end — let the caller know you'll confirm the cancellation shortly."
         }
 
         results.push({ toolCallId: toolCall.id, result: resultText })

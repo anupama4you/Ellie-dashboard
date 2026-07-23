@@ -41,7 +41,7 @@ const res = await fetch('https://api.vapi.ai/tool', {
     type: 'function',
     function: {
       name: 'findUpcomingAppointments',
-      description: 'Look up the caller\'s upcoming appointment(s) before rescheduling. Call this first whenever a caller wants to change or move an existing booking.',
+      description: 'Look up the caller\'s upcoming appointment(s) before rescheduling or cancelling. Call this first whenever a caller wants to change, move, or cancel an existing booking.',
       parameters: {
         type: 'object',
         properties: {

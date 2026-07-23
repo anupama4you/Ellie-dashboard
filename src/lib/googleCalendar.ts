@@ -193,6 +193,21 @@ export async function updateCalendarEvent(
   return res.json()
 }
 
+export async function deleteCalendarEvent(
+  accessToken: string,
+  calendarId: string,
+  eventId: string,
+): Promise<void> {
+  const res = await fetch(`${CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  // 410 Gone means it's already deleted/cancelled on Google's side — treat as success.
+  if (!res.ok && res.status !== 404 && res.status !== 410) {
+    throw new Error(`Google event deletion failed: ${res.status} ${await res.text()}`)
+  }
+}
+
 export type GoogleCalendarEvent = {
   id: string
   summary?: string
