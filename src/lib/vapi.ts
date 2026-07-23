@@ -177,6 +177,22 @@ export async function updateAssistant(assistantId: string, patch: Record<string,
   return vapiRequest(`/assistant/${assistantId}`, { method: 'PATCH', body: JSON.stringify(patch) })
 }
 
+export type VapiPhoneNumber = {
+  id: string
+  number?: string
+  assistantId?: string | null
+}
+
+/** Every phone number on the account — there's no per-assistant filter on Vapi's list endpoint, so callers filter client-side by assistantId. */
+export async function listPhoneNumbers(): Promise<VapiPhoneNumber[]> {
+  const data = await vapiRequest('/phone-number', { cache: 'no-store' })
+  return Array.isArray(data) ? data : (data.results ?? [])
+}
+
+export async function updatePhoneNumber(id: string, patch: Record<string, unknown>): Promise<VapiPhoneNumber> {
+  return vapiRequest(`/phone-number/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+}
+
 /** Tool IDs every assistant should have attached — created once via scripts/setup-vapi-tool.mjs */
 function requiredToolIds(): string[] {
   return [

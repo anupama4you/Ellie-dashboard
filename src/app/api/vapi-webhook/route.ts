@@ -1,11 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
-import { phoneDigitsKey } from '@/lib/sms'
+import { phoneDigitsKey, toE164Au } from '@/lib/sms'
 import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone } from '@/lib/timezone'
+import { mapsLink } from '@/lib/maps'
+import { rememberCustomerName } from '@/lib/customers'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -32,26 +34,6 @@ function fmtDate(iso: string, timeZone: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
-}
-
-/**
- * Prefers the business's own pasted Google Maps share link (accurate — points
- * straight at their real listing) and only falls back to a constructed
- * search-query URL from address fields if they haven't set one. Null if
- * neither is available.
- */
-function mapsLink(biz: {
-  name: string
-  google_maps_url?: string | null
-  address?: string | null
-  city?: string | null
-  state?: string | null
-  postcode?: string | null
-}): string | null {
-  if (biz.google_maps_url?.trim()) return biz.google_maps_url.trim()
-  const location = [biz.address, biz.city, biz.state, biz.postcode].filter(Boolean).join(', ')
-  if (!location) return null
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${biz.name}, ${location}`)}`
 }
 
 // end-of-call-report field extraction — Vapi has flattened some of these fields
@@ -142,7 +124,7 @@ export async function POST(req: Request) {
       return json({
         destination: {
           type: 'number',
-          number: biz.transfer_phone_number,
+          number: toE164Au(biz.transfer_phone_number),
           transferPlan: { mode: 'warm-transfer-say-summary' },
         },
       })
@@ -356,6 +338,7 @@ export async function POST(req: Request) {
       if (name === 'cancelAppointment') {
         const args          = toolArgs(toolCall)
         const appointmentId = args.appointmentId as string | undefined
+        const callId        = message.call?.id as string | undefined
         let resultText: string
 
         try {
@@ -382,6 +365,7 @@ export async function POST(req: Request) {
             } else {
               const { error: updateError } = await supabase.from('appointments').update({
                 status: 'cancelled',
+                vapi_call_id: callId ?? null,
               }).eq('id', existing.id)
 
               if (updateError) {
@@ -482,6 +466,8 @@ export async function POST(req: Request) {
             resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'} on ${fmtDate(args.dateTime as string, biz.timezone)}.`
 
             if (phone) {
+              await rememberCustomerName(supabase, biz.id, phone, args.customerName as string | undefined)
+
               try {
                 const link = mapsLink(biz)
                 const smsBody = [
@@ -571,10 +557,23 @@ export async function POST(req: Request) {
         .limit(1)
       const hasBooking    = !!correlated?.length
       const hasReschedule = correlated?.[0]?.status === 'rescheduled'
+
       // Priority: Vapi's own customer metadata (rare for phone calls) > the
-      // name confirmed out loud during a booking/reschedule on this call
-      // (most reliable) > an LLM guess from the raw transcript (least certain).
-      const callerName = customer.name ?? correlated?.[0]?.customer_name ?? report.analysis?.structuredData?.callerName ?? null
+      // name confirmed out loud during a booking/reschedule/cancellation on
+      // this call (most reliable) > a name remembered from a past call on
+      // this same number > an LLM guess from the raw transcript (least
+      // certain, only tried once everything more reliable has come up empty).
+      let callerName = customer.name ?? correlated?.[0]?.customer_name ?? null
+      if (!callerName && customer.number) {
+        const { data: known } = await supabase
+          .from('customers')
+          .select('name')
+          .eq('business_id', biz.id)
+          .eq('phone', phoneDigitsKey(customer.number))
+          .single()
+        callerName = known?.name ?? null
+      }
+      callerName = callerName ?? report.analysis?.structuredData?.callerName ?? null
 
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,

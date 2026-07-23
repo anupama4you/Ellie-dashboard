@@ -1,10 +1,12 @@
 'use client'
 
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Settings, LogOut, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Settings, LogOut, ShieldCheck, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { setLineActive } from '@/app/(dashboard)/actions'
 
 const NAV = [
   { href: '/',             label: 'Dashboard',           icon: LayoutDashboard },
@@ -45,11 +47,23 @@ type Props = {
   streakDays: number
   isAdmin?: boolean
   usage?: PlanUsageSummary | null
+  linePaused: boolean
+  hasAssistant: boolean
+  transferPhoneNumber: string | null
+  phoneNumber: string | null
 }
 
-export default function Sidebar({ businessName, userEmail, coveragePct, streakDays, isAdmin, usage }: Props) {
+export default function Sidebar({
+  businessName, userEmail, coveragePct, streakDays, isAdmin, usage,
+  linePaused, hasAssistant, transferPhoneNumber, phoneNumber,
+}: Props) {
   const pathname = usePathname()
   const router   = useRouter()
+
+  const [paused, setPaused]           = useState(linePaused)
+  const [confirmTarget, setConfirmTarget] = useState<'pause' | 'resume' | null>(null)
+  const [toggleError, setToggleError] = useState('')
+  const [isToggling, startToggle]     = useTransition()
 
   async function signOut() {
     const supabase = createClient()
@@ -57,7 +71,23 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
     router.push('/login')
   }
 
+  function confirmToggle() {
+    if (!confirmTarget) return
+    setToggleError('')
+    startToggle(async () => {
+      try {
+        await setLineActive(confirmTarget === 'resume')
+        setPaused(confirmTarget === 'pause')
+        setConfirmTarget(null)
+        router.refresh()
+      } catch (err) {
+        setToggleError(err instanceof Error ? err.message : 'Failed to update line status')
+      }
+    })
+  }
+
   return (
+    <>
     <aside
       className="flex flex-col w-[236px] shrink-0 h-full gap-1.5 px-4 py-5"
       style={{ background: 'var(--night)', color: '#DCD6EC' }}
@@ -133,6 +163,43 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
       )}
 
       <div className="flex-1" />
+
+      {/* Phone line toggle */}
+      {hasAssistant && (
+        <div
+          className="rounded-xl px-3.5 py-3"
+          style={{ border: '1px solid var(--night-line)', background: 'var(--night-2)' }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {paused ? (
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#736C90' }} />
+              ) : (
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--signal)' }} />
+                  <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--signal)' }} />
+                </span>
+              )}
+              <b className="text-[0.85rem] text-white font-semibold">
+                {paused ? 'Line paused' : 'Phone number active'}
+              </b>
+            </div>
+            <button
+              onClick={() => setConfirmTarget(paused ? 'resume' : 'pause')}
+              role="switch" aria-checked={!paused}
+              className="w-[34px] h-[20px] rounded-full relative shrink-0 transition-colors"
+              style={{ background: paused ? 'rgba(255,255,255,0.15)' : 'var(--signal)' }}
+            >
+              <span className="absolute top-[2.5px] w-[15px] h-[15px] rounded-full bg-white transition-all" style={{ left: paused ? 2.5 : 16.5 }} />
+            </button>
+          </div>
+          <p className="text-[0.72rem] leading-relaxed mt-1.5" style={{ color: '#8B84A6' }}>
+            {paused
+              ? `Calls forward straight to ${transferPhoneNumber ?? 'your number'} — Ellie isn't answering.`
+              : `Ellie is answering calls${phoneNumber ? ` on ${phoneNumber}` : ''}.`}
+          </p>
+        </div>
+      )}
 
       {/* Line status */}
       <div
@@ -222,5 +289,51 @@ export default function Sidebar({ businessName, userEmail, coveragePct, streakDa
         </button>
       </div>
     </aside>
+
+    {confirmTarget && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(20,16,32,0.5)' }} onClick={() => setConfirmTarget(null)}>
+        <div
+          className="w-full max-w-sm rounded-2xl p-5 flex flex-col gap-3.5"
+          style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-base font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>
+              {confirmTarget === 'pause' ? 'Pause your phone line?' : 'Turn Ellie back on?'}
+            </h2>
+            <button onClick={() => setConfirmTarget(null)} style={{ color: 'var(--ink-3)' }} aria-label="Close">
+              <X size={16} />
+            </button>
+          </div>
+
+          <p className="text-sm" style={{ color: 'var(--ink-2)' }}>
+            {confirmTarget === 'pause'
+              ? `Callers${phoneNumber ? ` to ${phoneNumber}` : ''} won't reach Ellie until you turn this back on — they'll be forwarded straight to ${transferPhoneNumber ?? 'your transfer number'} instead.`
+              : `Ellie will start answering calls${phoneNumber ? ` on ${phoneNumber}` : ''} again right away.`}
+          </p>
+
+          {toggleError && (
+            <div className="rounded-lg px-3 py-2" style={{ background: 'var(--coral-soft)' }}>
+              <p className="text-xs" style={{ color: 'var(--coral)' }}>{toggleError}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 mt-1">
+            <button onClick={() => setConfirmTarget(null)} className="flex-1 rounded-xl py-2.5 text-sm font-bold btn-ghost" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}>
+              Cancel
+            </button>
+            <button
+              onClick={confirmToggle}
+              disabled={isToggling}
+              className="flex-1 rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+              style={{ background: confirmTarget === 'pause' ? 'var(--coral)' : 'var(--violet)' }}
+            >
+              {isToggling ? 'Saving…' : confirmTarget === 'pause' ? 'Pause line' : 'Resume'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }

@@ -7,6 +7,7 @@ import { getValidAccessToken, listEvents } from '@/lib/googleCalendar'
 import type { Hours } from '../briefing/actions'
 import CopyButton from '@/components/CopyButton'
 import AddAppointmentModal from '@/components/AddAppointmentModal'
+import AppointmentActions from '@/components/AppointmentActions'
 import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink, CalendarSync } from 'lucide-react'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
@@ -369,6 +370,18 @@ export default async function AppointmentsPage({
                         >
                           {appt.status}
                         </span>
+                        {appt.status !== 'completed' && (
+                          <AppointmentActions
+                            appointmentId={appt.id}
+                            customerName={appt.customer_name}
+                            customerPhone={appt.customer_phone ?? null}
+                            service={appt.service ?? null}
+                            notes={appt.notes ?? null}
+                            scheduledAt={appt.scheduled_at}
+                            timeZone={timeZone}
+                            services={services.map(s => ({ name: s.name }))}
+                          />
+                        )}
                       </div>
                     </div>
                   )

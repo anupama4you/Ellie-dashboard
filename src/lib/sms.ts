@@ -54,3 +54,17 @@ export function formatAuPhone(phone: string): string {
   if (digits.length !== 9) return phone
   return `0${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`
 }
+
+/**
+ * `0432 118 774` / `+61432118774` / `432118774` → `+61432118774` — Vapi's
+ * transfer destination (and similar telephony APIs) require strict E.164,
+ * but numbers typed into a plain "Number to transfer calls to" form field
+ * are naturally local AU format (`0…`). Falls back to the raw input,
+ * `+`-prefixed, for anything that isn't a 9-digit AU number rather than
+ * silently producing a bogus number.
+ */
+export function toE164Au(phone: string): string {
+  const digits = phoneDigitsKey(phone)
+  if (digits.length !== 9) return phone.startsWith('+') ? phone : `+${phone.replace(/\D/g, '')}`
+  return `+61${digits}`
+}
