@@ -36,6 +36,54 @@ function fmtDate(iso: string, timeZone: string) {
   return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
 }
 
+/**
+ * Shared by checkAvailability and bookAppointment's booking-conflict
+ * recovery (two callers offered the same slot at once — see the unique
+ * index on appointments(business_id, scheduled_at)) — both need the same
+ * "what's actually free right now" computation.
+ */
+async function computeAvailableSlots(
+  biz: { id: string; hours: unknown; timezone: string },
+  requestedService: string | undefined,
+): Promise<Date[]> {
+  const [{ data: services }, { data: existing }] = await Promise.all([
+    supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
+    supabase.from('appointments')
+      .select('scheduled_at, service')
+      .eq('business_id', biz.id)
+      .neq('status', 'cancelled')
+      .gte('scheduled_at', new Date().toISOString())
+      .order('scheduled_at')
+      .limit(100),
+  ])
+
+  let externalBusy: { start: Date; end: Date }[] = []
+  try {
+    const google = await getValidAccessToken(supabase, biz.id)
+    if (google) {
+      const now = new Date()
+      const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
+      const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
+      externalBusy = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
+    }
+  } catch (calErr) {
+    console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
+  }
+
+  return findNextAvailableSlots({
+    hours: biz.hours as Hours,
+    services: services ?? [],
+    existing: existing ?? [],
+    requestedService,
+    externalBusy,
+    timeZone: biz.timezone,
+  })
+}
+
+function fmtSlots(slots: Date[], timeZone: string): string {
+  return slots.map(s => `${formatSlot(s, timeZone)} (${s.toISOString()})`).join('; ')
+}
+
 // end-of-call-report field extraction — Vapi has flattened some of these fields
 // directly onto `message` in different API versions, so check both the nested
 // (call/artifact/analysis) and flat shapes rather than trusting one.
@@ -154,41 +202,10 @@ export async function POST(req: Request) {
           if (!biz) {
             resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
           } else {
-            const [{ data: services }, { data: existing }] = await Promise.all([
-              supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
-              supabase.from('appointments')
-                .select('scheduled_at, service')
-                .eq('business_id', biz.id)
-                .neq('status', 'cancelled')
-                .gte('scheduled_at', new Date().toISOString())
-                .order('scheduled_at')
-                .limit(100),
-            ])
-
-            let externalBusy: { start: Date; end: Date }[] = []
-            try {
-              const google = await getValidAccessToken(supabase, biz.id)
-              if (google) {
-                const now = new Date()
-                const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
-                const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
-                externalBusy = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
-              }
-            } catch (calErr) {
-              console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
-            }
-
-            const slots = findNextAvailableSlots({
-              hours: biz.hours as Hours,
-              services: services ?? [],
-              existing: existing ?? [],
-              requestedService: args.service as string | undefined,
-              externalBusy,
-              timeZone: biz.timezone,
-            })
+            const slots = await computeAvailableSlots(biz, args.service as string | undefined)
 
             resultText = slots.length
-              ? `Next available slots: ${slots.map(s => `${formatSlot(s, biz.timezone)} (${s.toISOString()})`).join('; ')}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose.`
+              ? `Next available slots: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose.`
               : "No open slots found in the next two weeks — let the caller know you'll have someone reach out to schedule."
           }
         } catch (err) {
@@ -251,7 +268,7 @@ export async function POST(req: Request) {
         try {
           const { data: biz } = await supabase
             .from('businesses')
-            .select('id, name, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
+            .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
             .eq('vapi_assistant_id', message.call?.assistantId)
             .single()
 
@@ -282,7 +299,17 @@ export async function POST(req: Request) {
                 vapi_call_id: callId ?? null,
               }).eq('id', existing.id)
 
-              if (updateError) {
+              if (updateError?.code === '23505') {
+                resultText = "That new time was just taken by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
+                try {
+                  const slots = await computeAvailableSlots(biz, existing.service ?? undefined)
+                  if (slots.length) {
+                    resultText = `That new time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to rescheduleAppointment for whichever they choose.`
+                  }
+                } catch (altErr) {
+                  console.error('Failed to compute alternative slots after a reschedule conflict:', altErr)
+                }
+              } else if (updateError) {
                 console.error('Failed to reschedule appointment:', updateError)
                 resultText = "Something went wrong moving that booking — let the caller know you'll confirm it manually."
               } else {
@@ -424,7 +451,7 @@ export async function POST(req: Request) {
       try {
         const { data: biz } = await supabase
           .from('businesses')
-          .select('id, name, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
           .eq('vapi_assistant_id', message.call?.assistantId)
           .single()
 
@@ -459,7 +486,21 @@ export async function POST(req: Request) {
             ;({ data: inserted, error: insertError } = await supabase.from('appointments').insert(withoutCallId).select('id').single())
           }
 
-          if (insertError) {
+          // Another caller booked this exact slot in the moment between this
+          // caller being offered it and bookAppointment actually running —
+          // see the unique index on appointments(business_id, scheduled_at).
+          // Recover with fresh alternatives rather than a dead-end error.
+          if (insertError?.code === '23505') {
+            resultText = "That time was just booked by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
+            try {
+              const slots = await computeAvailableSlots(biz, args.service as string | undefined)
+              if (slots.length) {
+                resultText = `That time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to bookAppointment for whichever they choose.`
+              }
+            } catch (altErr) {
+              console.error('Failed to compute alternative slots after a booking conflict:', altErr)
+            }
+          } else if (insertError) {
             console.error('Failed to insert appointment:', insertError)
             resultText = "Something went wrong saving that booking — let the caller know you'll confirm it manually."
           } else {

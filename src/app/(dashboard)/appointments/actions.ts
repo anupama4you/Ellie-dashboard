@@ -48,7 +48,7 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
     status:         'confirmed',
     vapi_call_id:   null,
   })
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
 
   await rememberCustomerName(supabase, biz.id, input.customerPhone, customerName)
 
@@ -91,7 +91,7 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
     scheduled_at: scheduledAt.toISOString(),
     status: 'rescheduled',
   }).eq('id', existing.id)
-  if (error) throw new Error(error.message)
+  if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
 
   const { data: services } = await supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id)
   const durationMins = durationFor(existing.service, services ?? [])
