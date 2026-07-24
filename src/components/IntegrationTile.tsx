@@ -3,18 +3,26 @@ import BrandIcon, { type BrandIconName } from '@/components/BrandIcon'
 type Props = {
   name: string
   description: string
-  icon: BrandIconName
   color: string
   bg: string
+  /** Vector brand mark from BrandIcon. Mutually exclusive with imageSrc — use whichever the brand has available. */
+  icon?: BrandIconName
+  /** Raster fallback (e.g. a data: URI) for brands not covered by BrandIcon's vector set. */
+  imageSrc?: string
 }
 
 /** UI-only placeholder for an integration with no backend yet — always shows "Coming soon" and a disabled Connect button. */
-export default function IntegrationTile({ name, description, icon, color, bg }: Props) {
+export default function IntegrationTile({ name, description, icon, imageSrc, color, bg }: Props) {
   return (
     <div className="rounded-2xl p-5 flex flex-col gap-3.5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
       <div className="flex items-center justify-between">
-        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: bg }}>
-          <BrandIcon name={icon} size={18} color={color} />
+        <span className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 overflow-hidden" style={{ background: bg }}>
+          {imageSrc ? (
+            // eslint-disable-next-line @next/next/no-img-element -- small embedded data URI, not a page asset worth Next's image pipeline
+            <img src={imageSrc} alt="" width={22} height={22} style={{ objectFit: 'contain' }} />
+          ) : icon ? (
+            <BrandIcon name={icon} size={18} color={color} />
+          ) : null}
         </span>
         <span className="text-[0.65rem] font-bold px-2 py-1 rounded-full whitespace-nowrap" style={{ background: 'var(--paper)', color: 'var(--ink-3)' }}>
           Coming soon
