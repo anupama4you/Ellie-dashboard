@@ -2,8 +2,9 @@
 
 import { useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, CheckCircle2, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { disconnectGoogleCalendar } from '@/app/(dashboard)/settings/actions'
+import BrandIcon from '@/components/BrandIcon'
 
 type Props = {
   businessId: string
@@ -25,7 +26,7 @@ export default function GoogleCalendarCard({ businessId, connection, statusParam
   return (
     <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
       <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
-        <CalendarDays size={14} style={{ color: 'var(--violet)' }} />
+        <BrandIcon name="googleCalendar" size={16} color="#4285F4" />
         <div>
           <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Google Calendar</h2>
           <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Real availability checks and bookings in your own calendar</p>

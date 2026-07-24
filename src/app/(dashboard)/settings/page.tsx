@@ -1,9 +1,9 @@
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getPlanUsage } from '@/lib/planUsage'
 import { formatInZone } from '@/lib/timezone'
-import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, PhoneCall, RefreshCw } from 'lucide-react'
-import GoogleCalendarCard from '@/components/GoogleCalendarCard'
+import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, PhoneCall, RefreshCw, Plug, ChevronRight } from 'lucide-react'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
   'Business Name':     {
@@ -48,28 +48,18 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
   },
 }
 
-export default async function SettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ calendar?: string }>
-}) {
-  const { calendar } = await searchParams
+export default async function SettingsPage() {
   const { user, business: biz } = await getCurrentBusiness()
   const supabase = await createClient()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
-  const [{ data: calendarConnection }, usage] = await Promise.all([
-    biz
-      ? supabase.from('calendar_connections').select('google_email, status').eq('business_id', biz.id).single()
-      : Promise.resolve({ data: null }),
-    biz
-      ? getPlanUsage(
-          supabase, biz.id,
-          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
-          timeZone,
-        ).catch(() => null)
-      : Promise.resolve(null),
-  ])
+  const usage = biz
+    ? await getPlanUsage(
+        supabase, biz.id,
+        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+        timeZone,
+      ).catch(() => null)
+    : null
 
   const fields = [
     { label: 'Business Name',    value: biz?.name              },
@@ -148,9 +138,22 @@ export default async function SettingsPage({
             </div>
           </section>
 
-          {biz?.id && (
-            <GoogleCalendarCard businessId={biz.id} connection={calendarConnection} statusParam={calendar} />
-          )}
+          <Link
+            href="/integrations"
+            className="rounded-2xl flex flex-col hover-row transition-colors"
+            style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}
+          >
+            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
+              <Plug size={14} style={{ color: 'var(--violet)' }} />
+              <h2 className="text-sm font-bold flex-1" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Integrations</h2>
+            </div>
+            <div className="p-5 flex items-center justify-between gap-3 flex-1">
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-3)' }}>
+                Connect Google Calendar and other tools your business runs on.
+              </p>
+              <ChevronRight size={16} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
+            </div>
+          </Link>
         </div>
 
         <div className="flex items-center justify-center gap-2">

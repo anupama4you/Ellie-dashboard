@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Settings, LogOut, ShieldCheck, X } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive } from '@/app/(dashboard)/actions'
 
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/sms',          label: 'SMS log',             icon: MessageSquare   },
   { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
   { href: '/briefing',     label: 'Business', icon: Building2       },
+  { href: '/integrations', label: 'Integrations',        icon: Plug            },
   { href: '/settings',     label: 'Settings',            icon: Settings        },
 ]
 

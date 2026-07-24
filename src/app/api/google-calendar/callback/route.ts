@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   cookieStore.delete(NONCE_COOKIE)
 
   if (!code || !state || !expectedNonce || state !== expectedNonce) {
-    return NextResponse.redirect(new URL('/settings?calendar=error', base))
+    return NextResponse.redirect(new URL('/integrations?calendar=error', base))
   }
 
   const supabase = await createClient()
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   if (!user) return NextResponse.redirect(new URL('/login', base))
 
   const { data: biz } = await supabase.from('businesses').select('id').eq('user_id', user.id).single()
-  if (!biz) return NextResponse.redirect(new URL('/settings?calendar=error', base))
+  if (!biz) return NextResponse.redirect(new URL('/integrations?calendar=error', base))
 
   try {
     const tokens = await exchangeCodeForTokens(code)
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       // Google only returns a refresh token on the *first* consent — if the
       // user had already granted access before without revoking, re-consent
       // (prompt=consent on our auth URL should prevent this, but guard anyway).
-      return NextResponse.redirect(new URL('/settings?calendar=reconsent', base))
+      return NextResponse.redirect(new URL('/integrations?calendar=reconsent', base))
     }
 
     const email = await getUserEmail(tokens.access_token)
@@ -53,12 +53,12 @@ export async function GET(request: Request) {
 
     if (error) {
       console.error('Failed to save calendar connection:', error)
-      return NextResponse.redirect(new URL('/settings?calendar=error', base))
+      return NextResponse.redirect(new URL('/integrations?calendar=error', base))
     }
 
-    return NextResponse.redirect(new URL('/settings?calendar=connected', base))
+    return NextResponse.redirect(new URL('/integrations?calendar=connected', base))
   } catch (err) {
     console.error('Google Calendar OAuth callback failed:', err)
-    return NextResponse.redirect(new URL('/settings?calendar=error', base))
+    return NextResponse.redirect(new URL('/integrations?calendar=error', base))
   }
 }

@@ -20,6 +20,6 @@ export async function disconnectGoogleCalendar(businessId: string) {
 
   const { error } = await supabase.from('calendar_connections').delete().eq('business_id', businessId)
   if (error) throw new Error(error.message)
-  revalidatePath('/settings')
+  revalidatePath('/integrations')
   revalidatePath('/appointments')
 }
