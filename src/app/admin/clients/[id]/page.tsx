@@ -5,6 +5,7 @@ import { Mail, Trash2, CheckCircle2, Sparkles, CreditCard, Ban, ExternalLink } f
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
+import AdminSubmitButton from '@/components/AdminSubmitButton'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -259,11 +260,12 @@ export default async function EditClientPage({
                 </p>
               </div>
 
-              <button type="submit"
+              <AdminSubmitButton
+                pendingLabel="Saving…"
                 className="w-full rounded-xl py-3 text-sm font-bold text-white mt-1 transition-opacity hover:opacity-90"
                 style={{ gridColumn: '1 / -1', background: 'linear-gradient(135deg, var(--violet), var(--rose))', boxShadow: '0 0 24px rgba(109,74,255,0.25)' }}>
                 Save Changes
-              </button>
+              </AdminSubmitButton>
             </div>
           </form>
 
@@ -317,30 +319,33 @@ export default async function EditClientPage({
                   {biz.plan_status === 'trial' ? (
                     <>
                       <form action={convertToPaidAction}>
-                        <button type="submit"
+                        <AdminSubmitButton
+                          pendingLabel="Starting checkout…"
+                          icon={<CreditCard size={13} />}
                           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                           style={{ color: 'var(--signal)', background: 'rgba(15,163,122,0.08)', border: '1px solid rgba(15,163,122,0.2)' }}>
-                          <CreditCard size={13} />
                           Convert to Paid ({biz.plan})
-                        </button>
+                        </AdminSubmitButton>
                       </form>
                       <form action={cancelPlanAction}>
-                        <button type="submit"
+                        <AdminSubmitButton
+                          pendingLabel="Cancelling…"
+                          icon={<Ban size={13} />}
                           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                           style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
-                          <Ban size={13} />
                           Cancel Trial
-                        </button>
+                        </AdminSubmitButton>
                       </form>
                     </>
                   ) : (
                     <form action={startTrialAction}>
-                      <button type="submit"
+                      <AdminSubmitButton
+                        pendingLabel="Starting trial…"
+                        icon={<Sparkles size={13} />}
                         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                         style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
-                        <Sparkles size={13} />
                         Start {TRIAL_DAYS}-day Trial
-                      </button>
+                      </AdminSubmitButton>
                     </form>
                   )}
                 </div>
@@ -354,12 +359,13 @@ export default async function EditClientPage({
               </div>
               <div className="p-5">
                 <form action={sendPasswordReset}>
-                  <button type="submit"
+                  <AdminSubmitButton
+                    pendingLabel="Sending…"
+                    icon={<Mail size={13} />}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-violet-500/10"
                     style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
-                    <Mail size={13} />
                     Send Password Reset Email
-                  </button>
+                  </AdminSubmitButton>
                 </form>
               </div>
             </div>
@@ -380,12 +386,13 @@ export default async function EditClientPage({
                   login account. All appointments are also removed. This cannot be undone.
                 </p>
                 <form action={deleteClient}>
-                  <button type="submit"
+                  <AdminSubmitButton
+                    pendingLabel="Deleting…"
+                    icon={<Trash2 size={13} />}
                     className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-red-500/10"
                     style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
-                    <Trash2 size={13} />
                     Delete {biz.name}
-                  </button>
+                  </AdminSubmitButton>
                 </form>
               </div>
             </details>

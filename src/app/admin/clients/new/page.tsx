@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
+import AdminSubmitButton from '@/components/AdminSubmitButton'
 
 /**
  * NEXT_PUBLIC_SITE_URL wins when set — trust the environment over guessing.
@@ -171,11 +172,12 @@ export default async function NewClientPage({
               </p>
             </div>
 
-            <button type="submit"
+            <AdminSubmitButton
+              pendingLabel="Creating client…"
               className="w-full rounded-xl py-3 text-sm font-bold text-white mt-1 transition-opacity hover:opacity-90"
               style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', boxShadow: '0 0 24px rgba(109,74,255,0.25)' }}>
               Create Client &amp; Continue to Briefing
-            </button>
+            </AdminSubmitButton>
 
           </div>
         </form>

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getPlanUsage } from '@/lib/planUsage'
 import { formatInZone } from '@/lib/timezone'
-import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, PhoneCall, RefreshCw } from 'lucide-react'
+import { Settings2, Building2, Phone, CreditCard, Mail, Info, PhoneCall, RefreshCw } from 'lucide-react'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
   'Business Name':     {
@@ -32,11 +32,6 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
   },
   'Trial ends':        {
     icon:   <RefreshCw size={13} style={{ color: 'var(--violet)' }} />,
-    bg:     'var(--violet-soft)',
-    border: 'rgba(109,74,255,0.2)',
-  },
-  'Vapi Assistant ID': {
-    icon:   <Bot size={13} style={{ color: 'var(--violet)' }} />,
     bg:     'var(--violet-soft)',
     border: 'rgba(109,74,255,0.2)',
   },
@@ -74,7 +69,6 @@ export default async function SettingsPage() {
       label: usage?.isTrial ? 'Trial ends' : 'Usage renews',
       value: usage ? formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' }) : undefined,
     },
-    { label: 'Vapi Assistant ID',value: biz?.vapi_assistant_id },
     { label: 'Account Email',    value: user?.email            },
   ]
 

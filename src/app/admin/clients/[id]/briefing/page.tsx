@@ -6,6 +6,7 @@ import { resolveBriefing, liveBriefing } from '@/lib/briefing'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import BriefingReadOnly from '@/components/BriefingReadOnly'
 import AdminCompanyInfoEditor from '@/components/AdminCompanyInfoEditor'
+import AdminSubmitButton from '@/components/AdminSubmitButton'
 import { rejectDraftBriefing } from './actions'
 
 export default async function AdminBriefingPage({
@@ -72,10 +73,14 @@ export default async function AdminBriefingPage({
               Review &amp; Apply →
             </Link>
             <form action={reject}>
-              <button type="submit" className="text-xs font-semibold underline shrink-0" style={{ color: 'var(--coral)' }}
-                title="Discards these pending changes. Live data and the system prompt are left untouched.">
+              <AdminSubmitButton
+                pendingLabel="Rejecting…"
+                iconSize={11}
+                title="Discards these pending changes. Live data and the system prompt are left untouched."
+                className="flex items-center gap-1.5 text-xs font-semibold underline shrink-0"
+                style={{ color: 'var(--coral)' }}>
                 Reject changes
-              </button>
+              </AdminSubmitButton>
             </form>
           </div>
         )}
