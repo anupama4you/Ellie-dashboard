@@ -1,12 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getStripe, priceIdForPlan } from '@/lib/stripe'
+import { getStripe } from '@/lib/stripe'
 import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
 import CopyLinkButton from '@/components/CopyLinkButton'
+import { generateInviteLinkAction, generatePaymentLinkAction } from './actions'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 
@@ -117,22 +118,6 @@ export default async function EditClientPage({
     redirect(`/admin/clients/${bizId}?reset=sent`)
   }
 
-  /** Same one-time link the reset email would contain, without depending on email delivery at all — see CopyLinkButton. */
-  async function generateInviteLinkAction(): Promise<{ url: string } | { error: string }> {
-    'use server'
-    const admin = createAdminClient()
-
-    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
-      type: 'recovery',
-      email: clientEmail,
-      options: { redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password` },
-    })
-    const hashedToken = linkData?.properties?.hashed_token
-    if (linkErr || !hashedToken) return { error: linkErr?.message ?? 'Failed to generate link' }
-
-    return { url: `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=recovery` }
-  }
-
   async function deleteClient() {
     'use server'
     const admin = createAdminClient()
@@ -154,51 +139,28 @@ export default async function EditClientPage({
    * Trial → paid never flips plan_status itself — that only happens once
    * Stripe confirms the subscription was actually created, via
    * api/stripe-webhook's `checkout.session.completed` handler. This just
-   * creates the Checkout Session the client needs to complete themselves;
-   * success/cancel redirect to their own dashboard, not the admin panel,
-   * since it's their browser that ends up there.
+   * creates the Checkout Session the client needs to complete themselves
+   * (via the shared generatePaymentLinkAction, same one CopyLinkButton
+   * uses) and emails it to them; success/cancel redirect to their own
+   * dashboard, not the admin panel, since it's their browser that ends up
+   * there.
    */
-  async function createCheckoutSession(): Promise<string> {
-    const admin = createAdminClient()
-    const stripe = getStripe()
-
-    let customerId = bizStripeCustomerId
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        name: bizName,
-        email: clientEmail || undefined,
-        metadata: { business_id: bizId },
-      })
-      customerId = customer.id
-      await admin.from('businesses').update({ stripe_customer_id: customerId }).eq('id', bizId)
-    }
-
-    const appUrl = process.env.APP_URL!.replace(/\/$/, '')
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      customer: customerId,
-      line_items: [{ price: priceIdForPlan(bizPlan), quantity: 1 }],
-      subscription_data: { metadata: { business_id: bizId } },
-      metadata: { business_id: bizId },
-      success_url: `${appUrl}/?upgraded=1`,
-      cancel_url:  `${appUrl}/`,
-    })
-
-    if (!session.url) throw new Error('Stripe did not return a Checkout URL')
-    return session.url
-  }
-
   async function sendPaymentLinkAction() {
     'use server'
     if (!clientEmail) redirect(`/admin/clients/${bizId}?paymentLink=error`)
 
+    const result = await generatePaymentLinkAction(bizId, bizName, bizPlan, clientEmail, bizStripeCustomerId)
+    if ('error' in result) {
+      console.error('Failed to create payment link:', result.error)
+      redirect(`/admin/clients/${bizId}?paymentLink=error`)
+    }
+
     try {
-      const checkoutUrl = await createCheckoutSession()
       await sendEmail(clientEmail, `Set up payment for ${bizName} on Ellie`, `
         <p>Hi,</p>
         <p>Click the link below to set up payment for your ${bizPlan} plan on Ellie.</p>
-        <p><a href="${checkoutUrl}">Set up payment</a></p>
-        <p>If the link doesn't work, copy and paste this URL into your browser:<br>${checkoutUrl}</p>
+        <p><a href="${result.url}">Set up payment</a></p>
+        <p>If the link doesn't work, copy and paste this URL into your browser:<br>${result.url}</p>
       `)
     } catch (err) {
       console.error('Failed to send payment link:', err)
@@ -206,16 +168,6 @@ export default async function EditClientPage({
     }
 
     redirect(`/admin/clients/${bizId}?paymentLink=sent`)
-  }
-
-  /** Same Checkout Session the payment-link email would contain, without depending on email delivery — see CopyLinkButton. */
-  async function generatePaymentLinkAction(): Promise<{ url: string } | { error: string }> {
-    'use server'
-    try {
-      return { url: await createCheckoutSession() }
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : 'Failed to create checkout session' }
-    }
   }
 
   async function cancelPlanAction() {
@@ -420,7 +372,9 @@ export default async function EditClientPage({
                           Send Payment Link ({biz.plan})
                         </AdminSubmitButton>
                       </form>
-                      <CopyLinkButton action={generatePaymentLinkAction} label="Copy Payment Link" />
+                      <CopyLinkButton
+                        action={generatePaymentLinkAction.bind(null, bizId, bizName, bizPlan, clientEmail, bizStripeCustomerId)}
+                        label="Copy Payment Link" />
                       <form action={cancelPlanAction}>
                         <AdminSubmitButton
                           pendingLabel="Cancelling…"
@@ -461,7 +415,7 @@ export default async function EditClientPage({
                     Send Password Reset Email
                   </AdminSubmitButton>
                 </form>
-                <CopyLinkButton action={generateInviteLinkAction} label="Copy Invite Link" />
+                <CopyLinkButton action={generateInviteLinkAction.bind(null, clientEmail)} label="Copy Invite Link" />
               </div>
             </div>
 
