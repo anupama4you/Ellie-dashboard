@@ -217,7 +217,7 @@ export default function AnalyticsCharts({ calls, prevCalls, plan, timeZone, usag
       {/* 30-day volume */}
       <div className="rounded-2xl p-5" style={cardStyle}>
         <h2 className="text-sm font-bold mb-5" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Call volume — last 30 days</h2>
-        <ResponsiveContainer width="100%" height={200}>
+        <ResponsiveContainer width="100%" height={200} minWidth={0}>
           <AreaChart data={daily} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
             <defs>
               <linearGradient id="aGrad" x1="0" y1="0" x2="0" y2="1">
@@ -307,8 +307,8 @@ export default function AnalyticsCharts({ calls, prevCalls, plan, timeZone, usag
           <p className="text-xs mb-2" style={{ color: 'var(--ink-3)' }}>{totalCalls} call{totalCalls !== 1 ? 's' : ''} this period</p>
           {outcome.length > 0 ? (
             <div className="flex items-center gap-5">
-              <div className="relative shrink-0" style={{ width: 160, height: 160 }}>
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="relative shrink-0" style={{ width: 160, height: 160, minWidth: 160 }}>
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <PieChart>
                     <Pie data={outcome} cx="50%" cy="50%" innerRadius={54} outerRadius={78} paddingAngle={3} dataKey="value">
                       {outcome.map((o, i) => <Cell key={i} fill={o.color} />)}

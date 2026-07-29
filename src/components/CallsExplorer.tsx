@@ -83,9 +83,9 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
   return (
     <div className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
       {/* Search + sort */}
-      <form onSubmit={applySearch} className="p-4 flex gap-2">
+      <form onSubmit={applySearch} className="p-4 flex gap-2 flex-wrap">
         <div
-          className="flex-1 flex items-center gap-2.5 rounded-xl px-3.5 py-2.5"
+          className="flex-1 min-w-[200px] flex items-center gap-2.5 rounded-xl px-3.5 py-2.5"
           style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}
         >
           <Search size={15} style={{ color: 'var(--ink-3)' }} />

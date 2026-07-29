@@ -201,8 +201,9 @@ export default async function AppointmentsPage({
           </div>
         </div>
 
-        {/* Week strip */}
-        <div className="grid grid-cols-7 gap-2.5">
+        {/* Week strip — horizontally scrollable below ~560px so day cards never get crushed unreadable */}
+        <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+        <div className="grid grid-cols-7 gap-2.5" style={{ minWidth: 560 }}>
           {weekDateStrs.map((dStr, i) => {
             const count    = countByDay.get(dStr) ?? 0
             const isSel    = dStr === selectedDate
@@ -237,6 +238,7 @@ export default async function AppointmentsPage({
               </Link>
             )
           })}
+        </div>
         </div>
 
         {/* Day detail */}

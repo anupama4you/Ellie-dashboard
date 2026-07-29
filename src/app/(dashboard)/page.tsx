@@ -258,7 +258,7 @@ export default async function TodayPage() {
         )}
 
         {/* KPI cards — this week, vs the 7 days before */}
-        <div className="grid grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
           <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Calls answered</span>
@@ -312,7 +312,7 @@ export default async function TodayPage() {
           </div>
         </div>
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: '1.9fr 1fr' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.9fr_1fr] gap-4">
           {/* Recent calls */}
           <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
             <div className="flex items-center justify-between px-5 pt-4 pb-3">

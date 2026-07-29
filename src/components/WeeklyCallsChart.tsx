@@ -8,8 +8,8 @@ export default function WeeklyCallsChart({ data }: { data: WeekDay[] }) {
   const chartData = data.map(d => ({ ...d, remainder: Math.max(0, d.calls - d.bookings) }))
 
   return (
-    <div style={{ height: 130 }}>
-      <ResponsiveContainer width="100%" height="100%">
+    <div style={{ height: 130, width: '100%', minWidth: 0 }}>
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <BarChart data={chartData} barCategoryGap="24%">
           <XAxis
             dataKey="label"

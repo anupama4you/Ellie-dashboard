@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { Mail, Trash2, CheckCircle2, Sparkles, CreditCard, Ban } from 'lucide-react'
+import { getStripe, priceIdForPlan } from '@/lib/stripe'
+import { Mail, Trash2, CheckCircle2, Sparkles, CreditCard, Ban, ExternalLink } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
@@ -41,8 +42,18 @@ export default async function EditClientPage({
   const clientEmail = clientUser?.email ?? ''
 
   // Capture only the primitives the server actions need
-  const bizId  = biz.id
-  const userId = biz.user_id
+  const bizId                    = biz.id
+  const userId                   = biz.user_id
+  const bizName                  = biz.name as string
+  const bizPlan                  = biz.plan as string
+  const bizStripeCustomerId      = biz.stripe_customer_id as string | null
+  const bizStripeSubscriptionId  = biz.stripe_subscription_id as string | null
+
+  // Test-mode keys (sk_test_...) and live keys (sk_live_...) each have their
+  // own dashboard — get this wrong and the "View in Stripe" link 404s.
+  const stripeDashboardBase = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_')
+    ? 'https://dashboard.stripe.com'
+    : 'https://dashboard.stripe.com/test'
 
   async function updateBusiness(formData: FormData) {
     'use server'
@@ -96,17 +107,56 @@ export default async function EditClientPage({
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
-  /** Trial → paid, once the client has actually paid (handled outside this app). Resets the billing anchor to the conversion date. */
+  /**
+   * Trial → paid. Doesn't flip plan_status itself anymore — that only
+   * happens once Stripe confirms the subscription was actually created, via
+   * api/stripe-webhook's `checkout.session.completed` handler. This action
+   * just starts a Checkout Session and sends the admin's browser to it (the
+   * admin either pays directly or forwards the URL to the client — payment
+   * collection stays admin-initiated, matching how trials/cancellation work).
+   */
   async function convertToPaidAction() {
     'use server'
     const admin = createAdminClient()
-    await admin.from('businesses').update({ plan_status: 'active', plan_started_at: new Date().toISOString() }).eq('id', bizId)
-    redirect(`/admin/clients/${bizId}?saved=1`)
+    const stripe = getStripe()
+
+    let customerId = bizStripeCustomerId
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        name: bizName,
+        email: clientEmail || undefined,
+        metadata: { business_id: bizId },
+      })
+      customerId = customer.id
+      await admin.from('businesses').update({ stripe_customer_id: customerId }).eq('id', bizId)
+    }
+
+    const appUrl = process.env.APP_URL!.replace(/\/$/, '')
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      line_items: [{ price: priceIdForPlan(bizPlan), quantity: 1 }],
+      subscription_data: { metadata: { business_id: bizId } },
+      metadata: { business_id: bizId },
+      success_url: `${appUrl}/admin/clients/${bizId}?saved=1`,
+      cancel_url:  `${appUrl}/admin/clients/${bizId}`,
+    })
+
+    redirect(session.url!)
   }
 
   async function cancelPlanAction() {
     'use server'
     const admin = createAdminClient()
+
+    if (bizStripeSubscriptionId) {
+      try {
+        await getStripe().subscriptions.cancel(bizStripeSubscriptionId)
+      } catch (err) {
+        console.error('Failed to cancel Stripe subscription — marking cancelled locally anyway:', err)
+      }
+    }
+
     await admin.from('businesses').update({ plan_status: 'cancelled' }).eq('id', bizId)
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
@@ -251,6 +301,16 @@ export default async function EditClientPage({
                       ? 'This client is cancelled — no active plan.'
                       : `On the ${biz.plan} plan since ${formatInZone(new Date(biz.plan_started_at ?? biz.created_at), biz.timezone ?? 'Australia/Adelaide', { day: 'numeric', month: 'short', year: 'numeric' })}.`}
                   </p>
+                )}
+
+                {bizStripeSubscriptionId && (
+                  <a href={`${stripeDashboardBase}/subscriptions/${bizStripeSubscriptionId}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-xs font-medium w-fit hover:opacity-80"
+                    style={{ color: 'var(--t4)' }}>
+                    <ExternalLink size={12} />
+                    View subscription in Stripe
+                  </a>
                 )}
 
                 <div className="flex flex-col gap-2">

@@ -8,6 +8,7 @@ import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendar
 import { formatInZone } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
+import { captureError } from '@/lib/monitoring'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -139,8 +140,13 @@ export async function OPTIONS() {
 export async function POST(req: Request) {
   const secret = process.env.VAPI_WEBHOOK_SECRET
   if (secret) {
-    const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${secret}`) {
+    // Vapi sends this back as a plain `X-Vapi-Secret` header (raw value, no
+    // "Bearer" prefix) when the assistant/tool's server config is wired to a
+    // Bearer-Token Custom Credential configured that way — NOT as an
+    // `Authorization: Bearer` header. Getting this wrong doesn't fail loud:
+    // it just silently 401s every real call. See VAPI_WEBHOOK_SETUP.md.
+    const provided = req.headers.get('x-vapi-secret')
+    if (provided !== secret) {
       return json({ error: 'Unauthorized' }, { status: 401 })
     }
   } else {
@@ -177,7 +183,7 @@ export async function POST(req: Request) {
         },
       })
     } catch (err) {
-      console.error('transfer-destination-request handling failed:', err)
+      captureError(err, { handler: 'transfer-destination-request', assistantId })
       return json({ error: 'Something went wrong looking up the transfer number.' })
     }
   }
@@ -209,7 +215,7 @@ export async function POST(req: Request) {
               : "No open slots found in the next two weeks — let the caller know you'll have someone reach out to schedule."
           }
         } catch (err) {
-          console.error('checkAvailability tool call failed:', err)
+          captureError(err, { handler: 'checkAvailability' })
           resultText = "Something went wrong checking the calendar — let the caller know you'll confirm a time shortly."
         }
 
@@ -251,7 +257,7 @@ export async function POST(req: Request) {
               : "No upcoming appointments found for that number — let the caller know you couldn't find a booking to change or cancel, and offer to book a new one instead."
           }
         } catch (err) {
-          console.error('findUpcomingAppointments tool call failed:', err)
+          captureError(err, { handler: 'findUpcomingAppointments' })
           resultText = "Something went wrong looking up the calendar — let the caller know you'll confirm shortly."
         }
 
@@ -354,7 +360,7 @@ export async function POST(req: Request) {
             }
           }
         } catch (err) {
-          console.error('rescheduleAppointment tool call failed:', err)
+          captureError(err, { handler: 'rescheduleAppointment' })
           resultText = "Something went wrong on our end — let the caller know you'll confirm the change shortly."
         }
 
@@ -433,7 +439,7 @@ export async function POST(req: Request) {
             }
           }
         } catch (err) {
-          console.error('cancelAppointment tool call failed:', err)
+          captureError(err, { handler: 'cancelAppointment' })
           resultText = "Something went wrong on our end — let the caller know you'll confirm the cancellation shortly."
         }
 
@@ -554,7 +560,7 @@ export async function POST(req: Request) {
           }
         }
       } catch (err) {
-        console.error('bookAppointment tool call failed:', err)
+        captureError(err, { handler: 'bookAppointment' })
         resultText = "Something went wrong on our end — let the caller know you'll confirm the booking shortly."
       }
 
@@ -640,7 +646,7 @@ export async function POST(req: Request) {
 
       if (error) console.error('Failed to save call record:', error)
     } catch (err) {
-      console.error('end-of-call-report handling failed:', err)
+      captureError(err, { handler: 'end-of-call-report', callId })
     }
 
     return json({ ok: true })
