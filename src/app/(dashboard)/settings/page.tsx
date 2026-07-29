@@ -1,9 +1,8 @@
-import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getPlanUsage } from '@/lib/planUsage'
 import { formatInZone } from '@/lib/timezone'
-import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, PhoneCall, RefreshCw, Plug, ChevronRight } from 'lucide-react'
+import { Settings2, Building2, Phone, CreditCard, Bot, Mail, Info, PhoneCall, RefreshCw } from 'lucide-react'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
   'Business Name':     {
@@ -89,7 +88,7 @@ export default async function SettingsPage() {
           <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Your account, your Ellie number and your plan</p>
         </div>
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'minmax(0, 560px)' }}>
           {/* Account details */}
           <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
             <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
@@ -137,23 +136,6 @@ export default async function SettingsPage() {
               })}
             </div>
           </section>
-
-          <Link
-            href="/integrations"
-            className="rounded-2xl flex flex-col hover-row transition-colors"
-            style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}
-          >
-            <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
-              <Plug size={14} style={{ color: 'var(--violet)' }} />
-              <h2 className="text-sm font-bold flex-1" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Integrations</h2>
-            </div>
-            <div className="p-5 flex items-center justify-between gap-3 flex-1">
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-3)' }}>
-                Connect Google Calendar and other tools your business runs on.
-              </p>
-              <ChevronRight size={16} style={{ color: 'var(--ink-3)', flexShrink: 0 }} />
-            </div>
-          </Link>
         </div>
 
         <div className="flex items-center justify-center gap-2">

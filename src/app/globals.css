@@ -134,6 +134,18 @@ body {
   background-size: 800px 100%;
   animation: ellie-shimmer 1.6s infinite linear;
 }
+/* The gradient above is tuned for the light "paper" theme — on the admin
+   panel's dark surfaces it's nearly invisible, so give that scope its own
+   lighter-on-dark shimmer. */
+[data-theme="admin"] .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.10) 50%,
+    rgba(255,255,255,0.04) 75%
+  );
+  background-size: 800px 100%;
+}
 
 /* Animations */
 @keyframes ellie-blink {

@@ -41,12 +41,14 @@ export async function POST(req: Request) {
           break
         }
 
-        await admin.from('businesses').update({
+        const { error } = await admin.from('businesses').update({
           stripe_customer_id:     typeof session.customer === 'string' ? session.customer : session.customer?.id ?? null,
           stripe_subscription_id: typeof session.subscription === 'string' ? session.subscription : session.subscription?.id ?? null,
           plan_status:            'active',
           plan_started_at:        new Date().toISOString(),
         }).eq('id', businessId)
+
+        if (error) console.error('Failed to activate business after checkout.session.completed:', error)
         break
       }
 
