@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
+import { getLocalCalls, callSummary, recordingProxyUrl, type LocalCall } from '@/lib/calls'
 import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
 import { isAfterHours } from '@/lib/availability'
@@ -189,7 +189,7 @@ export default async function TodayPage() {
       isAfterHours: afterHours,
       timeLabel,
       durationLabel,
-      recordingUrl: call.recording_url ?? undefined,
+      recordingUrl: call.recording_url ? recordingProxyUrl(call.vapi_call_id) : undefined,
       hasTranscript: !!call.transcript,
     }
   })

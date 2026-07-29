@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCall } from '@/lib/calls'
+import { getLocalCall, recordingProxyUrl } from '@/lib/calls'
 import CallDetailPanel from '@/components/CallDetailPanel'
 
 export default async function CallDetailPage({
@@ -43,7 +43,7 @@ export default async function CallDetailPage({
                 endedReason: call.ended_reason ?? undefined,
                 successEvaluation: call.success_evaluation ?? undefined,
                 summary: call.summary ?? undefined,
-                recordingUrl: call.recording_url ?? undefined,
+                recordingUrl: call.recording_url ? recordingProxyUrl(call.vapi_call_id) : undefined,
                 transcript: call.transcript ?? undefined,
                 vapiCallId: call.vapi_call_id ?? undefined,
               }}

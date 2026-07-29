@@ -330,7 +330,7 @@ export async function POST(req: Request) {
                       'See you then! ✅',
                     ].join('\n')
 
-                    await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
+                    await sendSms(phone, smsBody, biz.twilio_phone_number)
                     await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
                   } catch (smsError) {
                     console.error('Failed to send reschedule confirmation SMS:', smsError)
@@ -412,7 +412,7 @@ export async function POST(req: Request) {
                       "Let us know if you'd like to rebook.",
                     ].join('\n')
 
-                    await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
+                    await sendSms(phone, smsBody, biz.twilio_phone_number)
                   } catch (smsError) {
                     console.error('Failed to send cancellation SMS:', smsError)
                     // Cancellation already succeeded — don't fail the tool call over a text delivery issue.
@@ -522,7 +522,7 @@ export async function POST(req: Request) {
                   'See you then! ✅',
                 ].join('\n')
 
-                await sendSms(phone, smsBody, biz.twilio_phone_number ?? undefined)
+                await sendSms(phone, smsBody, biz.twilio_phone_number)
                 await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)
               } catch (smsError) {
                 console.error('Failed to send confirmation SMS:', smsError)

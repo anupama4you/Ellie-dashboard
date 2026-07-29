@@ -1,5 +1,5 @@
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
+import { getLocalCalls, callSummary, recordingProxyUrl, type LocalCall } from '@/lib/calls'
 import { formatInZone, dateStrInZone, addDaysInZone } from '@/lib/timezone'
 import { Mic, Download } from 'lucide-react'
 import RecordingsExplorer, { type RecordingItem } from '@/components/RecordingsExplorer'
@@ -38,7 +38,10 @@ export default async function RecordingsPage({
   }
 
   const recordings: RecordingItem[] = calls
-    .filter(c => !!c.recording_url)
+    // `recording_url` itself is stale/unusable now (see recordingProxyUrl),
+    // but its presence is still the real signal that Vapi actually recorded
+    // this call — keep filtering on that, just build the link differently.
+    .filter(c => !!c.recording_url && !!c.vapi_call_id)
     .map(call => {
       const when = call.started_at ? new Date(call.started_at) : null
       return {
@@ -46,7 +49,7 @@ export default async function RecordingsPage({
         displayName: call.caller_name?.trim() || call.caller_phone || 'Unknown caller',
         customerNumber: call.caller_phone ?? undefined,
         summary: callSummary(call).text,
-        recordingUrl: call.recording_url!,
+        recordingUrl: recordingProxyUrl(call.vapi_call_id)!,
         hasTranscript: !!call.transcript,
         startedTime: when ? formatInZone(when, timeZone, { hour: 'numeric', minute: '2-digit' }) : undefined,
         startedDate: when ? formatInZone(when, timeZone, { day: 'numeric', month: 'short' }) : undefined,

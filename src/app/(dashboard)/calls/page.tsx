@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, callSummary, type LocalCall } from '@/lib/calls'
+import { getLocalCalls, callSummary, recordingProxyUrl, type LocalCall } from '@/lib/calls'
 import { classifyCall, callTypeLabel } from '@/lib/callClassify'
 import { formatInZone } from '@/lib/timezone'
 import { isAfterHours } from '@/lib/availability'
@@ -74,7 +74,7 @@ export default async function CallsPage({
       badgeLabel: label,
       badgeColor: color,
       badgeBg: bg,
-      recordingUrl: call.recording_url ?? undefined,
+      recordingUrl: call.recording_url ? recordingProxyUrl(call.vapi_call_id) : undefined,
       hasTranscript: !!call.transcript,
       isAfterHours: call.started_at ? isAfterHours(new Date(call.started_at), bizHours, timeZone) : false,
       status: call.status ?? undefined,

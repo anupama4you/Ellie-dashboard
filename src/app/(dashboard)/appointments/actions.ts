@@ -67,7 +67,7 @@ export type RescheduleAppointmentInput = {
  * tool call Ellie uses on the phone (same SMS + Google Calendar sync), just
  * triggered from the dashboard instead of a call.
  */
-export async function rescheduleAppointmentAction(input: RescheduleAppointmentInput): Promise<void> {
+export async function rescheduleAppointmentAction(input: RescheduleAppointmentInput): Promise<{ smsWarning: string | null }> {
   const { business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
   if (!input.date || !input.time) throw new Error('Date and time are required.')
@@ -96,6 +96,7 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
   const { data: services } = await supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id)
   const durationMins = durationFor(existing.service, services ?? [])
 
+  let smsWarning: string | null = null
   if (existing.customer_phone) {
     try {
       const link = mapsLink(biz)
@@ -109,10 +110,11 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
         '',
         'See you then! ✅',
       ].join('\n')
-      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number ?? undefined)
+      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
       await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
     } catch (err) {
       console.error('Failed to send reschedule confirmation SMS:', err)
+      smsWarning = err instanceof Error ? err.message : 'Failed to send confirmation SMS.'
     }
   }
 
@@ -130,13 +132,15 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
 
   revalidatePath('/appointments')
   revalidatePath('/')
+
+  return { smsWarning }
 }
 
 /**
  * Business-owner-triggered cancellation — mirrors the cancelAppointment tool
  * call Ellie uses on the phone (same SMS + Google Calendar event removal).
  */
-export async function cancelAppointmentAction(appointmentId: string): Promise<void> {
+export async function cancelAppointmentAction(appointmentId: string): Promise<{ smsWarning: string | null }> {
   const { business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
 
@@ -154,6 +158,7 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<vo
 
   const timeZone = biz.timezone ?? 'Australia/Adelaide'
 
+  let smsWarning: string | null = null
   if (existing.customer_phone) {
     try {
       const smsBody = [
@@ -163,9 +168,10 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<vo
         '',
         "Let us know if you'd like to rebook.",
       ].join('\n')
-      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number ?? undefined)
+      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
     } catch (err) {
       console.error('Failed to send cancellation SMS:', err)
+      smsWarning = err instanceof Error ? err.message : 'Failed to send cancellation SMS.'
     }
   }
 
@@ -182,6 +188,8 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<vo
 
   revalidatePath('/appointments')
   revalidatePath('/')
+
+  return { smsWarning }
 }
 
 export type EditAppointmentInput = {
