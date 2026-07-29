@@ -1,25 +1,11 @@
 import { redirect } from 'next/navigation'
-import { headers } from 'next/headers'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
-
-/**
- * NEXT_PUBLIC_SITE_URL wins when set — trust the environment over guessing.
- * Otherwise fall back to the request's own host/protocol (respecting
- * x-forwarded-proto behind a reverse proxy). Defaults to http rather than
- * https for unrecognized hosts, since this app is also served plain-http on
- * a custom domain, not just localhost.
- */
-async function siteUrl() {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, '')
-  const h = await headers()
-  const host = h.get('host') ?? 'localhost:3000'
-  const protocol = h.get('x-forwarded-proto') ?? 'http'
-  return `${protocol}://${host}`
-}
+import { sendEmail } from '@/lib/resend'
+import { siteUrl } from '@/lib/siteUrl'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -31,9 +17,9 @@ const PLANS = [
 export default async function NewClientPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>
+  searchParams: Promise<{ error?: string; detail?: string }>
 }) {
-  const { error } = await searchParams
+  const { error, detail } = await searchParams
 
   async function createClientAction(formData: FormData) {
     'use server'
@@ -41,14 +27,34 @@ export default async function NewClientPage({
     const email        = (formData.get('email') as string).trim()
     const businessName = (formData.get('name') as string).trim()
 
-    // Invite user — Supabase sends an email with a set-password link that
-    // lands on /auth/set-password after the invite session is established.
-    // business_name feeds {{ .Data.business_name }} in the Invite email template.
-    const { data: { user }, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password`,
-      data: { business_name: businessName },
+    // Create the user and get a one-time invite token ourselves via
+    // generateLink (type: 'invite' creates the auth user exactly like
+    // inviteUserByEmail does) rather than letting Supabase's own built-in
+    // sender handle it — that sender is rate-limited on every plan tier and
+    // is only meant for development. We send the actual email via Resend
+    // below instead. `hashed_token` (not `action_link`) is what we want:
+    // action_link routes through Supabase's own /auth/v1/verify endpoint,
+    // which redirects with the session as a URL *fragment* that a
+    // server-side route can't read — same issue documented for the
+    // Supabase-template Invite email. Building the link ourselves with
+    // token_hash/type as query params lets /auth/callback/route.ts read
+    // them via verifyOtp() instead.
+    const { data: linkData, error: inviteErr } = await admin.auth.admin.generateLink({
+      type: 'invite',
+      email,
+      options: {
+        redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password`,
+        data: { business_name: businessName },
+      },
     })
-    if (inviteErr || !user) redirect('/admin/clients/new?error=user')
+    const user = linkData?.user
+    const hashedToken = linkData?.properties?.hashed_token
+    if (inviteErr || !user || !hashedToken) {
+      // The old copy here just assumed "already registered" for every failure —
+      // that's wrong often enough (rate limits, SMTP issues, bad redirect URL)
+      // to be actively misleading, so surface what Supabase actually said.
+      redirect(`/admin/clients/new?error=user&detail=${encodeURIComponent(inviteErr?.message ?? 'Unknown error')}`)
+    }
 
     const startTrial = formData.get('start_trial') === 'on'
     const now = new Date().toISOString()
@@ -69,9 +75,28 @@ export default async function NewClientPage({
       redirect('/admin/clients/new?error=biz')
     }
 
+    const inviteUrl = `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=invite`
+    let emailWarning = false
+    try {
+      await sendEmail(email, `You're invited to set up ${businessName} on Ellie`, `
+        <p>Hi,</p>
+        <p>You've been invited to manage <strong>${businessName}</strong>'s Ellie dashboard.</p>
+        <p><a href="${inviteUrl}">Click here to set your password and get started</a></p>
+        <p>If the link doesn't work, copy and paste this URL into your browser:<br>${inviteUrl}</p>
+      `)
+    } catch (emailErr) {
+      // The account and business record are already created — don't throw
+      // that work away over a delivery hiccup. Surface it to the admin
+      // instead so they know to follow up (e.g. via "Send Password Reset
+      // Email" on the client's Details tab, which goes through this same
+      // Resend path and gives the client a fresh working link).
+      console.error('Failed to send invite email via Resend:', emailErr)
+      emailWarning = true
+    }
+
     // Straight into the System Prompt tab for the new client — that's where
     // Ellie's actual live behaviour gets set up.
-    redirect(`/admin/clients/${biz.id}/prompt?created=1`)
+    redirect(`/admin/clients/${biz.id}/prompt?created=1${emailWarning ? '&emailWarning=1' : ''}`)
   }
 
   return (
@@ -97,7 +122,7 @@ export default async function NewClientPage({
           <div className="px-4 py-3 rounded-xl text-sm"
             style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
             {error === 'user'
-              ? 'Could not create account — that email may already be registered.'
+              ? `Could not create account — ${detail || 'that email may already be registered.'}`
               : 'Account created but business record failed. Please try again.'}
           </div>
         )}

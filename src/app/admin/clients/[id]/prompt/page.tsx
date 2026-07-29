@@ -12,10 +12,10 @@ export default async function AdminSystemPromptPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ created?: string }>
+  searchParams: Promise<{ created?: string; emailWarning?: string }>
 }) {
   const { id } = await params
-  const { created } = await searchParams
+  const { created, emailWarning } = await searchParams
   const admin = createAdminClient()
 
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
@@ -69,7 +69,17 @@ export default async function AdminSystemPromptPage({
           active="prompt"
         />
 
-        {created === '1' && (
+        {created === '1' && emailWarning === '1' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(217,138,11,0.08)', border: '1px solid rgba(217,138,11,0.25)', color: 'var(--amber)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            <span>
+              <b>{biz.name}</b> was created, but the invite email failed to send. Use &quot;Send Password Reset Email&quot;
+              on the Details tab to get them a working link.
+            </span>
+          </div>
+        )}
+        {created === '1' && emailWarning !== '1' && (
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
             style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
             <CheckCircle2 size={15} className="shrink-0" />

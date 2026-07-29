@@ -1,11 +1,13 @@
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, priceIdForPlan } from '@/lib/stripe'
-import { Mail, Trash2, CheckCircle2, Sparkles, CreditCard, Ban, ExternalLink } from 'lucide-react'
+import { Mail, Trash2, CheckCircle2, Sparkles, CreditCard, Ban, ExternalLink, AlertTriangle } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
+import { sendEmail } from '@/lib/resend'
+import { siteUrl } from '@/lib/siteUrl'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -79,15 +81,38 @@ export default async function EditClientPage({
 
   async function sendPasswordReset() {
     'use server'
-    // Uses Supabase auth REST endpoint directly — no user session needed
-    await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/recover`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      },
-      body: JSON.stringify({ email: clientEmail }),
+    const admin = createAdminClient()
+
+    // Generate the link ourselves and send via Resend rather than Supabase's
+    // /auth/v1/recover, which goes through Supabase's built-in email sender
+    // — rate-limited on every plan tier. Same token_hash/type query-param
+    // approach as the invite flow, so /auth/callback/route.ts's verifyOtp()
+    // can read it directly instead of hitting Supabase's fragment-redirecting
+    // /auth/v1/verify endpoint.
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: 'recovery',
+      email: clientEmail,
+      options: { redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password` },
     })
+    const hashedToken = linkData?.properties?.hashed_token
+    if (linkErr || !hashedToken) {
+      console.error('Failed to generate password reset link:', linkErr)
+      redirect(`/admin/clients/${bizId}?reset=error`)
+    }
+
+    const resetUrl = `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=recovery`
+    try {
+      await sendEmail(clientEmail, 'Reset your Ellie dashboard password', `
+        <p>Hi,</p>
+        <p>Click the link below to set a new password for your Ellie dashboard.</p>
+        <p><a href="${resetUrl}">Reset your password</a></p>
+        <p>If the link doesn't work, copy and paste this URL into your browser:<br>${resetUrl}</p>
+      `)
+    } catch (emailErr) {
+      console.error('Failed to send password reset email via Resend:', emailErr)
+      redirect(`/admin/clients/${bizId}?reset=error`)
+    }
+
     redirect(`/admin/clients/${bizId}?reset=sent`)
   }
 
@@ -188,6 +213,13 @@ export default async function EditClientPage({
             style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
             <CheckCircle2 size={15} className="shrink-0" />
             Password reset email sent to {clientEmail}
+          </div>
+        )}
+        {reset === 'error' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            Couldn&apos;t send the password reset email — check the server logs and try again.
           </div>
         )}
 
