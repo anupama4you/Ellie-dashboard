@@ -6,6 +6,7 @@ import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
+import CopyInviteLinkButton from '@/components/CopyInviteLinkButton'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 
@@ -114,6 +115,22 @@ export default async function EditClientPage({
     }
 
     redirect(`/admin/clients/${bizId}?reset=sent`)
+  }
+
+  /** Same one-time link the reset email would contain, without depending on email delivery at all — see CopyInviteLinkButton. */
+  async function generateInviteLinkAction(): Promise<{ url: string } | { error: string }> {
+    'use server'
+    const admin = createAdminClient()
+
+    const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+      type: 'recovery',
+      email: clientEmail,
+      options: { redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password` },
+    })
+    const hashedToken = linkData?.properties?.hashed_token
+    if (linkErr || !hashedToken) return { error: linkErr?.message ?? 'Failed to generate link' }
+
+    return { url: `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=recovery` }
   }
 
   async function deleteClient() {
@@ -389,7 +406,7 @@ export default async function EditClientPage({
               <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Account</h2>
               </div>
-              <div className="p-5">
+              <div className="p-5 flex flex-col gap-2">
                 <form action={sendPasswordReset}>
                   <AdminSubmitButton
                     pendingLabel="Sending…"
@@ -399,6 +416,7 @@ export default async function EditClientPage({
                     Send Password Reset Email
                   </AdminSubmitButton>
                 </form>
+                <CopyInviteLinkButton action={generateInviteLinkAction} />
               </div>
             </div>
 
