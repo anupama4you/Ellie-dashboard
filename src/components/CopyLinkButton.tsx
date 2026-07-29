@@ -5,16 +5,18 @@ import { Link2, Check, Loader2 } from 'lucide-react'
 
 type Props = {
   action: () => Promise<{ url: string } | { error: string }>
+  label: string
 }
 
 /**
- * Manual fallback for when the invite/reset email itself can't be trusted
- * to arrive (Resend domain not verified yet, provider outage, client's spam
- * filter, etc.) — generates the same one-time auth link the email would
- * have contained and puts it on the clipboard so the admin can hand it to
- * the client through any channel (SMS, WhatsApp, a personal email).
+ * Manual fallback for whenever a one-time link needs to reach someone
+ * without relying on email delivery (Resend domain issues, provider
+ * outage, spam filters) — generates the link and puts it on the clipboard
+ * so the admin can hand it over through any channel instead (SMS,
+ * WhatsApp, a personal email). Used for both invite/reset links and
+ * Stripe payment links — same shape, different server action.
  */
-export default function CopyInviteLinkButton({ action }: Props) {
+export default function CopyLinkButton({ action, label }: Props) {
   const [isPending, startTransition] = useTransition()
   const [status, setStatus] = useState<'idle' | 'copied' | 'error'>('idle')
 
@@ -39,7 +41,7 @@ export default function CopyInviteLinkButton({ action }: Props) {
       {isPending
         ? <Loader2 size={13} className="animate-spin" />
         : status === 'copied' ? <Check size={13} /> : <Link2 size={13} />}
-      {status === 'copied' ? 'Link copied!' : status === 'error' ? 'Failed — try again' : 'Copy Invite Link'}
+      {status === 'copied' ? 'Link copied!' : status === 'error' ? 'Failed — try again' : label}
     </button>
   )
 }

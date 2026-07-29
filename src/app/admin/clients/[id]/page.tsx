@@ -1,12 +1,12 @@
 import { redirect } from 'next/navigation'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, priceIdForPlan } from '@/lib/stripe'
-import { Mail, Trash2, CheckCircle2, Sparkles, CreditCard, Ban, ExternalLink, AlertTriangle } from 'lucide-react'
+import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
-import CopyInviteLinkButton from '@/components/CopyInviteLinkButton'
+import CopyLinkButton from '@/components/CopyLinkButton'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 
@@ -33,10 +33,10 @@ export default async function EditClientPage({
   searchParams,
 }: {
   params:       Promise<{ id: string }>
-  searchParams: Promise<{ reset?: string; saved?: string }>
+  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string }>
 }) {
-  const { id }             = await params
-  const { reset, saved }   = await searchParams
+  const { id }                       = await params
+  const { reset, saved, paymentLink } = await searchParams
 
   const admin = createAdminClient()
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
@@ -117,7 +117,7 @@ export default async function EditClientPage({
     redirect(`/admin/clients/${bizId}?reset=sent`)
   }
 
-  /** Same one-time link the reset email would contain, without depending on email delivery at all — see CopyInviteLinkButton. */
+  /** Same one-time link the reset email would contain, without depending on email delivery at all — see CopyLinkButton. */
   async function generateInviteLinkAction(): Promise<{ url: string } | { error: string }> {
     'use server'
     const admin = createAdminClient()
@@ -151,15 +151,14 @@ export default async function EditClientPage({
   }
 
   /**
-   * Trial → paid. Doesn't flip plan_status itself anymore — that only
-   * happens once Stripe confirms the subscription was actually created, via
-   * api/stripe-webhook's `checkout.session.completed` handler. This action
-   * just starts a Checkout Session and sends the admin's browser to it (the
-   * admin either pays directly or forwards the URL to the client — payment
-   * collection stays admin-initiated, matching how trials/cancellation work).
+   * Trial → paid never flips plan_status itself — that only happens once
+   * Stripe confirms the subscription was actually created, via
+   * api/stripe-webhook's `checkout.session.completed` handler. This just
+   * creates the Checkout Session the client needs to complete themselves;
+   * success/cancel redirect to their own dashboard, not the admin panel,
+   * since it's their browser that ends up there.
    */
-  async function convertToPaidAction() {
-    'use server'
+  async function createCheckoutSession(): Promise<string> {
     const admin = createAdminClient()
     const stripe = getStripe()
 
@@ -181,11 +180,42 @@ export default async function EditClientPage({
       line_items: [{ price: priceIdForPlan(bizPlan), quantity: 1 }],
       subscription_data: { metadata: { business_id: bizId } },
       metadata: { business_id: bizId },
-      success_url: `${appUrl}/admin/clients/${bizId}?saved=1`,
-      cancel_url:  `${appUrl}/admin/clients/${bizId}`,
+      success_url: `${appUrl}/?upgraded=1`,
+      cancel_url:  `${appUrl}/`,
     })
 
-    redirect(session.url!)
+    if (!session.url) throw new Error('Stripe did not return a Checkout URL')
+    return session.url
+  }
+
+  async function sendPaymentLinkAction() {
+    'use server'
+    if (!clientEmail) redirect(`/admin/clients/${bizId}?paymentLink=error`)
+
+    try {
+      const checkoutUrl = await createCheckoutSession()
+      await sendEmail(clientEmail, `Set up payment for ${bizName} on Ellie`, `
+        <p>Hi,</p>
+        <p>Click the link below to set up payment for your ${bizPlan} plan on Ellie.</p>
+        <p><a href="${checkoutUrl}">Set up payment</a></p>
+        <p>If the link doesn't work, copy and paste this URL into your browser:<br>${checkoutUrl}</p>
+      `)
+    } catch (err) {
+      console.error('Failed to send payment link:', err)
+      redirect(`/admin/clients/${bizId}?paymentLink=error`)
+    }
+
+    redirect(`/admin/clients/${bizId}?paymentLink=sent`)
+  }
+
+  /** Same Checkout Session the payment-link email would contain, without depending on email delivery — see CopyLinkButton. */
+  async function generatePaymentLinkAction(): Promise<{ url: string } | { error: string }> {
+    'use server'
+    try {
+      return { url: await createCheckoutSession() }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'Failed to create checkout session' }
+    }
   }
 
   async function cancelPlanAction() {
@@ -237,6 +267,20 @@ export default async function EditClientPage({
             style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
             <AlertTriangle size={15} className="shrink-0" />
             Couldn&apos;t send the password reset email — check the server logs and try again.
+          </div>
+        )}
+        {paymentLink === 'sent' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
+            <CheckCircle2 size={15} className="shrink-0" />
+            Payment link sent to {clientEmail}
+          </div>
+        )}
+        {paymentLink === 'error' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            Couldn&apos;t send the payment link — check the server logs, or use &quot;Copy Payment Link&quot; instead.
           </div>
         )}
 
@@ -367,15 +411,16 @@ export default async function EditClientPage({
                 <div className="flex flex-col gap-2">
                   {biz.plan_status === 'trial' ? (
                     <>
-                      <form action={convertToPaidAction}>
+                      <form action={sendPaymentLinkAction}>
                         <AdminSubmitButton
-                          pendingLabel="Starting checkout…"
-                          icon={<CreditCard size={13} />}
+                          pendingLabel="Sending…"
+                          icon={<Send size={13} />}
                           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                           style={{ color: 'var(--signal)', background: 'rgba(15,163,122,0.08)', border: '1px solid rgba(15,163,122,0.2)' }}>
-                          Convert to Paid ({biz.plan})
+                          Send Payment Link ({biz.plan})
                         </AdminSubmitButton>
                       </form>
+                      <CopyLinkButton action={generatePaymentLinkAction} label="Copy Payment Link" />
                       <form action={cancelPlanAction}>
                         <AdminSubmitButton
                           pendingLabel="Cancelling…"
@@ -416,7 +461,7 @@ export default async function EditClientPage({
                     Send Password Reset Email
                   </AdminSubmitButton>
                 </form>
-                <CopyInviteLinkButton action={generateInviteLinkAction} />
+                <CopyLinkButton action={generateInviteLinkAction} label="Copy Invite Link" />
               </div>
             </div>
 
