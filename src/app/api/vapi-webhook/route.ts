@@ -9,6 +9,7 @@ import { formatInZone } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
 import { getPhoneNumber } from '@/lib/vapi'
+import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -489,6 +490,42 @@ export async function POST(req: Request) {
         } catch (err) {
           captureError(err, { handler: 'sendSms(tool)' })
           resultText = "Something went wrong sending that text — let the caller know you'll follow up another way."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      // Also does not look anything up in `businesses` — validates against
+      // the real Australian address database (GNAF, via Addressr) rather
+      // than trusting whatever the caller said, and flags genuinely
+      // ambiguous street names (e.g. "Jetty Road" exists in both Glenelg
+      // and Brighton) instead of silently guessing one.
+      if (name === 'validateAddress') {
+        const args  = toolArgs(toolCall)
+        const query = args.address as string | undefined
+        let resultText: string
+
+        try {
+          if (!query) {
+            resultText = "No address was given — ask the caller for their address."
+          } else {
+            const result = await lookupAddress(query)
+            if (result.status === 'not_found') {
+              resultText = `Couldn't find any address matching "${query}" — ask the caller to repeat it, including the suburb if they didn't give one.`
+            } else if (result.status === 'ambiguous') {
+              const options = result.candidates.map(c => `${c.suburb} ${c.postcode}`).join(', or ')
+              resultText = `That street name matches more than one suburb: ${options}. Ask the caller which one they meant, then call this tool again with the full address including that suburb.`
+            } else {
+              resultText = `Address confirmed: ${result.address}. ${result.isMetro
+                ? 'This is within the Adelaide metro service area.'
+                : "This is OUTSIDE the usual Adelaide metro service area — let the caller know gently, but still continue with the booking."
+              } Read this exact address back to the caller to confirm it's right.`
+            }
+          }
+        } catch (err) {
+          captureError(err, { handler: 'validateAddress' })
+          resultText = "Something went wrong looking up that address — just confirm it verbally with the caller instead."
         }
 
         results.push({ toolCallId: toolCall.id, result: resultText })
