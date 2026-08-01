@@ -193,6 +193,10 @@ export async function updatePhoneNumber(id: string, patch: Record<string, unknow
   return vapiRequest(`/phone-number/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
 }
 
+export async function getPhoneNumber(id: string): Promise<VapiPhoneNumber> {
+  return vapiRequest(`/phone-number/${id}`, { cache: 'no-store' })
+}
+
 /** Tool IDs every assistant should have attached — created once via scripts/setup-vapi-tool.mjs */
 function requiredToolIds(): string[] {
   return [

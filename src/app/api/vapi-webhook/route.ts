@@ -8,6 +8,7 @@ import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendar
 import { formatInZone } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
+import { getPhoneNumber } from '@/lib/vapi'
 import { captureError } from '@/lib/monitoring'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -452,17 +453,29 @@ export async function POST(req: Request) {
       // set up straight in the Vapi dashboard). The assistant is expected to
       // compose `message` itself from whatever's in its own system prompt
       // (company name, links, etc.); this tool just sends exactly that text.
-      // Sends from whichever number the caller actually dialled
-      // (message.call.phoneNumber) rather than a business's configured
-      // Twilio number, since there may not be one.
+      // Sends from whichever number the caller actually dialled rather than
+      // a business's configured Twilio number, since there may not be one.
       if (name === 'sendSms') {
         const args  = toolArgs(toolCall)
         const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
-        const from  = message.call?.phoneNumber?.number as string | undefined
         const body  = args.message as string | undefined
         let resultText: string
 
         try {
+          // Vapi's tool-calls payload only includes phoneNumberId, not the
+          // number itself (confirmed against a real call — call.phoneNumber
+          // is never populated here, unlike some other message types) — so
+          // it has to be resolved via a lookup, not read straight off the payload.
+          let from = message.call?.phoneNumber?.number as string | undefined
+          const phoneNumberId = message.call?.phoneNumberId as string | undefined
+          if (!from && phoneNumberId) {
+            try {
+              from = (await getPhoneNumber(phoneNumberId)).number
+            } catch (lookupErr) {
+              console.error('Failed to resolve phoneNumberId to a number:', lookupErr)
+            }
+          }
+
           if (!phone) {
             resultText = "There's no phone number to text — ask the caller to confirm the number they'd like the text sent to."
           } else if (!body) {
