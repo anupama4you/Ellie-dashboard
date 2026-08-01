@@ -447,6 +447,41 @@ export async function POST(req: Request) {
         continue
       }
 
+      // Deliberately does not look anything up in `businesses` — for
+      // assistants not linked to a business row yet (demos, one-off trials
+      // set up straight in the Vapi dashboard). The assistant is expected to
+      // compose `message` itself from whatever's in its own system prompt
+      // (company name, links, etc.); this tool just sends exactly that text.
+      // Sends from whichever number the caller actually dialled
+      // (message.call.phoneNumber) rather than a business's configured
+      // Twilio number, since there may not be one.
+      if (name === 'sendSms') {
+        const args  = toolArgs(toolCall)
+        const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+        const from  = message.call?.phoneNumber?.number as string | undefined
+        const body  = args.message as string | undefined
+        let resultText: string
+
+        try {
+          if (!phone) {
+            resultText = "There's no phone number to text — ask the caller to confirm the number they'd like the text sent to."
+          } else if (!body) {
+            resultText = "No message content was given — compose the text yourself using details from your own instructions, then call this tool again with that message."
+          } else if (!from) {
+            resultText = "Couldn't determine which number to text from — let the caller know you'll follow up another way."
+          } else {
+            await sendSms(phone, body, from)
+            resultText = "Text message sent."
+          }
+        } catch (err) {
+          captureError(err, { handler: 'sendSms(tool)' })
+          resultText = "Something went wrong sending that text — let the caller know you'll follow up another way."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
       if (name !== 'bookAppointment') continue
 
       const args   = toolArgs(toolCall)
