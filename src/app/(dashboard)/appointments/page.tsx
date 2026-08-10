@@ -151,7 +151,7 @@ export default async function AppointmentsPage({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
 
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
@@ -186,11 +186,12 @@ export default async function AppointmentsPage({
             </div>
             <Link
               href="/settings"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-sm font-semibold"
               style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}
+              title="Sync with Google Calendar"
             >
               <CalendarSync size={14} />
-              Sync with Google Calendar
+              <span className="hidden sm:inline">Sync with Google Calendar</span>
             </Link>
             {biz && (
               <AddAppointmentModal
@@ -277,8 +278,8 @@ export default async function AppointmentsPage({
                   if (item.kind === 'google') {
                     const e = item.event
                     return (
-                      <div key={`g-${e.id}`} className="flex items-center gap-4 px-5 py-3.5" style={rowStyle}>
-                        <span className="text-xs font-mono font-semibold shrink-0" style={{ color: 'var(--ink-3)', width: 62 }}>
+                      <div key={`g-${e.id}`} className="flex items-start gap-3 sm:gap-4 px-5 py-3.5" style={rowStyle}>
+                        <span className="text-xs font-mono font-semibold shrink-0 pt-0.5" style={{ color: 'var(--ink-3)', width: 62 }}>
                           {formatInZone(e.start, timeZone, { hour: 'numeric', minute: '2-digit' })}
                         </span>
                         <div className="flex-1 min-w-0">
@@ -320,45 +321,47 @@ export default async function AppointmentsPage({
                   }
 
                   return (
-                    <div key={appt.id} className="flex items-center gap-4 px-5 py-3.5" style={rowStyle} title={appt.notes ?? undefined}>
-                      <span className="text-xs font-mono font-semibold shrink-0" style={{ color: 'var(--ink)', width: 62 }}>
-                        {formatInZone(item.time, timeZone, { hour: 'numeric', minute: '2-digit' })}
-                      </span>
+                    <div key={appt.id} className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 px-5 py-3.5" style={rowStyle} title={appt.notes ?? undefined}>
+                      <div className="flex items-center gap-3 sm:contents">
+                        <span className="text-xs font-mono font-semibold shrink-0" style={{ color: 'var(--ink)', width: 62 }}>
+                          {formatInZone(item.time, timeZone, { hour: 'numeric', minute: '2-digit' })}
+                        </span>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</p>
-                          {appt.customer_phone && (
-                            <span className="flex items-center gap-1 shrink-0" style={{ color: 'var(--ink-3)' }}>
-                              <Phone size={9} />
-                              <span className="text-xs">{appt.customer_phone}</span>
-                              <CopyButton text={appt.customer_phone} />
-                            </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</p>
+                            {appt.customer_phone && (
+                              <span className="flex items-center gap-1 shrink-0" style={{ color: 'var(--ink-3)' }}>
+                                <Phone size={9} />
+                                <span className="text-xs">{appt.customer_phone}</span>
+                                <CopyButton text={appt.customer_phone} />
+                              </span>
+                            )}
+                          </div>
+                          {bits.length > 0 && (
+                            <p className="text-xs truncate mt-0.5" style={{ color: 'var(--ink-3)' }}>{bits.join(' · ')}</p>
+                          )}
+                          {bookingLine ? (
+                            <p className="text-xs font-semibold truncate mt-0.5 flex items-center gap-1" style={{ color: 'var(--violet)' }}>
+                              {callInfo ? (
+                                <Link href={`/calls/${callInfo.id}`} className="flex items-center gap-1 hover:underline">
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--violet)' }} />
+                                  {bookingLine}
+                                </Link>
+                              ) : (
+                                <>
+                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--violet)' }} />
+                                  {bookingLine}
+                                </>
+                              )}
+                            </p>
+                          ) : (
+                            <p className="text-xs font-semibold mt-0.5" style={{ color: 'var(--ink-3)' }}>Booked by you</p>
                           )}
                         </div>
-                        {bits.length > 0 && (
-                          <p className="text-xs truncate mt-0.5" style={{ color: 'var(--ink-3)' }}>{bits.join(' · ')}</p>
-                        )}
-                        {bookingLine ? (
-                          <p className="text-xs font-semibold truncate mt-0.5 flex items-center gap-1" style={{ color: 'var(--violet)' }}>
-                            {callInfo ? (
-                              <Link href={`/calls/${callInfo.id}`} className="flex items-center gap-1 hover:underline">
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--violet)' }} />
-                                {bookingLine}
-                              </Link>
-                            ) : (
-                              <>
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: 'var(--violet)' }} />
-                                {bookingLine}
-                              </>
-                            )}
-                          </p>
-                        ) : (
-                          <p className="text-xs font-semibold mt-0.5" style={{ color: 'var(--ink-3)' }}>Booked by you</p>
-                        )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 pl-[74px] sm:pl-0">
                         {appt.calendar_event_link && (
                           <a href={appt.calendar_event_link} target="_blank" rel="noopener noreferrer"
                             className="w-7 h-7 rounded-lg flex items-center justify-center btn-ghost"

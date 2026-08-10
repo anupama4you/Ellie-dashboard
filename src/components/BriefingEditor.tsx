@@ -81,7 +81,7 @@ export default function BriefingEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--text)' }}>
             Company Information
@@ -93,13 +93,13 @@ export default function BriefingEditor({
               : 'Changes here are reviewed by our team before they go live on real calls.'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {status === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Saved — your changes will be reviewed and added to Ellie shortly</span>}
+        <div className="flex items-center gap-3 shrink-0">
+          {status === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Saved — pending review</span>}
           {status === 'error' && <span className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Failed to save</span>}
           <button
             onClick={save}
             disabled={isPending}
-            className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60"
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60 shrink-0"
             style={{ background: 'var(--violet)' }}
           >
             {isPending ? 'Saving…' : 'Save changes'}
@@ -249,7 +249,7 @@ export default function BriefingEditor({
             </div>
             {services.length === 0 && <p className="px-5 py-6 text-sm" style={{ color: 'var(--t3)' }}>No services added yet</p>}
             {services.length > 0 && (
-              <div className="flex items-center gap-2 px-5 pt-3">
+              <div className="hidden sm:flex items-center gap-2 px-5 pt-3">
                 <span className="flex-1 text-[0.65rem] font-bold tracking-wide" style={{ color: 'var(--t4)' }}>SERVICE</span>
                 <span className="w-24 text-[0.65rem] font-bold tracking-wide" style={{ color: 'var(--t4)' }}>DURATION</span>
                 <span className="w-24 text-[0.65rem] font-bold tracking-wide" style={{ color: 'var(--t4)' }}>PRICE</span>
@@ -257,46 +257,53 @@ export default function BriefingEditor({
               </div>
             )}
             {services.map((svc, i) => (
-              <div key={i} className="flex items-center gap-2 px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
-                <input
-                  value={svc.name}
-                  onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                  placeholder="Service name"
-                  className="flex-1 text-sm rounded-lg px-2.5 py-1.5 min-w-0"
-                  style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                />
-                <div className="w-24 flex items-center gap-1.5">
+              <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
+                <div className="flex items-center gap-2 sm:flex-1 sm:min-w-0">
                   <input
-                    type="number"
-                    min={0}
-                    step={5}
-                    value={svc.durationMinutes ?? ''}
-                    onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, durationMinutes: e.target.value ? parseInt(e.target.value) : null } : x))}
-                    placeholder="30"
-                    className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                    value={svc.name}
+                    onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    placeholder="Service name"
+                    className="flex-1 text-sm rounded-lg px-2.5 py-1.5 min-w-0"
                     style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
                   />
-                  <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>min</span>
+                  <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="shrink-0 sm:hidden" style={{ color: 'var(--coral)' }}>
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <div className="w-24 flex items-center gap-1">
-                  <span className="text-sm shrink-0" style={{ color: 'var(--t3)' }}>$</span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    value={svc.price}
-                    onChange={e => {
-                      const v = e.target.value
-                      if (PRICE_INPUT_RE.test(v)) setServices(s => s.map((x, j) => j === i ? { ...x, price: v } : x))
-                    }}
-                    onBlur={() => setServices(s => s.map((x, j) => j === i && x.price ? { ...x, price: (parseFloat(x.price) || 0).toFixed(2) } : x))}
-                    placeholder="0.00"
-                    className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
-                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                  />
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 sm:flex-none sm:w-24 flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={5}
+                      value={svc.durationMinutes ?? ''}
+                      onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, durationMinutes: e.target.value ? parseInt(e.target.value) : null } : x))}
+                      placeholder="30"
+                      className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                      style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                    />
+                    <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>min</span>
+                  </div>
+                  <div className="flex-1 sm:flex-none sm:w-24 flex items-center gap-1">
+                    <span className="text-sm shrink-0" style={{ color: 'var(--t3)' }}>$</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={svc.price}
+                      onChange={e => {
+                        const v = e.target.value
+                        if (PRICE_INPUT_RE.test(v)) setServices(s => s.map((x, j) => j === i ? { ...x, price: v } : x))
+                      }}
+                      onBlur={() => setServices(s => s.map((x, j) => j === i && x.price ? { ...x, price: (parseFloat(x.price) || 0).toFixed(2) } : x))}
+                      placeholder="0.00"
+                      className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                      style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                    />
+                  </div>
+                  <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="hidden sm:block shrink-0" style={{ color: 'var(--coral)' }}>
+                    <Trash2 size={14} />
+                  </button>
                 </div>
-                <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="shrink-0" style={{ color: 'var(--coral)' }}>
-                  <Trash2 size={14} />
-                </button>
               </div>
             ))}
           </section>

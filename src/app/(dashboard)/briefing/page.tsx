@@ -10,7 +10,7 @@ export default async function BriefingPage() {
   if (!biz) {
     return (
       <div className="h-full overflow-y-auto">
-        <div className="p-6 max-w-[1220px] mx-auto">
+        <div className="p-3 sm:p-6 max-w-[1220px] mx-auto">
           <p className="text-sm" style={{ color: 'var(--ink-3)' }}>No business profile found.</p>
         </div>
       </div>
@@ -26,7 +26,7 @@ export default async function BriefingPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1220px] mx-auto">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto">
         <BriefingEditor
           businessId={biz.id}
           businessName={biz.name}

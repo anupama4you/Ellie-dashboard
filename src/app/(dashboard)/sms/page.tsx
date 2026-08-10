@@ -117,7 +117,7 @@ export default async function SmsLogPage({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
         <div>
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
             SMS log

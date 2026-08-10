@@ -34,7 +34,7 @@ export default async function IntegrationsPage({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1100px] mx-auto flex flex-col gap-5">
+      <div className="p-3 sm:p-6 max-w-[1100px] mx-auto flex flex-col gap-5">
         <div>
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
             Integrations

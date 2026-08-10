@@ -59,7 +59,7 @@ export default async function RecordingsPage({
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
 
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>

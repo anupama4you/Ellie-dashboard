@@ -196,7 +196,7 @@ export default async function TodayPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-5">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-5">
 
         {/* Greeting */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
@@ -208,7 +208,7 @@ export default async function TodayPage() {
               {dateLabel} · Ellie has handled {todayCalls.length} call{todayCalls.length !== 1 ? 's' : ''} so far today
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-2">
             <button type="button" disabled title="Coming soon"
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-not-allowed opacity-50"
               style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}>
