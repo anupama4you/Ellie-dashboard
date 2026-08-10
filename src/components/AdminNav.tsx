@@ -1,9 +1,10 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, LayoutDashboard, LogOut, ArrowLeft } from 'lucide-react'
+import { Users, LayoutDashboard, LogOut, ArrowLeft, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
@@ -14,8 +15,10 @@ const NAV = [
 export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }: { pendingReviewCount?: number; usageAlertCount?: number }) {
   const pathname = usePathname()
   const router   = useRouter()
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   async function signOut() {
+    setIsSigningOut(true)
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
@@ -77,11 +80,13 @@ export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }
           <ArrowLeft size={14} />
           Client View
         </Link>
-        <button onClick={signOut}
-          className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left"
+        <button onClick={signOut} disabled={isSigningOut}
+          className="group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left disabled:opacity-60"
           style={{ color: 'var(--t7)', border: '1px solid transparent' }}>
-          <LogOut size={14} className="group-hover:text-red-400 transition-colors" />
-          <span className="group-hover:text-red-400 transition-colors">Sign out</span>
+          {isSigningOut
+            ? <Loader2 size={14} className="animate-spin" />
+            : <LogOut size={14} className="group-hover:text-red-400 transition-colors" />}
+          <span className="group-hover:text-red-400 transition-colors">{isSigningOut ? 'Signing out…' : 'Sign out'}</span>
         </button>
       </div>
     </aside>

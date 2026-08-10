@@ -1,19 +1,27 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { Play, Pause } from 'lucide-react'
+import { Play, Pause, Loader2 } from 'lucide-react'
 
 export default function PlayButton({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const [playing, setPlaying] = useState(false)
+  // `preload="metadata"` means the actual audio (proxied through
+  // /api/recordings) isn't fetched until play() is called — without this,
+  // clicking play does nothing visible for a second or two while it buffers.
+  const [loading, setLoading] = useState(false)
 
   function toggle(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
     const audio = audioRef.current
     if (!audio) return
-    if (playing) audio.pause()
-    else audio.play()
+    if (playing) {
+      audio.pause()
+    } else {
+      setLoading(true)
+      audio.play()
+    }
   }
 
   return (
@@ -36,8 +44,13 @@ export default function PlayButton({ src }: { src: string }) {
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => setPlaying(false)}
+        onWaiting={() => setLoading(true)}
+        onPlaying={() => setLoading(false)}
+        onError={() => { setLoading(false); setPlaying(false) }}
       />
-      {playing
+      {loading
+        ? <Loader2 size={12} className="animate-spin" />
+        : playing
         ? <Pause size={12} fill="currentColor" />
         : <Play size={12} fill="currentColor" style={{ marginLeft: 1.5 }} />}
     </button>

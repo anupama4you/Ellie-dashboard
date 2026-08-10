@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Play, Pause, Download } from 'lucide-react'
+import { Play, Pause, Download, Loader2 } from 'lucide-react'
 
 /** Deterministic pseudo-random bars seeded by URL, so the shape stays stable across re-renders */
 function hashSeed(str: string): number {
@@ -43,6 +43,10 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
   const [playing, setPlaying]         = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration]       = useState(0)
+  // `preload="metadata"` means the actual audio (proxied through
+  // /api/recordings) isn't fetched until play() is called — without this,
+  // the waveform just sits frozen for a second or two with no feedback.
+  const [loading, setLoading]         = useState(false)
 
   useEffect(() => {
     const audio = audioRef.current
@@ -50,21 +54,30 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
     const onTime    = () => setCurrentTime(audio.currentTime)
     const onLoaded  = () => setDuration(audio.duration)
     const onEnded   = () => setPlaying(false)
+    const onWaiting = () => setLoading(true)
+    const onPlaying = () => setLoading(false)
+    const onErrorEvt = () => { setLoading(false); setPlaying(false) }
     audio.addEventListener('timeupdate', onTime)
     audio.addEventListener('loadedmetadata', onLoaded)
     audio.addEventListener('ended', onEnded)
+    audio.addEventListener('waiting', onWaiting)
+    audio.addEventListener('playing', onPlaying)
+    audio.addEventListener('error', onErrorEvt)
     return () => {
       audio.removeEventListener('timeupdate', onTime)
       audio.removeEventListener('loadedmetadata', onLoaded)
       audio.removeEventListener('ended', onEnded)
+      audio.removeEventListener('waiting', onWaiting)
+      audio.removeEventListener('playing', onPlaying)
+      audio.removeEventListener('error', onErrorEvt)
     }
   }, [])
 
   function togglePlay() {
     const audio = audioRef.current
     if (!audio) return
-    if (playing) { audio.pause(); setPlaying(false) }
-    else { audio.play(); setPlaying(true) }
+    if (playing) { audio.pause(); setPlaying(false); setLoading(false) }
+    else { setLoading(true); audio.play(); setPlaying(true) }
   }
 
   function seekTo(fraction: number) {
@@ -91,7 +104,9 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
       style={{ background: 'var(--violet)', color: '#fff', outlineColor: 'var(--violet)' }}
       aria-label={playing ? 'Pause recording' : 'Play recording'}
     >
-      {playing
+      {loading
+        ? <Loader2 size={compact ? 10 : 14} className="animate-spin" />
+        : playing
         ? <Pause size={compact ? 10 : 14} fill="currentColor" />
         : <Play  size={compact ? 10 : 14} fill="currentColor" style={{ marginLeft: compact ? 1 : 2 }} />}
     </button>

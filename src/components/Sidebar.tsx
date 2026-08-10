@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive } from '@/app/(dashboard)/actions'
 
@@ -65,6 +65,7 @@ export default function Sidebar({
   const [confirmTarget, setConfirmTarget] = useState<'pause' | 'resume' | null>(null)
   const [toggleError, setToggleError] = useState('')
   const [isToggling, startToggle]     = useTransition()
+  const [isSigningOut, setIsSigningOut] = useState(false)
 
   // Desktop fold, for this session only. Mobile always opens expanded; it's
   // an off-canvas drawer instead (see `mobileOpen`), not a rail.
@@ -85,6 +86,7 @@ export default function Sidebar({
   }
 
   async function signOut() {
+    setIsSigningOut(true)
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
@@ -347,12 +349,13 @@ export default function Sidebar({
         </div>
         <button
           onClick={signOut}
-          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors hover:bg-white/5"
+          disabled={isSigningOut}
+          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-colors hover:bg-white/5 disabled:opacity-60"
           style={{ color: '#8B84A6' }}
           title="Sign out"
           aria-label="Sign out"
         >
-          <LogOut size={14} />
+          {isSigningOut ? <Loader2 size={14} className="animate-spin" /> : <LogOut size={14} />}
         </button>
       </div>
     </aside>
