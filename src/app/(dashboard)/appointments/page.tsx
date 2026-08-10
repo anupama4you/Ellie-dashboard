@@ -9,6 +9,7 @@ import CopyButton from '@/components/CopyButton'
 import AddAppointmentModal from '@/components/AddAppointmentModal'
 import AppointmentActions from '@/components/AppointmentActions'
 import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink, CalendarSync } from 'lucide-react'
+import { LinkIconOrSpinner, LinkPendingFade } from '@/components/LinkPending'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   confirmed:   { color: 'var(--signal)', bg: 'var(--signal-soft)', border: 'rgba(15,163,122,0.2)'  },
@@ -153,52 +154,54 @@ export default async function AppointmentsPage({
     <div className="h-full overflow-y-auto">
       <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
 
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
           <div>
             <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
               Appointments
             </h1>
             <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Everything Ellie has booked into your calendar</p>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center justify-between gap-2 sm:justify-end">
             <div className="flex items-center gap-1.5">
               <Link
                 href={`/appointments?date=${prevWeekDateStr}`}
                 className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
                 style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
               >
-                <ChevronLeft size={15} />
+                <LinkIconOrSpinner icon={<ChevronLeft size={15} />} />
               </Link>
               <Link
                 href={`/appointments?date=${todayStr}`}
                 className="px-3 py-1.5 rounded-lg text-sm font-semibold btn-ghost"
                 style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}
               >
-                This week
+                <LinkPendingFade>This week</LinkPendingFade>
               </Link>
               <Link
                 href={`/appointments?date=${nextWeekDateStr}`}
                 className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
                 style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
               >
-                <ChevronRight size={15} />
+                <LinkIconOrSpinner icon={<ChevronRight size={15} />} />
               </Link>
             </div>
-            <Link
-              href="/settings"
-              className="flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-sm font-semibold"
-              style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}
-              title="Sync with Google Calendar"
-            >
-              <CalendarSync size={14} />
-              <span className="hidden sm:inline">Sync with Google Calendar</span>
-            </Link>
-            {biz && (
-              <AddAppointmentModal
-                defaultDate={selectedDate}
-                services={services.map(s => ({ name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents }))}
-              />
-            )}
+            <div className="flex items-center gap-2">
+              <Link
+                href="/settings"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}
+                title="Sync with Google Calendar"
+              >
+                <CalendarSync size={14} />
+                <span className="hidden sm:inline">Sync with Google Calendar</span>
+              </Link>
+              {biz && (
+                <AddAppointmentModal
+                  defaultDate={selectedDate}
+                  services={services.map(s => ({ name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents }))}
+                />
+              )}
+            </div>
           </div>
         </div>
 
@@ -215,27 +218,29 @@ export default async function AppointmentsPage({
               <Link
                 key={dStr}
                 href={`/appointments?date=${dStr}`}
-                className="rounded-xl p-3 text-center transition-colors"
+                className="rounded-xl text-center transition-colors"
                 style={{
                   background: 'var(--card)',
                   border: isSel ? '1px solid var(--violet)' : '1px solid var(--line)',
                   boxShadow: isSel ? '0 0 0 3px var(--violet-soft)' : 'var(--shadow)',
                 }}
               >
-                <div className="text-[0.64rem] font-bold tracking-widest" style={{ color: 'var(--ink-3)' }}>{DOW[i]}</div>
-                <div className="font-extrabold text-xl mt-0.5 mb-1" style={{ fontFamily: 'var(--font-display)', color: isToday ? 'var(--violet)' : 'var(--ink)' }}>
-                  {Number(dStr.split('-')[2])}
-                </div>
-                <span
-                  className="text-xs font-bold rounded-full px-2 py-0.5 inline-block whitespace-nowrap"
-                  style={closed
-                    ? { color: 'var(--ink-3)', background: 'var(--paper)' }
-                    : count > 0
-                      ? { color: 'var(--violet)', background: 'var(--violet-soft)' }
-                      : { color: 'var(--ink-3)', background: 'var(--paper)' }}
-                >
-                  {closed ? 'Closed' : count > 0 ? `${count} booked` : 'Open'}
-                </span>
+                <LinkPendingFade className="p-3">
+                  <div className="text-[0.64rem] font-bold tracking-widest" style={{ color: 'var(--ink-3)' }}>{DOW[i]}</div>
+                  <div className="font-extrabold text-xl mt-0.5 mb-1" style={{ fontFamily: 'var(--font-display)', color: isToday ? 'var(--violet)' : 'var(--ink)' }}>
+                    {Number(dStr.split('-')[2])}
+                  </div>
+                  <span
+                    className="text-xs font-bold rounded-full px-2 py-0.5 inline-block whitespace-nowrap"
+                    style={closed
+                      ? { color: 'var(--ink-3)', background: 'var(--paper)' }
+                      : count > 0
+                        ? { color: 'var(--violet)', background: 'var(--violet-soft)' }
+                        : { color: 'var(--ink-3)', background: 'var(--paper)' }}
+                  >
+                    {closed ? 'Closed' : count > 0 ? `${count} booked` : 'Open'}
+                  </span>
+                </LinkPendingFade>
               </Link>
             )
           })}
