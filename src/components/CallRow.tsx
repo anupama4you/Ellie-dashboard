@@ -41,7 +41,7 @@ export default function CallRow({
       role="button"
       tabIndex={0}
       aria-current={active ? 'true' : undefined}
-      className="flex items-center gap-3 px-5 py-3.5 transition-colors w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] hover-row cursor-pointer"
+      className="flex items-center gap-2.5 sm:gap-3 px-3 py-3 sm:px-5 sm:py-3.5 transition-colors w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] hover-row cursor-pointer"
       style={{
         background: active ? 'var(--violet-soft)' : errored ? 'rgba(221,81,64,0.04)' : undefined,
         borderTop: '1px solid var(--line)',

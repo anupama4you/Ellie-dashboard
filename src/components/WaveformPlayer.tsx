@@ -99,7 +99,7 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
 
   const waveform = (
     <div
-      className={`flex items-center gap-[2px] cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 rounded ${compact ? 'h-5' : 'flex-1 h-9'}`}
+      className={`flex items-center gap-[2px] cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 rounded min-w-0 ${compact ? 'h-5' : 'flex-1 h-9'}`}
       onClick={handleSeekClick}
       role="slider"
       aria-label="Seek recording"
@@ -146,7 +146,7 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-3 rounded-xl"
+      className="flex items-center gap-2 sm:gap-3 px-2.5 py-2 sm:px-4 sm:py-3 rounded-xl"
       style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}
     >
       <audio ref={audioRef} src={src} preload="metadata" />
@@ -156,8 +156,8 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
 
       {/* Time */}
       <span
-        className="text-xs font-mono tabular-nums shrink-0"
-        style={{ color: 'var(--t4)', minWidth: 78, textAlign: 'right' }}
+        className="hidden sm:block text-xs font-mono tabular-nums shrink-0 min-w-[78px]"
+        style={{ color: 'var(--t4)', textAlign: 'right' }}
       >
         {fmt(currentTime)} / {fmt(duration)}
       </span>
@@ -167,7 +167,7 @@ export default function WaveformPlayer({ src, compact }: { src: string; compact?
         href={src}
         download
         onClick={e => e.stopPropagation()}
-        className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors btn-ghost focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors btn-ghost focus-visible:outline-2 focus-visible:outline-offset-2"
         style={{ color: 'var(--t3)', border: '1px solid var(--border)', outlineColor: 'var(--t3)' }}
         title="Download recording"
         aria-label="Download recording"

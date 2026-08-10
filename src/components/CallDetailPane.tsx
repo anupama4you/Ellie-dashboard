@@ -107,7 +107,7 @@ export default function CallDetailPane({
 
   return (
     <div className="h-full w-full overflow-y-auto">
-      <div className="p-5 flex flex-col gap-4">
+      <div className="p-3 sm:p-5 flex flex-col gap-3 sm:gap-4">
         <button
           onClick={onClose}
           className="flex items-center gap-1.5 text-sm w-fit transition-opacity hover:opacity-70 lg:hidden"

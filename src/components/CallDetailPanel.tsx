@@ -75,10 +75,10 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
     : null
 
   return (
-    <div className="px-5 py-4 flex flex-col gap-4" style={{ background: 'var(--paper)', borderTop: '1px solid var(--line)' }}>
+    <div className="px-3 py-3 sm:px-5 sm:py-4 flex flex-col gap-3 sm:gap-4" style={{ background: 'var(--paper)', borderTop: '1px solid var(--line)' }}>
 
       {/* Header + stats */}
-      <div className="rounded-xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+      <div className="rounded-xl p-3 sm:p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--violet-soft)' }}>
@@ -108,7 +108,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
           )}
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4" style={{ borderTop: '1px solid var(--line)' }}>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-3 sm:mt-4 pt-3 sm:pt-4" style={{ borderTop: '1px solid var(--line)' }}>
           {[
             { icon: <Clock size={12} />, label: 'Duration', value: call.durationSecs > 0 ? fmtDuration(call.durationSecs) : '—' },
             { icon: <Phone size={12} />, label: 'Status', value: call.status ? call.status.charAt(0).toUpperCase() + call.status.slice(1) : '—' },
@@ -134,7 +134,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
 
       {/* AI Summary */}
       {call.summary && (
-        <div className="rounded-xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+        <div className="rounded-xl p-3 sm:p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
           <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>AI Summary</h3>
           <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-2)' }}>{call.summary}</p>
         </div>
@@ -142,7 +142,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
 
       {/* Recording */}
       {call.recordingUrl && (
-        <div className="rounded-xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+        <div className="rounded-xl p-3 sm:p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
           <div className="flex items-center gap-2 mb-3">
             <Mic size={13} style={{ color: 'var(--violet)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Recording</h3>
@@ -154,7 +154,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
       {/* Transcript — scrollable so long conversations don't grow the page */}
       {call.transcript ? (
         <div className="rounded-xl overflow-hidden" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
-          <div className="flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid var(--line)' }}>
+          <div className="flex items-center gap-2 px-3 py-2.5 sm:px-4 sm:py-3" style={{ borderBottom: '1px solid var(--line)' }}>
             <FileText size={13} style={{ color: 'var(--violet)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Transcript</h3>
             {msgs.length > 0 && (
@@ -163,7 +163,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
           </div>
 
           {msgs.length > 0 ? (
-            <div className="p-4 flex flex-col gap-3 overflow-y-auto" style={{ maxHeight: 420 }}>
+            <div className="p-3 sm:p-4 flex flex-col gap-3 overflow-y-auto" style={{ maxHeight: 420 }}>
               {msgs.map((msg, i) => (
                 <div key={i} className={`flex gap-2.5 ${msg.role === 'assistant' ? 'flex-row-reverse' : ''}`}>
                   <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-1"
@@ -173,7 +173,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
                     }}>
                     {msg.role === 'user' ? 'C' : 'E'}
                   </div>
-                  <div className="max-w-[82%] px-3.5 py-2.5 text-sm leading-relaxed"
+                  <div className="max-w-[85%] sm:max-w-[82%] px-3 py-2 sm:px-3.5 sm:py-2.5 text-sm leading-relaxed"
                     style={{
                       background:   msg.role === 'user' ? 'var(--paper)' : 'var(--violet-soft)',
                       color:        msg.role === 'user' ? 'var(--ink-2)' : 'var(--violet)',
@@ -185,7 +185,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
               ))}
             </div>
           ) : (
-            <pre className="p-4 text-sm leading-relaxed whitespace-pre-wrap font-sans overflow-y-auto" style={{ color: 'var(--ink-2)', maxHeight: 420 }}>
+            <pre className="p-3 sm:p-4 text-sm leading-relaxed whitespace-pre-wrap font-sans overflow-y-auto" style={{ color: 'var(--ink-2)', maxHeight: 420 }}>
               {call.transcript}
             </pre>
           )}

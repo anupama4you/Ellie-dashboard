@@ -77,7 +77,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
 
   return (
     <div
-      className="rounded-2xl h-full flex overflow-hidden"
+      className="rounded-xl sm:rounded-2xl h-full flex overflow-hidden"
       style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}
     >
       {/* Left pane — call list. Only ever holds the lightweight fields fetched up front. */}
@@ -85,7 +85,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
         className={`w-full lg:w-[400px] shrink-0 h-full flex-col ${selectedId ? 'hidden lg:flex' : 'flex'}`}
         style={{ borderRight: '1px solid var(--line)' }}
       >
-        <div className="p-4 flex flex-col gap-3 shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
+        <div className="p-3 sm:p-4 flex flex-col gap-3 shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
           <form onSubmit={applySearch} className="flex gap-2">
             <div
               className="flex-1 min-w-0 flex items-center gap-2 rounded-xl px-3 py-2"
@@ -167,7 +167,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
 
         {filtered.length > 0 && (
           <div
-            className="flex items-center justify-between px-4 py-3 text-xs flex-wrap gap-2 shrink-0"
+            className="flex items-center justify-between px-3 py-2.5 sm:px-4 sm:py-3 text-xs flex-wrap gap-2 shrink-0"
             style={{ borderTop: '1px solid var(--line)', color: 'var(--ink-3)' }}
           >
             <span>
