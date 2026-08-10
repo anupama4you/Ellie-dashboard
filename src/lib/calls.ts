@@ -57,6 +57,45 @@ export async function getLocalCalls(
   return data ?? []
 }
 
+export type LocalCallListItem = Pick<LocalCall,
+  | 'id' | 'call_type' | 'status' | 'caller_name' | 'caller_phone' | 'assistant_phone'
+  | 'started_at' | 'duration_seconds' | 'ended_reason' | 'outcome'
+>
+
+/**
+ * Lightweight variant of `getLocalCalls` for the Calls list view — leaves out
+ * `summary`, `transcript`, `recording_url` and `raw_payload`, which can each
+ * be sizeable and are only needed once a specific call is opened (see
+ * `getLocalCall`, fetched on demand via `/api/client/calls/[callId]`).
+ */
+export async function getLocalCallsList(
+  businessId: string,
+  opts: { limit?: number; dateRange?: { from?: string; to?: string; timeZone?: string } } = {},
+): Promise<LocalCallListItem[]> {
+  const supabase = await createClient()
+  let query = supabase
+    .from('calls')
+    .select('id, call_type, status, caller_name, caller_phone, assistant_phone, started_at, duration_seconds, ended_reason, outcome')
+    .eq('business_id', businessId)
+    .order('started_at', { ascending: false })
+    .limit(opts.limit ?? 300)
+
+  const timeZone = opts.dateRange?.timeZone ?? 'Australia/Adelaide'
+  if (opts.dateRange?.from) {
+    const [y, mo, d] = opts.dateRange.from.split('-').map(Number)
+    query = query.gte('started_at', zonedTimeToUtc(timeZone, y, mo, d, 0, 0).toISOString())
+  }
+  if (opts.dateRange?.to) {
+    const [y, mo, d] = opts.dateRange.to.split('-').map(Number)
+    const endOfDay = new Date(zonedTimeToUtc(timeZone, y, mo, d, 0, 0).getTime() + 24 * 60 * 60_000 - 1)
+    query = query.lte('started_at', endOfDay.toISOString())
+  }
+
+  const { data, error } = await query
+  if (error) throw new Error(error.message)
+  return data ?? []
+}
+
 export async function getLocalCall(businessId: string, id: string): Promise<LocalCall | null> {
   const supabase = await createClient()
   const { data } = await supabase
@@ -68,17 +107,7 @@ export async function getLocalCall(businessId: string, id: string): Promise<Loca
   return data ?? null
 }
 
-/**
- * Vapi's call recording storage is access-controlled — the raw URL that used
- * to sit in `calls.recording_url` isn't directly fetchable anymore (see
- * `src/app/api/recordings/[vapiCallId]/route.ts`, which exchanges it for a
- * fresh short-lived signed URL server-side). Every UI surface should build
- * playback/download links through this proxy path instead of using
- * `recording_url` directly.
- */
-export function recordingProxyUrl(vapiCallId: string | null | undefined): string | undefined {
-  return vapiCallId ? `/api/recordings/${vapiCallId}` : undefined
-}
+export { recordingProxyUrl } from './recordingUrl'
 
 /**
  * The AI-generated summary can be blank — analysis is sometimes disabled,

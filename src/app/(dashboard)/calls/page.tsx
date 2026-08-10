@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, callSummary, recordingProxyUrl, type LocalCall } from '@/lib/calls'
-import { classifyCall, callTypeLabel } from '@/lib/callClassify'
+import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
+import { classifyCall } from '@/lib/callClassify'
 import { formatInZone } from '@/lib/timezone'
 import { isAfterHours } from '@/lib/availability'
 import { PhoneOff, Search } from 'lucide-react'
@@ -33,7 +33,7 @@ export default async function CallsPage({
   const { business: biz } = await getCurrentBusiness()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
-  let rawCalls: LocalCall[] = []
+  let rawCalls: LocalCallListItem[] = []
   let fetchError: string | null = null
 
   if (!biz) {
@@ -42,7 +42,7 @@ export default async function CallsPage({
     fetchError = 'No Vapi Assistant ID set on your business profile.'
   } else {
     try {
-      rawCalls = await getLocalCalls(biz.id, {
+      rawCalls = await getLocalCallsList(biz.id, {
         limit: hasDateFilter ? DATE_RANGE_LIMIT : BATCH_SIZE,
         dateRange: hasDateFilter ? { from, to, timeZone } : undefined,
       })
@@ -53,41 +53,30 @@ export default async function CallsPage({
   }
 
   const bizHours = (biz?.hours as Hours | undefined) ?? null
+  // Only the fields needed for the list row — summary, transcript and the
+  // recording are fetched lazily per-call by CallDetailPane once selected.
   const calls: CallItem[] = rawCalls.map(call => {
     const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined, call.outcome === 'booked' || call.outcome === 'rebooked', call.outcome === 'rebooked')
     const dt = call.started_at ? fmtTime(call.started_at, timeZone) : null
-    // Web calls have no phone number on either end; real phone calls answer on the business's Ellie number.
-    const assistantNumber = call.assistant_phone || (call.call_type !== 'webCall' ? biz?.phone ?? undefined : undefined)
     return {
       id: call.id,
-      type: call.call_type ?? undefined,
-      typeLabel: callTypeLabel(call.call_type ?? undefined),
-      assistantNumber: assistantNumber ?? undefined,
       customerNumber: call.caller_phone ?? undefined,
       customerName: call.caller_name ?? undefined,
       startedAtIso: call.started_at ?? undefined,
       startedDate: dt?.date,
       startedTime: dt?.time,
       durationSecs: call.duration_seconds ?? 0,
-      summary: category === 'missed' ? undefined : callSummary(call).text,
       category,
       badgeLabel: label,
       badgeColor: color,
       badgeBg: bg,
-      recordingUrl: call.recording_url ? recordingProxyUrl(call.vapi_call_id) : undefined,
-      hasTranscript: !!call.transcript,
       isAfterHours: call.started_at ? isAfterHours(new Date(call.started_at), bizHours, timeZone) : false,
-      status: call.status ?? undefined,
-      endedReason: call.ended_reason ?? undefined,
-      successEvaluation: call.success_evaluation ?? undefined,
-      transcript: call.transcript ?? undefined,
-      vapiCallId: call.vapi_call_id ?? undefined,
     }
   })
 
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="px-6 pt-6 pb-4 max-w-[1220px] w-full mx-auto flex flex-col gap-4 shrink-0">
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
             <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
@@ -141,7 +130,9 @@ export default async function CallsPage({
             )}
           </form>
         </div>
+      </div>
 
+      <div className="flex-1 min-h-0 px-6 pb-6 max-w-[1220px] w-full mx-auto">
         {fetchError ? (
           <div
             className="rounded-2xl py-12 text-center px-6 flex flex-col items-center gap-2"

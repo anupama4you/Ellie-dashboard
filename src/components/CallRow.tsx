@@ -1,5 +1,4 @@
-import { AlertTriangle, ChevronDown, Clock3 } from 'lucide-react'
-import PlayButton from './PlayButton'
+import { AlertTriangle, ChevronRight, Clock3 } from 'lucide-react'
 import CopyButton from './CopyButton'
 import { initials, avatarColor } from '@/lib/avatar'
 
@@ -13,45 +12,38 @@ function fmtDuration(secs: number) {
 
 export type CallRowProps = {
   id: string
-  type?: string
-  typeLabel: string
-  assistantNumber?: string
   customerNumber?: string
   customerName?: string
   startedAtIso?: string
   startedDate?: string
   startedTime?: string
   durationSecs: number
-  summary?: string
   category: 'booked' | 'rebooked' | 'transferred' | 'missed' | 'enquiry' | 'errored'
   badgeLabel: string
   badgeColor: string
   badgeBg: string
   isAfterHours?: boolean
-  recordingUrl?: string
-  hasTranscript: boolean
 }
 
 export default function CallRow({
   customerNumber, customerName,
-  startedTime, durationSecs, summary, category, badgeLabel, badgeColor, badgeBg,
-  isAfterHours, recordingUrl, hasTranscript, isExpanded, onToggle,
-}: CallRowProps & { isExpanded: boolean; onToggle: () => void }) {
+  startedTime, durationSecs, category, badgeLabel, badgeColor, badgeBg,
+  isAfterHours, active, onSelect,
+}: CallRowProps & { active: boolean; onSelect: () => void }) {
   const errored     = category === 'errored'
-  const clickable   = hasTranscript
   const displayName = customerName?.trim() || customerNumber || 'Unknown caller'
   const avatar      = avatarColor(displayName)
 
   return (
     <div
-      onClick={clickable ? onToggle : undefined}
-      onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle() } } : undefined}
-      role={clickable ? 'button' : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      aria-expanded={clickable ? isExpanded : undefined}
-      className={`flex items-center gap-3 px-5 py-3.5 transition-colors w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] ${clickable ? 'hover-row cursor-pointer' : ''}`}
+      onClick={onSelect}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect() } }}
+      role="button"
+      tabIndex={0}
+      aria-current={active ? 'true' : undefined}
+      className="flex items-center gap-3 px-5 py-3.5 transition-colors w-full text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] hover-row cursor-pointer"
       style={{
-        background: isExpanded ? 'var(--paper)' : errored ? 'rgba(221,81,64,0.04)' : undefined,
+        background: active ? 'var(--violet-soft)' : errored ? 'rgba(221,81,64,0.04)' : undefined,
         borderTop: '1px solid var(--line)',
         outlineColor: 'var(--violet)',
       }}
@@ -79,9 +71,6 @@ export default function CallRow({
             <CopyButton text={customerNumber} />
           </div>
         )}
-        {summary && (
-          <p className="text-xs truncate mt-0.5" style={{ color: 'var(--ink-3)' }}>{summary}</p>
-        )}
       </div>
 
       <div className="text-right shrink-0 hidden sm:block">
@@ -97,15 +86,7 @@ export default function CallRow({
         {badgeLabel}
       </span>
 
-      {clickable ? (
-        <ChevronDown
-          size={14}
-          className="shrink-0"
-          style={{ color: 'var(--ink-3)', transform: isExpanded ? 'rotate(180deg)' : undefined, transition: 'transform 150ms ease' }}
-        />
-      ) : <span className="w-3.5 shrink-0" />}
-
-      {recordingUrl ? <PlayButton src={recordingUrl} /> : <span className="w-8 h-8 shrink-0" />}
+      <ChevronRight size={14} className="shrink-0" style={{ color: active ? 'var(--violet)' : 'var(--ink-3)' }} />
     </div>
   )
 }
