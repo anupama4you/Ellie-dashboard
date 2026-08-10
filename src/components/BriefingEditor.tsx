@@ -107,7 +107,7 @@ export default function BriefingEditor({
         </div>
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="flex flex-col gap-4">
 
           {/* Company Information */}
@@ -159,8 +159,8 @@ export default function BriefingEditor({
                 />
               </div>
 
-              <div className="grid gap-2" style={{ gridTemplateColumns: '2fr 1fr 1fr' }}>
-                <div className="flex flex-col gap-1">
+              <div className="grid grid-cols-2 sm:grid-cols-[2fr_1fr_1fr] gap-2">
+                <div className="flex flex-col gap-1 col-span-2 sm:col-span-1">
                   <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>City</span>
                   <input
                     value={companyInfo.city}

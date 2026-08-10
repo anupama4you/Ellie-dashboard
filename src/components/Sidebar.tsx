@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive } from '@/app/(dashboard)/actions'
 
@@ -66,6 +66,24 @@ export default function Sidebar({
   const [toggleError, setToggleError] = useState('')
   const [isToggling, startToggle]     = useTransition()
 
+  // Desktop fold, for this session only. Mobile always opens expanded; it's
+  // an off-canvas drawer instead (see `mobileOpen`), not a rail.
+  const [collapsed, setCollapsed]     = useState(false)
+  const [mobileOpen, setMobileOpen]   = useState(false)
+
+  // Close the drawer on route change (e.g. tapping a nav link) — adjusted
+  // during render, per https://react.dev/learn/you-might-not-need-an-effect,
+  // rather than in an effect.
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname)
+    setMobileOpen(false)
+  }
+
+  function toggleCollapsed() {
+    setCollapsed(c => !c)
+  }
+
   async function signOut() {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -89,16 +107,53 @@ export default function Sidebar({
 
   return (
     <>
+    {/* Mobile top bar — the sidebar itself is an off-canvas drawer below md */}
+    <div
+      className="fixed top-0 left-0 right-0 z-30 h-14 flex items-center justify-between px-4 md:hidden"
+      style={{ background: 'var(--night)', borderBottom: '1px solid var(--night-line)' }}
+    >
+      <button
+        onClick={() => setMobileOpen(o => !o)}
+        className="w-9 h-9 -ml-1.5 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10"
+        style={{ color: '#DCD6EC' }}
+        aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+        aria-expanded={mobileOpen}
+      >
+        {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+      </button>
+      <div className="flex items-center gap-2">
+        <div className="w-7 h-7 rounded-[8px] overflow-hidden shrink-0">
+          <Image src="/favicon.png" alt="" width={28} height={28} className="w-full h-full object-cover" />
+        </div>
+        <span className="font-extrabold text-base leading-none text-white" style={{ fontFamily: 'var(--font-display)' }}>
+          Ellie
+        </span>
+      </div>
+      <div className="w-9" />
+    </div>
+
+    {/* Backdrop, mobile drawer only */}
+    {mobileOpen && (
+      <div
+        className="fixed inset-0 z-20 md:hidden"
+        style={{ background: 'rgba(20,16,32,0.55)' }}
+        onClick={() => setMobileOpen(false)}
+        aria-hidden="true"
+      />
+    )}
+
     <aside
-      className="flex flex-col w-[236px] shrink-0 h-full gap-1.5 px-4 py-5"
+      className={`fixed md:static top-0 left-0 h-full z-40 md:z-auto flex flex-col shrink-0 gap-1.5 py-5 w-[260px] px-4 transition-all duration-200 ease-in-out ${
+        collapsed ? 'md:w-[84px] md:px-2' : 'md:w-[236px] md:px-4'
+      } ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0 overflow-y-auto overflow-x-hidden`}
       style={{ background: 'var(--night)', color: '#DCD6EC' }}
     >
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-2 pb-5">
+      <div className={`flex px-2 pb-5 ${collapsed ? 'md:flex-col md:items-center md:gap-1.5' : 'items-center gap-2.5'}`}>
         <div className="w-[34px] h-[34px] rounded-[10px] overflow-hidden shrink-0">
           <Image src="/favicon.png" alt="" width={34} height={34} className="w-full h-full object-cover" />
         </div>
-        <div>
+        <div className={collapsed ? 'md:hidden' : ''}>
           <div className="flex items-center gap-1.5">
             <span className="font-extrabold text-xl leading-none text-white" style={{ fontFamily: 'var(--font-display)', letterSpacing: '0.01em' }}>
               Ellie
@@ -116,10 +171,19 @@ export default function Sidebar({
             AI Receptionist
           </div>
         </div>
+        <button
+          onClick={toggleCollapsed}
+          className="hidden md:flex items-center justify-center w-6 h-6 rounded-md shrink-0 ml-auto transition-colors hover:bg-white/10"
+          style={{ color: '#8B84A6' }}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
+        </button>
       </div>
 
       {/* Nav */}
-      <div className="text-[10px] tracking-widest uppercase px-2.5 pb-1.5" style={{ color: '#736C90' }}>
+      <div className={`text-[10px] tracking-widest uppercase px-2.5 pb-1.5 ${collapsed ? 'md:hidden' : ''}`} style={{ color: '#736C90' }}>
         Workspace
       </div>
       <nav className="flex flex-col gap-0.5">
@@ -129,15 +193,16 @@ export default function Sidebar({
             <Link
               key={href}
               href={href}
-              className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[0.92rem] font-medium transition-colors"
+              title={collapsed ? label : undefined}
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[0.92rem] font-medium transition-colors ${collapsed ? 'md:justify-center md:px-0' : ''}`}
               style={{
                 background: active ? 'var(--night-2)' : 'transparent',
                 color: active ? '#fff' : '#B9B2CE',
-                boxShadow: active ? 'inset 2px 0 0 var(--violet)' : 'none',
+                boxShadow: active && !collapsed ? 'inset 2px 0 0 var(--violet)' : 'none',
               }}
             >
               <Icon size={17} style={{ opacity: 0.85, flexShrink: 0 }} />
-              {label}
+              <span className={collapsed ? 'md:hidden' : ''}>{label}</span>
             </Link>
           )
         })}
@@ -145,12 +210,13 @@ export default function Sidebar({
 
       {isAdmin && (
         <>
-          <div className="text-[10px] tracking-widest uppercase px-2.5 pt-4 pb-1.5" style={{ color: '#736C90' }}>
+          <div className={`text-[10px] tracking-widest uppercase px-2.5 pt-4 pb-1.5 ${collapsed ? 'md:hidden' : ''}`} style={{ color: '#736C90' }}>
             Operator
           </div>
           <Link
             href="/admin"
-            className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[0.92rem] font-medium transition-colors"
+            title={collapsed ? 'Admin panel' : undefined}
+            className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[0.92rem] font-medium transition-colors ${collapsed ? 'md:justify-center md:px-0' : ''}`}
             style={{
               background: pathname.startsWith('/admin') ? 'rgba(217,138,11,0.14)' : 'transparent',
               color: pathname.startsWith('/admin') ? 'var(--amber)' : '#B9B2CE',
@@ -158,7 +224,7 @@ export default function Sidebar({
             }}
           >
             <ShieldCheck size={17} style={{ opacity: 0.9, flexShrink: 0 }} />
-            Admin panel
+            <span className={collapsed ? 'md:hidden' : ''}>Admin panel</span>
           </Link>
         </>
       )}
@@ -168,7 +234,7 @@ export default function Sidebar({
       {/* Phone line toggle */}
       {hasAssistant && (
         <div
-          className="rounded-xl px-3.5 py-3"
+          className={`rounded-xl px-3.5 py-3 ${collapsed ? 'md:hidden' : ''}`}
           style={{ border: '1px solid var(--night-line)', background: 'var(--night-2)' }}
         >
           <div className="flex items-center justify-between">
@@ -204,7 +270,7 @@ export default function Sidebar({
 
       {/* Line status */}
       <div
-        className="rounded-xl px-3.5 py-3"
+        className={`rounded-xl px-3.5 py-3 ${collapsed ? 'md:hidden' : ''}`}
         style={{ border: '1px solid var(--night-line)', background: 'var(--night-2)' }}
       >
         <div className="flex items-center gap-2 mb-1.5">
@@ -229,7 +295,7 @@ export default function Sidebar({
       {/* Plan usage */}
       {usage && (
         <div
-          className="rounded-xl px-3.5 py-3 mt-1.5"
+          className={`rounded-xl px-3.5 py-3 mt-1.5 ${collapsed ? 'md:hidden' : ''}`}
           style={{ border: '1px solid var(--night-line)', background: 'var(--night-2)' }}
         >
           {usage.isTrial ? (
@@ -268,14 +334,14 @@ export default function Sidebar({
       )}
 
       {/* User */}
-      <div className="flex items-center gap-2.5 px-2 pt-3.5">
+      <div className={`flex px-2 pt-3.5 ${collapsed ? 'md:flex-col md:gap-2' : 'items-center gap-2.5'}`}>
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
           style={{ background: '#3A2E5C', color: '#C9B8FF' }}
         >
           {initials(userEmail || businessName)}
         </div>
-        <div className="min-w-0 flex-1">
+        <div className={`min-w-0 flex-1 ${collapsed ? 'md:hidden' : ''}`}>
           <b className="block text-[0.84rem] text-white font-semibold truncate">{businessName}</b>
           <span className="block text-[0.72rem] truncate" style={{ color: '#8B84A6' }}>{userEmail}</span>
         </div>

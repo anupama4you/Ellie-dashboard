@@ -50,46 +50,46 @@ export default function CallDetailPane({
   onClose: () => void
 }) {
   // Per-session cache so re-selecting a call already viewed doesn't refetch.
+  // Only ever read/written from inside the effect below, never during render.
   const cache = useRef<Map<string, CallDetailData>>(new Map())
-  const [detail, setDetail] = useState<CallDetailData | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+
+  // Tagged with the id it's for, so a still-in-flight fetch for a call the
+  // user has since navigated away from can't clobber the current selection —
+  // and so a fresh selection reads as "loading" until its own result lands.
+  const [result, setResult] = useState<{ id: string; data: CallDetailData } | { id: string; error: true } | null>(null)
 
   useEffect(() => {
-    if (!selected) {
-      setDetail(null)
-      setStatus('idle')
-      return
-    }
-
-    const cached = cache.current.get(selected.id)
-    if (cached) {
-      setDetail(cached)
-      setStatus('idle')
-      return
-    }
-
+    if (!selected) return
+    const id = selected.id
     let cancelled = false
-    setDetail(null)
-    setStatus('loading')
 
-    fetch(`/api/client/calls/${selected.id}`)
-      .then(res => {
-        if (!res.ok) throw new Error(`Request failed: ${res.status}`)
-        return res.json() as Promise<RawCall>
-      })
-      .then(raw => {
+    const cached = cache.current.get(id)
+    const dataPromise = cached
+      ? Promise.resolve(cached)
+      : fetch(`/api/client/calls/${id}`)
+          .then(res => {
+            if (!res.ok) throw new Error(`Request failed: ${res.status}`)
+            return res.json() as Promise<RawCall>
+          })
+          .then(toDetailData)
+
+    dataPromise
+      .then(data => {
         if (cancelled) return
-        const data = toDetailData(raw)
-        cache.current.set(selected.id, data)
-        setDetail(data)
-        setStatus('idle')
+        cache.current.set(id, data)
+        setResult({ id, data })
       })
       .catch(() => {
-        if (!cancelled) setStatus('error')
+        if (!cancelled) setResult({ id, error: true })
       })
 
     return () => { cancelled = true }
   }, [selected])
+
+  const outcome   = selected && result?.id === selected.id ? result : null
+  const detail    = outcome && 'data' in outcome ? outcome.data : null
+  const hasError  = !!outcome && 'error' in outcome
+  const isLoading = !!selected && !outcome
 
   if (!selected) {
     return (
@@ -116,9 +116,9 @@ export default function CallDetailPane({
           <ArrowLeft size={14} /> Back to calls
         </button>
 
-        {status === 'loading' ? (
+        {isLoading ? (
           <CallDetailSkeleton />
-        ) : status === 'error' ? (
+        ) : hasError ? (
           <div className="rounded-xl p-6 text-center" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
             <p className="text-sm" style={{ color: 'var(--coral)' }}>Couldn&apos;t load this call — please try again.</p>
           </div>

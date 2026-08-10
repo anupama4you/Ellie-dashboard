@@ -31,7 +31,7 @@ export default function IntegrationsLoading() {
           <Sk w={280} h={13} r={4} />
         </div>
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 9 }).map((_, i) => <TileSkeleton key={i} />)}
         </div>
       </div>

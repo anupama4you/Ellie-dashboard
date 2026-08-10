@@ -206,14 +206,14 @@ export default async function SmsLogPage({
                   const when = m.dateSent ? new Date(m.dateSent) : null
                   const isToday = when && dateStrInZone(when, timeZone) === dateStrInZone(now, timeZone)
                   return (
-                    <div key={m.sid} className="flex items-start gap-4 px-5 py-4"
+                    <div key={m.sid} className="flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-4 px-5 py-4"
                       style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}>
-                      <div className="shrink-0" style={{ width: 150 }}>
+                      <div className="sm:shrink-0 sm:w-[150px]">
                         <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{name || formatAuPhone(m.to)}</p>
                         {name && <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>{formatAuPhone(m.to)}</p>}
                       </div>
                       <p className="flex-1 text-sm min-w-0" style={{ color: 'var(--ink-2)' }}>{m.body}</p>
-                      <div className="shrink-0 text-right flex flex-col items-end gap-1.5">
+                      <div className="shrink-0 flex items-center justify-between sm:flex-col sm:items-end gap-1.5">
                         <span className="text-xs font-mono" style={{ color: 'var(--ink-3)' }}>
                           {when ? (isToday
                             ? `Today ${formatInZone(when, timeZone, { hour: 'numeric', minute: '2-digit' })}`

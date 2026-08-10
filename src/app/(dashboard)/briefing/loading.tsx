@@ -31,7 +31,7 @@ export default function BriefingLoading() {
         <Sk w={110} h={36} r={10} />
       </div>
 
-      <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="flex flex-col gap-4">
           <CardSkeleton titleWidth={160} rows={4} />
           <CardSkeleton titleWidth={90} rows={3} />

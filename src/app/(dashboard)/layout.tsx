@@ -75,7 +75,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
         } : null}
       />
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden pt-14 md:pt-0">
         {children}
       </div>
     </div>

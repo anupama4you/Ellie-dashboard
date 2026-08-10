@@ -107,10 +107,10 @@ export default function RecordingsExplorer({ recordings, range }: { recordings: 
           paged.map((r, i) => (
             <div
               key={r.id}
-              className="flex items-center gap-4 px-5 py-3.5 hover-row transition-colors"
+              className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-4 px-5 py-3.5 hover-row transition-colors"
               style={{ borderTop: i > 0 ? '1px solid var(--line)' : undefined }}
             >
-              <div className="min-w-0 shrink-0" style={{ width: 170 }}>
+              <div className="min-w-0 sm:shrink-0 sm:w-[170px]">
                 <div className="flex items-center gap-1">
                   <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{r.displayName}</p>
                   {r.customerNumber && <CopyButton text={r.customerNumber} />}
@@ -118,37 +118,39 @@ export default function RecordingsExplorer({ recordings, range }: { recordings: 
                 <p className="text-xs truncate mt-0.5" style={{ color: 'var(--ink-3)' }}>{r.summary}</p>
               </div>
 
-              <div className="flex-1 min-w-0">
-                <WaveformPlayer src={r.recordingUrl} compact />
-              </div>
+              <div className="flex items-center gap-3 sm:contents">
+                <div className="flex-1 min-w-0">
+                  <WaveformPlayer src={r.recordingUrl} compact />
+                </div>
 
-              <div className="text-right shrink-0 hidden sm:block" style={{ minWidth: 64 }}>
-                <p className="text-xs font-mono" style={{ color: 'var(--ink-3)' }}>{r.startedTime ?? '—'}</p>
-                <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--ink-3)' }}>{fmtDuration(r.durationSecs)}</p>
-              </div>
+                <div className="text-right shrink-0 hidden sm:block" style={{ minWidth: 64 }}>
+                  <p className="text-xs font-mono" style={{ color: 'var(--ink-3)' }}>{r.startedTime ?? '—'}</p>
+                  <p className="text-xs font-mono mt-0.5" style={{ color: 'var(--ink-3)' }}>{fmtDuration(r.durationSecs)}</p>
+                </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
-                {r.hasTranscript && (
-                  <Link
-                    href={`/calls/${r.id}`}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {r.hasTranscript && (
+                    <Link
+                      href={`/calls/${r.id}`}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
+                      style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+                      title="View transcript"
+                      aria-label="View transcript"
+                    >
+                      <FileText size={13} />
+                    </Link>
+                  )}
+                  <a
+                    href={r.recordingUrl}
+                    download
                     className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
                     style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-                    title="View transcript"
-                    aria-label="View transcript"
+                    title="Download recording"
+                    aria-label="Download recording"
                   >
-                    <FileText size={13} />
-                  </Link>
-                )}
-                <a
-                  href={r.recordingUrl}
-                  download
-                  className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
-                  style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-                  title="Download recording"
-                  aria-label="Download recording"
-                >
-                  <Download size={13} />
-                </a>
+                    <Download size={13} />
+                  </a>
+                </div>
               </div>
             </div>
           ))

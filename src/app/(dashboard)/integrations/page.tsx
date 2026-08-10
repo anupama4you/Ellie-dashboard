@@ -42,7 +42,7 @@ export default async function IntegrationsPage({
           <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Connect the tools your business already runs on</p>
         </div>
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {biz?.id && (
             <GoogleCalendarCard businessId={biz.id} connection={calendarConnection} statusParam={calendar} />
           )}
