@@ -8,6 +8,7 @@ import type { Hours } from '../briefing/actions'
 import CopyButton from '@/components/CopyButton'
 import AddAppointmentModal from '@/components/AddAppointmentModal'
 import AppointmentActions from '@/components/AppointmentActions'
+import MonthGrid, { type MonthChip } from '@/components/MonthGrid'
 import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink, CalendarSync } from 'lucide-react'
 import { LinkIconOrSpinner, LinkPendingFade } from '@/components/LinkPending'
 
@@ -47,12 +48,35 @@ function dowIndex(dateStr: string): number {
   return new Date(Date.UTC(y, mo - 1, d)).getUTCDay() // 0=Sun..6=Sat
 }
 
+function daysInMonthLocal(y: number, m: number): number {
+  return new Date(Date.UTC(y, m, 0)).getUTCDate()
+}
+
+/** `dateStr` shifted by `delta` calendar months, day-of-month clamped to the target month's length (e.g. Jan 31 + 1 month = Feb 28). */
+function shiftMonthStr(dateStr: string, delta: number): string {
+  const [y, mo, d] = dateStr.split('-').map(Number)
+  const ty = y + Math.floor((mo - 1 + delta) / 12)
+  const tm = ((mo - 1 + delta) % 12 + 12) % 12 + 1
+  const clampedDay = Math.min(d, daysInMonthLocal(ty, tm))
+  return `${ty}-${String(tm).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`
+}
+
+/** 42 `YYYY-MM-DD` strings (six Monday-start weeks) spanning the month `dateStr` falls in, like Google Calendar's month grid. */
+function monthGridDates(dateStr: string): string[] {
+  const [y, mo] = dateStr.split('-').map(Number)
+  const firstOfMonthStr = `${y}-${String(mo).padStart(2, '0')}-01`
+  const gridStart = startOfWeekStr(firstOfMonthStr)
+  return Array.from({ length: 42 }, (_, i) => shiftDateStr(gridStart, i))
+}
+
 export default async function AppointmentsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>
+  searchParams: Promise<{ date?: string; view?: string }>
 }) {
-  const { date } = await searchParams
+  const { date, view: viewParam } = await searchParams
+  const view: 'month' | 'week' = viewParam === 'week' ? 'week' : 'month'
+
   const { business: biz } = await getCurrentBusiness()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
   const supabase = await createClient()
@@ -63,38 +87,45 @@ export default async function AppointmentsPage({
 
   const weekStartStr = startOfWeekStr(selectedDate)
   const weekDateStrs = Array.from({ length: 7 }, (_, i) => shiftDateStr(weekStartStr, i))
-  const weekEndStr    = weekDateStrs[6]
 
-  const [wy, wmo, wd] = weekStartStr.split('-').map(Number)
-  const weekRangeStart = zonedTimeToUtc(timeZone, wy, wmo, wd, 0, 0)
-  const [ey, emo, ed] = weekEndStr.split('-').map(Number)
-  const weekRangeEnd = new Date(zonedTimeToUtc(timeZone, ey, emo, ed, 0, 0).getTime() + 24 * 60 * 60_000 - 1)
+  const gridDates       = monthGridDates(selectedDate)
+  const currentMonthKey = selectedDate.slice(0, 7)
 
-  const prevWeekDateStr = shiftDateStr(selectedDate, -7)
-  const nextWeekDateStr = shiftDateStr(selectedDate, 7)
+  // Both views share one fetch, scoped to whichever range is on screen — a
+  // 7-day strip or the 6-week grid — so this only ever loads what's visible.
+  const rangeDateStrs = view === 'month' ? gridDates : weekDateStrs
+  const rangeStartStr = rangeDateStrs[0]
+  const rangeEndStr   = rangeDateStrs[rangeDateStrs.length - 1]
 
-  // Scoped to the displayed week only — this used to fetch the business's
-  // entire appointment history on every visit, which only gets slower as
-  // bookings accumulate over months/years.
+  const [ry, rmo, rd] = rangeStartStr.split('-').map(Number)
+  const rangeStart = zonedTimeToUtc(timeZone, ry, rmo, rd, 0, 0)
+  const [rey, remo, red] = rangeEndStr.split('-').map(Number)
+  const rangeEnd = new Date(zonedTimeToUtc(timeZone, rey, remo, red, 0, 0).getTime() + 24 * 60 * 60_000 - 1)
+
+  const prevWeekDateStr  = shiftDateStr(selectedDate, -7)
+  const nextWeekDateStr  = shiftDateStr(selectedDate, 7)
+  const prevMonthDateStr = shiftMonthStr(selectedDate, -1)
+  const nextMonthDateStr = shiftMonthStr(selectedDate, 1)
+
   const [{ data: appointments }, { data: servicesRaw }] = await Promise.all([
     supabase
       .from('appointments')
       .select('*')
       .eq('business_id', biz?.id)
       .neq('status', 'cancelled')
-      .gte('scheduled_at', weekRangeStart.toISOString())
-      .lte('scheduled_at', weekRangeEnd.toISOString())
+      .gte('scheduled_at', rangeStart.toISOString())
+      .lte('scheduled_at', rangeEnd.toISOString())
       .order('scheduled_at', { ascending: true }),
     supabase.from('business_services').select('name, duration_minutes, price_cents').eq('business_id', biz?.id),
   ])
 
-  const weekAppts = (appointments ?? []) as Appointment[]
-  const services  = servicesRaw ?? []
+  const rangeAppts = (appointments ?? []) as Appointment[]
+  const services   = servicesRaw ?? []
   const serviceByName = new Map(services.map(s => [s.name.toLowerCase(), s]))
 
-  // Calls that resulted in one of this week's Ellie-booked appointments, so
+  // Calls that resulted in one of this range's Ellie-booked appointments, so
   // each appointment can link back to "when the caller actually booked this".
-  const bookingCallIds = Array.from(new Set(weekAppts.map(a => a.vapi_call_id).filter((id): id is string => !!id)))
+  const bookingCallIds = Array.from(new Set(rangeAppts.map(a => a.vapi_call_id).filter((id): id is string => !!id)))
   const callInfoByVapiId = new Map<string, { id: string; startedAt: string | null }>()
   if (biz && bookingCallIds.length > 0) {
     const { data: bookingCalls } = await supabase
@@ -110,15 +141,15 @@ export default async function AppointmentsPage({
   // Merge in the connected Google Calendar (if any) so staff see everything —
   // Ellie's bookings alongside anything booked directly in their own calendar.
   type GoogleEvent = { id: string; title: string; start: Date; htmlLink?: string }
-  let weekGoogleEvents: GoogleEvent[] = []
+  let rangeGoogleEvents: GoogleEvent[] = []
   if (biz) {
     try {
       const google = await getValidAccessToken(supabase, biz.id)
       if (google) {
         // Bookings we made ourselves already created this exact event — don't show it twice.
-        const ownEventIds = new Set(weekAppts.map(a => a.calendar_event_id).filter(Boolean))
-        const events = await listEvents(google.accessToken, google.calendarId, weekRangeStart, weekRangeEnd)
-        weekGoogleEvents = events
+        const ownEventIds = new Set(rangeAppts.map(a => a.calendar_event_id).filter(Boolean))
+        const events = await listEvents(google.accessToken, google.calendarId, rangeStart, rangeEnd)
+        rangeGoogleEvents = events
           .filter(e => e.start?.dateTime && !ownEventIds.has(e.id))
           .map(e => ({ id: e.id, title: e.summary ?? 'Untitled event', start: new Date(e.start!.dateTime!), htmlLink: e.htmlLink }))
       }
@@ -127,63 +158,58 @@ export default async function AppointmentsPage({
     }
   }
 
-  const countByDay = new Map<string, number>()
-  for (const a of weekAppts) {
-    const key = dateStrInZone(new Date(a.scheduled_at), timeZone)
-    countByDay.set(key, (countByDay.get(key) ?? 0) + 1)
+  // One pass builds both the month grid's per-day chips and the week strip's
+  // per-day counts (a chip list's length), sorted earliest-first.
+  const itemsByDay = new Map<string, MonthChip[]>()
+  function pushItem(dStr: string, item: MonthChip) {
+    if (!itemsByDay.has(dStr)) itemsByDay.set(dStr, [])
+    itemsByDay.get(dStr)!.push(item)
   }
-  for (const e of weekGoogleEvents) {
-    const key = dateStrInZone(e.start, timeZone)
-    countByDay.set(key, (countByDay.get(key) ?? 0) + 1)
+  for (const a of rangeAppts) {
+    const dStr  = dateStrInZone(new Date(a.scheduled_at), timeZone)
+    const style = STATUS_STYLE[a.status] ?? STATUS_STYLE.pending
+    pushItem(dStr, { id: a.id, label: a.customer_name, color: style.color, bg: style.bg })
+  }
+  for (const e of rangeGoogleEvents) {
+    const dStr = dateStrInZone(e.start, timeZone)
+    pushItem(dStr, { id: e.id, label: e.title, color: 'var(--ink-3)', bg: 'var(--paper)' })
   }
 
-  const dayAppts = weekAppts
+  const countByDay = new Map<string, number>()
+  for (const [d, items] of itemsByDay) countByDay.set(d, items.length)
+
+  const dayAppts = rangeAppts
     .filter(a => dateStrInZone(new Date(a.scheduled_at), timeZone) === selectedDate)
     .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
 
-  const dayGoogleEvents = weekGoogleEvents
+  const dayGoogleEvents = rangeGoogleEvents
     .filter(e => dateStrInZone(e.start, timeZone) === selectedDate)
     .sort((a, b) => a.start.getTime() - b.start.getTime())
 
   const bookedByEllieCount = dayAppts.filter(a => !!a.vapi_call_id).length
 
   const [sy, smo, sd] = selectedDate.split('-').map(Number)
-  const dayTitle = formatInZone(new Date(Date.UTC(sy, smo - 1, sd, 12)), 'UTC', { weekday: 'long', day: 'numeric', month: 'long' })
+  const dayTitle   = formatInZone(new Date(Date.UTC(sy, smo - 1, sd, 12)), 'UTC', { weekday: 'long', day: 'numeric', month: 'long' })
+  const monthLabel = formatInZone(new Date(Date.UTC(sy, smo - 1, 1, 12)), 'UTC', { month: 'long', year: 'numeric' })
+
+  function navHref(target: 'today' | 'prev' | 'next', forView: 'month' | 'week' = view) {
+    const d = target === 'today' ? todayStr
+      : forView === 'month' ? (target === 'prev' ? prevMonthDateStr : nextMonthDateStr)
+      : (target === 'prev' ? prevWeekDateStr : nextWeekDateStr)
+    return `/appointments?view=${forView}&date=${d}`
+  }
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-4">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-3 sm:gap-4">
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-          <div>
-            <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
-              Appointments
-            </h1>
-            <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Everything Ellie has booked into your calendar</p>
-          </div>
-          <div className="flex items-center justify-between gap-2 sm:justify-end">
-            <div className="flex items-center gap-1.5">
-              <Link
-                href={`/appointments?date=${prevWeekDateStr}`}
-                className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
-                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-              >
-                <LinkIconOrSpinner icon={<ChevronLeft size={15} />} />
-              </Link>
-              <Link
-                href={`/appointments?date=${todayStr}`}
-                className="px-3 py-1.5 rounded-lg text-sm font-semibold btn-ghost"
-                style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}
-              >
-                <LinkPendingFade>This week</LinkPendingFade>
-              </Link>
-              <Link
-                href={`/appointments?date=${nextWeekDateStr}`}
-                className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
-                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
-              >
-                <LinkIconOrSpinner icon={<ChevronRight size={15} />} />
-              </Link>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
+                Appointments
+              </h1>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Everything Ellie has booked into your calendar</p>
             </div>
             <div className="flex items-center gap-2">
               <Link
@@ -203,49 +229,107 @@ export default async function AppointmentsPage({
               )}
             </div>
           </div>
+
+          {/* Nav (Today/‹/›/label) + Month/Week toggle */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <Link
+                href={navHref('today')}
+                className="px-3 py-1.5 rounded-lg text-sm font-semibold btn-ghost"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}
+              >
+                <LinkPendingFade>Today</LinkPendingFade>
+              </Link>
+              <Link
+                href={navHref('prev')}
+                className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+              >
+                <LinkIconOrSpinner icon={<ChevronLeft size={15} />} />
+              </Link>
+              <Link
+                href={navHref('next')}
+                className="w-8 h-8 rounded-lg flex items-center justify-center btn-ghost"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+              >
+                <LinkIconOrSpinner icon={<ChevronRight size={15} />} />
+              </Link>
+              <span className="text-sm sm:text-base font-bold ml-1 whitespace-nowrap" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>
+                {view === 'month' ? monthLabel : 'This week'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-0.5 rounded-lg p-0.5 shrink-0" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
+              <Link
+                href={`/appointments?view=month&date=${selectedDate}`}
+                className="px-2.5 sm:px-3 py-1 rounded-md text-xs sm:text-sm font-semibold transition-colors"
+                style={view === 'month' ? { background: 'var(--card)', color: 'var(--ink)', boxShadow: 'var(--shadow)' } : { color: 'var(--ink-3)' }}
+              >
+                <LinkPendingFade>Month</LinkPendingFade>
+              </Link>
+              <Link
+                href={`/appointments?view=week&date=${selectedDate}`}
+                className="px-2.5 sm:px-3 py-1 rounded-md text-xs sm:text-sm font-semibold transition-colors"
+                style={view === 'week' ? { background: 'var(--card)', color: 'var(--ink)', boxShadow: 'var(--shadow)' } : { color: 'var(--ink-3)' }}
+              >
+                <LinkPendingFade>Week</LinkPendingFade>
+              </Link>
+            </div>
+          </div>
         </div>
 
-        {/* Week strip — horizontally scrollable below ~560px so day cards never get crushed unreadable */}
-        <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
-        <div className="grid grid-cols-7 gap-2.5" style={{ minWidth: 560 }}>
-          {weekDateStrs.map((dStr, i) => {
-            const count    = countByDay.get(dStr) ?? 0
-            const isSel    = dStr === selectedDate
-            const isToday  = dStr === todayStr
-            const dayOpen  = bizHours ? bizHours[HOURS_DAY_KEYS[dowIndex(dStr)]]?.open : true
-            const closed   = bizHours ? !dayOpen : false
-            return (
-              <Link
-                key={dStr}
-                href={`/appointments?date=${dStr}`}
-                className="rounded-xl text-center transition-colors"
-                style={{
-                  background: 'var(--card)',
-                  border: isSel ? '1px solid var(--violet)' : '1px solid var(--line)',
-                  boxShadow: isSel ? '0 0 0 3px var(--violet-soft)' : 'var(--shadow)',
-                }}
-              >
-                <LinkPendingFade className="p-3">
-                  <div className="text-[0.64rem] font-bold tracking-widest" style={{ color: 'var(--ink-3)' }}>{DOW[i]}</div>
-                  <div className="font-extrabold text-xl mt-0.5 mb-1" style={{ fontFamily: 'var(--font-display)', color: isToday ? 'var(--violet)' : 'var(--ink)' }}>
-                    {Number(dStr.split('-')[2])}
-                  </div>
-                  <span
-                    className="text-xs font-bold rounded-full px-2 py-0.5 inline-block whitespace-nowrap"
-                    style={closed
-                      ? { color: 'var(--ink-3)', background: 'var(--paper)' }
-                      : count > 0
-                        ? { color: 'var(--violet)', background: 'var(--violet-soft)' }
-                        : { color: 'var(--ink-3)', background: 'var(--paper)' }}
-                  >
-                    {closed ? 'Closed' : count > 0 ? `${count} booked` : 'Open'}
-                  </span>
-                </LinkPendingFade>
-              </Link>
-            )
-          })}
-        </div>
-        </div>
+        {view === 'month' ? (
+          <MonthGrid
+            gridDates={gridDates}
+            currentMonthKey={currentMonthKey}
+            todayStr={todayStr}
+            selectedDate={selectedDate}
+            itemsByDay={itemsByDay}
+            hrefFor={dStr => `/appointments?view=month&date=${dStr}`}
+          />
+        ) : (
+          /* Week strip — horizontally scrollable below ~560px so day cards never get crushed unreadable */
+          <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <div className="grid grid-cols-7 gap-2.5" style={{ minWidth: 560 }}>
+            {weekDateStrs.map((dStr, i) => {
+              const count    = countByDay.get(dStr) ?? 0
+              const isSel    = dStr === selectedDate
+              const isToday  = dStr === todayStr
+              const dayOpen  = bizHours ? bizHours[HOURS_DAY_KEYS[dowIndex(dStr)]]?.open : true
+              const closed   = bizHours ? !dayOpen : false
+              return (
+                <Link
+                  key={dStr}
+                  href={`/appointments?view=week&date=${dStr}`}
+                  className="rounded-xl text-center transition-colors"
+                  style={{
+                    background: 'var(--card)',
+                    border: isSel ? '1px solid var(--violet)' : '1px solid var(--line)',
+                    boxShadow: isSel ? '0 0 0 3px var(--violet-soft)' : 'var(--shadow)',
+                  }}
+                >
+                  <LinkPendingFade className="p-3">
+                    <div className="text-[0.64rem] font-bold tracking-widest" style={{ color: 'var(--ink-3)' }}>{DOW[i]}</div>
+                    <div className="font-extrabold text-xl mt-0.5 mb-1" style={{ fontFamily: 'var(--font-display)', color: isToday ? 'var(--violet)' : 'var(--ink)' }}>
+                      {Number(dStr.split('-')[2])}
+                    </div>
+                    <span
+                      className="text-xs font-bold rounded-full px-2 py-0.5 inline-block whitespace-nowrap"
+                      style={closed
+                        ? { color: 'var(--ink-3)', background: 'var(--paper)' }
+                        : count > 0
+                          ? { color: 'var(--violet)', background: 'var(--violet-soft)' }
+                          : { color: 'var(--ink-3)', background: 'var(--paper)' }}
+                    >
+                      {closed ? 'Closed' : count > 0 ? `${count} booked` : 'Open'}
+                    </span>
+                  </LinkPendingFade>
+                </Link>
+              )
+            })}
+          </div>
+          </div>
+        )}
 
         {/* Day detail */}
         <div>
