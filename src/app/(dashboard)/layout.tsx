@@ -1,54 +1,57 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, type LocalCall } from '@/lib/calls'
+import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
 import { dateStrInZone, addDaysInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
 import Sidebar from '@/components/Sidebar'
+
+const WINDOW_DAYS = 14
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business: biz } = await getCurrentBusiness()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
-  const usage = biz
-    ? await getPlanUsage(
-        await createClient(), biz.id,
-        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
-        timeZone,
-      ).catch(() => null)
-    : null
+  const now   = new Date()
+  const since = addDaysInZone(now, -WINDOW_DAYS, timeZone)
 
-  const WINDOW_DAYS = 14
+  // This layout re-runs on every navigation between dashboard pages, so these
+  // two independent lookups (sidebar usage bar + coverage/streak stats) run
+  // in parallel rather than one blocking the other — and the coverage query
+  // only selects the couple of columns it actually needs (see getLocalCallsList),
+  // not full rows with transcript/raw_payload.
+  const [usage, calls] = biz
+    ? await Promise.all([
+        getPlanUsage(
+          await createClient(), biz.id,
+          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          timeZone,
+        ).catch(() => null),
+        getLocalCallsList(biz.id, { dateRange: { from: dateStrInZone(since, timeZone), timeZone } })
+          .catch((err): LocalCallListItem[] => { console.error('Failed to compute coverage stats:', err); return [] }),
+      ])
+    : [null, [] as LocalCallListItem[]]
+
   let coveragePct = 100
   let streakDays   = 0
 
-  if (biz) {
-    try {
-      const now = new Date()
-      const since = addDaysInZone(now, -WINDOW_DAYS, timeZone)
-      const calls = await getLocalCalls(biz.id, { dateRange: { from: dateStrInZone(since, timeZone), timeZone } })
+  if (calls.length) {
+    const missed = calls.filter(c => c.ended_reason === 'customer-did-not-answer').length
+    coveragePct = Math.round(((calls.length - missed) / calls.length) * 100)
 
-      if (calls.length) {
-        const missed = calls.filter(c => c.ended_reason === 'customer-did-not-answer').length
-        coveragePct = Math.round(((calls.length - missed) / calls.length) * 100)
+    const byDay = new Map<string, LocalCallListItem[]>()
+    for (const c of calls) {
+      if (!c.started_at) continue
+      const day = dateStrInZone(new Date(c.started_at), timeZone)
+      if (!byDay.has(day)) byDay.set(day, [])
+      byDay.get(day)!.push(c)
+    }
 
-        const byDay = new Map<string, LocalCall[]>()
-        for (const c of calls) {
-          if (!c.started_at) continue
-          const day = dateStrInZone(new Date(c.started_at), timeZone)
-          if (!byDay.has(day)) byDay.set(day, [])
-          byDay.get(day)!.push(c)
-        }
-
-        for (let i = 0; i < WINDOW_DAYS; i++) {
-          const d = addDaysInZone(now, -i, timeZone)
-          const key = dateStrInZone(d, timeZone)
-          const dayHadMiss = (byDay.get(key) ?? []).some(c => c.ended_reason === 'customer-did-not-answer')
-          if (dayHadMiss) break
-          streakDays++
-        }
-      }
-    } catch (err) {
-      console.error('Failed to compute coverage stats:', err)
+    for (let i = 0; i < WINDOW_DAYS; i++) {
+      const d = addDaysInZone(now, -i, timeZone)
+      const key = dateStrInZone(d, timeZone)
+      const dayHadMiss = (byDay.get(key) ?? []).some(c => c.ended_reason === 'customer-did-not-answer')
+      if (dayHadMiss) break
+      streakDays++
     }
   }
 

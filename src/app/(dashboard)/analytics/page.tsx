@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, type LocalCall } from '@/lib/calls'
+import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
 import { getPlanUsage, type PlanUsage } from '@/lib/planUsage'
 import { dateStrInZone, addDaysInZone, formatInZone } from '@/lib/timezone'
 import type { Hours } from '../briefing/actions'
@@ -28,31 +28,35 @@ export default async function AnalyticsPage({
   const prevPeriodStart = addDaysInZone(now, -days * 2, timeZone)
   const prevPeriodEndStr = dateStrInZone(addDaysInZone(now, -days, timeZone), timeZone)
 
-  let calls: LocalCall[] = []
-  let prevCalls: LocalCall[] = []
-  let usage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date(), isTrial: false, trialDaysLeft: null }
+  const defaultUsage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date(), isTrial: false, trialDaysLeft: null }
+  let calls: LocalCallListItem[] = []
+  let prevCalls: LocalCallListItem[] = []
+  let usage = defaultUsage
 
   if (biz) {
-    try {
-      calls = await getLocalCalls(biz.id, {
+    // Three independent lookups — AnalyticsCharts only ever reads
+    // started_at/duration_seconds/outcome, so both call fetches use the
+    // lightweight column list rather than full rows with transcript/raw_payload.
+    const [callsResult, prevCallsResult, usageResult] = await Promise.all([
+      getLocalCallsList(biz.id, {
         limit: 500,
         dateRange: { from: dateStrInZone(periodStart, timeZone), timeZone },
-      })
-    } catch (err) { console.error('Failed to fetch local calls:', err) }
-    try {
-      prevCalls = await getLocalCalls(biz.id, {
+      }).catch(err => { console.error('Failed to fetch local calls:', err); return [] as LocalCallListItem[] }),
+      getLocalCallsList(biz.id, {
         limit: 500,
         dateRange: { from: dateStrInZone(prevPeriodStart, timeZone), to: prevPeriodEndStr, timeZone },
-      })
-    } catch (err) { console.error('Failed to fetch previous-period calls:', err) }
-    try {
-      const supabase = await createClient()
-      usage = await getPlanUsage(
-        supabase, biz.id,
-        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
-        timeZone,
-      )
-    } catch (err) { console.error('Failed to compute plan usage:', err) }
+      }).catch(err => { console.error('Failed to fetch previous-period calls:', err); return [] as LocalCallListItem[] }),
+      createClient()
+        .then(supabase => getPlanUsage(
+          supabase, biz.id,
+          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          timeZone,
+        ))
+        .catch(err => { console.error('Failed to compute plan usage:', err); return defaultUsage }),
+    ])
+    calls = callsResult
+    prevCalls = prevCallsResult
+    usage = usageResult
   }
 
   const dateRangeLabel = `${formatInZone(periodStart, timeZone, { day: 'numeric', month: 'long' })} to ${formatInZone(now, timeZone, { day: 'numeric', month: 'long' })}`

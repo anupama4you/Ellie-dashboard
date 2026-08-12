@@ -5,13 +5,13 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
 import { Clock, TrendingUp, AlarmClockOff, ArrowUp, ArrowDown } from 'lucide-react'
-import type { LocalCall } from '@/lib/calls'
+import type { LocalCallListItem } from '@/lib/calls'
 import type { PlanUsage } from '@/lib/planUsage'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 import { isAfterHours } from '@/lib/availability'
 import { dateStrInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 
-function getLast30Days(calls: LocalCall[], timeZone: string) {
+function getLast30Days(calls: LocalCallListItem[], timeZone: string) {
   const now = new Date()
   const days: Record<string, { date: string; calls: number; duration: number }> = {}
   for (let i = 29; i >= 0; i--) {
@@ -33,7 +33,7 @@ const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const BUCKET_HOURS = 2
 const BUCKET_COUNT = 24 / BUCKET_HOURS
 
-function getDayHourHeatmap(calls: LocalCall[], timeZone: string) {
+function getDayHourHeatmap(calls: LocalCallListItem[], timeZone: string) {
   const grid = Array.from({ length: 7 }, () => Array(BUCKET_COUNT).fill(0))
   calls.forEach(c => {
     if (!c.started_at) return
@@ -92,7 +92,7 @@ const OUTCOME_LEGEND: { key: string; label: string; color: string }[] = [
   { key: 'missed',      label: 'Caller hung up early', color: 'var(--coral)' },
 ]
 
-function getOutcomeBreakdown(calls: LocalCall[]) {
+function getOutcomeBreakdown(calls: LocalCallListItem[]) {
   const counts: Record<string, number> = { booked: 0, enquiry: 0, transferred: 0, missed: 0 }
   calls.forEach(c => {
     if (c.outcome === 'booked' || c.outcome === 'rebooked') counts.booked++
@@ -142,8 +142,8 @@ const tooltipStyle = {
 }
 
 type Props = {
-  calls: LocalCall[]
-  prevCalls: LocalCall[]
+  calls: LocalCallListItem[]
+  prevCalls: LocalCallListItem[]
   plan: string
   timeZone: string
   usage: PlanUsage

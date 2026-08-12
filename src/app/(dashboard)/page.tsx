@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCalls, callSummary, recordingProxyUrl, type LocalCall } from '@/lib/calls'
+import { getLocalCalls, getLocalCallsList, callSummary, recordingProxyUrl, type LocalCall, type LocalCallListItem } from '@/lib/calls'
 import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
 import { isAfterHours } from '@/lib/availability'
@@ -73,7 +73,9 @@ export default async function TodayPage() {
   const prevWeekStart = addDaysInZone(now, -13, timeZone)
   const prevWeekEndStr = dateStrInZone(addDaysInZone(now, -7, timeZone), timeZone)
 
-  const noCalls: LocalCall[] = []
+  const noCalls: LocalCallListItem[] = []
+  const noRecentCalls: LocalCall[] = []
+  const RECENT_CALLS_LIMIT = 40 // matches how many recentCallItems ever renders
   const [
     { data: upcomingApptsRaw },
     { data: weekBookingsRaw },
@@ -81,6 +83,8 @@ export default async function TodayPage() {
     { data: services },
     weekCalls,
     prevWeekCalls,
+    recentCalls,
+    usage,
   ] = await Promise.all([
     // Upcoming, not historical — this is "what's on the calendar next", independent of when it was booked.
     supabase.from('appointments').select('*')
@@ -100,12 +104,26 @@ export default async function TodayPage() {
       .gte('created_at', prevWeekStart.toISOString())
       .lt('created_at', weekStart.toISOString()),
     supabase.from('business_services').select('name, price_cents').eq('business_id', biz?.id),
+    // Lightweight — counts/chart bucketing only need outcome + started_at, not
+    // full rows with transcript/raw_payload (that's what recentCalls is for).
     biz
-      ? getLocalCalls(biz.id, { limit: 500, dateRange: { from: dateStrInZone(weekStart, timeZone), timeZone } }).catch(err => { console.error('Failed to fetch local weekly calls:', err); return noCalls })
+      ? getLocalCallsList(biz.id, { limit: 500, dateRange: { from: dateStrInZone(weekStart, timeZone), timeZone } }).catch(err => { console.error('Failed to fetch local weekly calls:', err); return noCalls })
       : Promise.resolve(noCalls),
     biz
-      ? getLocalCalls(biz.id, { limit: 500, dateRange: { from: dateStrInZone(prevWeekStart, timeZone), to: prevWeekEndStr, timeZone } }).catch(err => { console.error('Failed to fetch local previous-week calls:', err); return noCalls })
+      ? getLocalCallsList(biz.id, { limit: 500, dateRange: { from: dateStrInZone(prevWeekStart, timeZone), to: prevWeekEndStr, timeZone } }).catch(err => { console.error('Failed to fetch local previous-week calls:', err); return noCalls })
       : Promise.resolve(noCalls),
+    // Full rows (transcript/recording/etc), but only for however many the
+    // Recent Calls card actually renders — not the whole week's worth.
+    biz
+      ? getLocalCalls(biz.id, { limit: RECENT_CALLS_LIMIT, dateRange: { from: dateStrInZone(weekStart, timeZone), timeZone } }).catch(err => { console.error('Failed to fetch recent calls:', err); return noRecentCalls })
+      : Promise.resolve(noRecentCalls),
+    biz
+      ? getPlanUsage(
+          supabase, biz.id,
+          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          timeZone,
+        ).catch(() => null)
+      : Promise.resolve(null),
   ])
 
   const upcomingAppts   = (upcomingApptsRaw ?? []) as Appointment[]
@@ -156,16 +174,8 @@ export default async function TodayPage() {
 
   const dateLabel = formatInZone(now, timeZone, { weekday: 'long', day: 'numeric', month: 'long' })
 
-  const usage = biz
-    ? await getPlanUsage(
-        supabase, biz.id,
-        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
-        timeZone,
-      ).catch(() => null)
-    : null
-
   const bizHours = (biz?.hours as Hours | undefined) ?? null
-  const recentCallItems: RecentCallItem[] = weekCalls.slice(0, 40).map(call => {
+  const recentCallItems: RecentCallItem[] = recentCalls.map(call => {
     const outcome = (call.outcome ?? 'enquiry') as RecentCallCategory
     const style   = OUTCOME_STYLE[outcome] ?? OUTCOME_STYLE.enquiry
     const started = call.started_at ? new Date(call.started_at) : null

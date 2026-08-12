@@ -67,6 +67,21 @@ export default function LoginPage() {
           <div className="absolute top-0 right-0 w-40 h-40 pointer-events-none"
             style={{ background: 'radial-gradient(circle, rgba(109,74,255,0.06) 0%, transparent 70%)', filter: 'blur(20px)' }} />
 
+          {/* Loading overlay — covers the gap between a successful sign-in and
+             the dashboard actually rendering (auth cookie propagation + the
+             new route's own data fetching), not just the button click itself. */}
+          {loading && (
+            <div
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3"
+              style={{ background: 'rgba(20,16,32,0.72)', backdropFilter: 'blur(2px)' }}
+              role="status"
+              aria-live="polite"
+            >
+              <Loader2 size={26} className="animate-spin" style={{ color: 'var(--violet)' }} />
+              <p className="text-sm font-medium" style={{ color: 'var(--t3)' }}>Signing you in…</p>
+            </div>
+          )}
+
           <div className="relative">
             <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>Welcome back</h1>
             <p className="text-sm mb-6" style={{ color: 'var(--t4)' }}>Sign in to your Ellie dashboard</p>
@@ -83,7 +98,8 @@ export default function LoginPage() {
                   onChange={e => setEmail(e.target.value)}
                   placeholder="you@yourbusiness.com.au"
                   required
-                  className="admin-input"
+                  disabled={loading}
+                  className="admin-input disabled:opacity-60"
                 />
               </div>
 
@@ -98,7 +114,8 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="admin-input"
+                  disabled={loading}
+                  className="admin-input disabled:opacity-60"
                 />
               </div>
 
