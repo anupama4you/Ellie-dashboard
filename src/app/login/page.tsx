@@ -31,7 +31,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
+    <div className="min-h-dvh flex items-center justify-center px-4 py-10 relative overflow-x-hidden overflow-y-auto"
       style={{ background: 'var(--night)' }}>
 
       {/* Grid background */}
@@ -56,7 +56,7 @@ export default function LoginPage() {
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl p-8 relative overflow-hidden"
+        <div className="rounded-2xl p-6 sm:p-8 relative overflow-hidden"
           style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
 
           {/* Top gradient line */}
