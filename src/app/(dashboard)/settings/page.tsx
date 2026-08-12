@@ -62,7 +62,9 @@ export default async function SettingsPage() {
     {
       label: 'Calls used this month',
       value: usage
-        ? usage.isTrial ? `${usage.used} (unlimited during trial)` : `${usage.used} / ${usage.limit} (${usage.pct}%)`
+        ? usage.isTrial ? `${usage.used} (unlimited during trial)`
+        : usage.isUnlimited ? `${usage.used} (unlimited plan)`
+        : `${usage.used} / ${usage.limit} (${usage.pct}%)`
         : undefined,
     },
     {

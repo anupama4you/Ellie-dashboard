@@ -1,15 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { addDaysInZone, startOfBillingCycleInZone, startOfNextBillingCycleInZone } from '@/lib/timezone'
 
-/** Calls included per month, by plan. Single source of truth — used for both display and usage tracking. */
-export const PLAN_LIMITS: Record<string, number> = {
+/**
+ * Calls included per month, by plan. Single source of truth — used for both
+ * display and usage tracking. `null` = no cap (e.g. the unlimited plan) —
+ * distinct from an unrecognized plan string, which falls back to `core`.
+ */
+export const PLAN_LIMITS: Record<string, number | null> = {
   starter: 50, core: 120, professional: 250, enterprise: 500,
+  unlimited: null,
 }
 
 export const TRIAL_DAYS = 7
 
-export function planLimit(plan: string): number {
-  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.core
+export function planLimit(plan: string): number | null {
+  // `??` would treat a real `null` (unlimited) the same as a missing key
+  // (unrecognized plan) and wrongly fall back to core — check membership instead.
+  return plan in PLAN_LIMITS ? PLAN_LIMITS[plan] : PLAN_LIMITS.core
 }
 
 export type PlanUsage = {
@@ -21,6 +28,8 @@ export type PlanUsage = {
   /** Trial: when the 7-day trial ends. Otherwise: start of the next monthly billing cycle. */
   renewsAt: Date
   isTrial: boolean
+  /** True for a paid plan with no call cap (e.g. the $199/mo unlimited plan) — distinct from `isTrial`, which is also uncapped but time-limited. */
+  isUnlimited: boolean
   /** Days left in the trial (can be 0 or negative once it's run out but the admin hasn't converted/cancelled yet). null when not on trial. */
   trialDaysLeft: number | null
 }
@@ -61,7 +70,7 @@ export async function getPlanUsage(
       .gte('started_at', trialStart.toISOString())
 
     const trialDaysLeft = Math.ceil((trialEnd.getTime() - now.getTime()) / (24 * 60 * 60_000))
-    return { used: count ?? 0, limit: null, pct: null, renewsAt: trialEnd, isTrial: true, trialDaysLeft }
+    return { used: count ?? 0, limit: null, pct: null, renewsAt: trialEnd, isTrial: true, isUnlimited: false, trialDaysLeft }
   }
 
   const limit  = planLimit(fields.plan)
@@ -76,12 +85,18 @@ export async function getPlanUsage(
     .gte('started_at', cycleStart.toISOString())
 
   const used = count ?? 0
+
+  if (limit === null) {
+    return { used, limit: null, pct: null, renewsAt, isTrial: false, isUnlimited: true, trialDaysLeft: null }
+  }
+
   return {
     used,
     limit,
     pct: Math.min(Math.round((used / limit) * 100), 999),
     renewsAt,
     isTrial: false,
+    isUnlimited: false,
     trialDaysLeft: null,
   }
 }

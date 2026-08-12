@@ -6,6 +6,7 @@ const PLAN_STYLE: Record<string, { color: string; bg: string }> = {
   core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.12)' },
   professional: { color: 'var(--rose)',   bg: 'rgba(158,123,255,0.12)' },
   enterprise:   { color: 'var(--amber)',  bg: 'rgba(217,138,11,0.12)' },
+  unlimited:    { color: 'var(--signal)', bg: 'rgba(15,163,122,0.12)' },
 }
 
 function initials(name: string) {

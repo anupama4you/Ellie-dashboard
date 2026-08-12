@@ -21,6 +21,7 @@ const PLAN_PRICE_ENV: Record<string, string | undefined> = {
   core:         process.env.STRIPE_PRICE_CORE,
   professional: process.env.STRIPE_PRICE_PROFESSIONAL,
   enterprise:   process.env.STRIPE_PRICE_ENTERPRISE,
+  unlimited:    process.env.STRIPE_PRICE_UNLIMITED,
 }
 
 export function priceIdForPlan(plan: string): string {

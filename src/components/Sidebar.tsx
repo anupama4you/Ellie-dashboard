@@ -37,6 +37,7 @@ type PlanUsageSummary = {
   limit: number | null
   pct: number | null
   isTrial: boolean
+  isUnlimited: boolean
   trialDaysLeft: number | null
   renewsLabel: string
 }
@@ -310,6 +311,16 @@ export default function Sidebar({
                 Unlimited calls · {usage.trialDaysLeft != null && usage.trialDaysLeft > 0
                   ? `${usage.trialDaysLeft} day${usage.trialDaysLeft !== 1 ? 's' : ''} left`
                   : 'trial ended'}
+              </p>
+            </>
+          ) : usage.isUnlimited ? (
+            <>
+              <div className="flex items-center justify-between mb-1.5">
+                <b className="text-[0.85rem] text-white font-semibold">Unlimited plan</b>
+                <span className="text-[0.76rem] font-mono" style={{ color: 'var(--signal)' }}>{usage.used} calls</span>
+              </div>
+              <p className="text-[0.72rem]" style={{ color: '#736C90' }}>
+                No monthly cap · Renews {usage.renewsLabel}
               </p>
             </>
           ) : (

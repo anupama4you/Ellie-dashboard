@@ -1,6 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Plus, Pencil, Building2, Clock, PhoneCall } from 'lucide-react'
+import { Plus, Pencil, Building2, Clock, PhoneCall, Ban } from 'lucide-react'
 import { getPlanUsage } from '@/lib/planUsage'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
@@ -8,6 +8,7 @@ const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> 
   core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
   professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
   enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },
+  unlimited:    { color: 'var(--signal)', bg: 'rgba(15,163,122,0.1)',  border: 'rgba(15,163,122,0.2)'   },
 }
 
 export default async function ClientsPage() {
@@ -92,6 +93,13 @@ export default async function ClientsPage() {
                   }}>
                   <Link href={`/admin/clients/${biz.id}`} className="flex items-center gap-2 text-sm font-semibold truncate pr-2 hover:underline" style={{ color: 'var(--text)' }}>
                     <span className="truncate">{biz.name}</span>
+                    {biz.account_disabled && (
+                      <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+                        style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.12)' }}
+                        title="Access disabled — client cannot log into the dashboard">
+                        <Ban size={9} /> Disabled
+                      </span>
+                    )}
                     {biz.briefing_needs_review && (
                       <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
                         style={{ color: 'var(--amber)', background: 'rgba(217,138,11,0.12)' }}
@@ -123,6 +131,13 @@ export default async function ClientsPage() {
                       <span className="text-xs" style={{ color: 'var(--t4)' }}>
                         {usage.trialDaysLeft != null && usage.trialDaysLeft > 0 ? `${usage.trialDaysLeft}d left` : 'Trial ended'}
                       </span>
+                    </div>
+                  ) : usage.isUnlimited ? (
+                    <div className="flex flex-col gap-1 pr-2">
+                      <span className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--signal)' }}>
+                        <PhoneCall size={10} /> {usage.used} calls (no cap)
+                      </span>
+                      <span className="text-xs" style={{ color: 'var(--t4)' }}>Unlimited plan</span>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-1 pr-2" title={`${usage.used} of ${usage.limit} calls used this cycle`}>

@@ -12,6 +12,7 @@ const PLANS = [
   { value: 'core',         label: 'Core — 120 calls/mo'         },
   { value: 'professional', label: 'Professional — 250 calls/mo' },
   { value: 'enterprise',   label: 'Enterprise — 500 calls/mo'   },
+  { value: 'unlimited',    label: 'Unlimited — $199/mo'         },
 ]
 
 export default async function NewClientPage({

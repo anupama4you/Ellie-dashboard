@@ -16,6 +16,7 @@ const PLANS = [
   { value: 'core',         label: 'Core — 120 calls/mo'         },
   { value: 'professional', label: 'Professional — 250 calls/mo' },
   { value: 'enterprise',   label: 'Enterprise — 500 calls/mo'   },
+  { value: 'unlimited',    label: 'Unlimited — $199/mo'         },
 ]
 
 const TIMEZONES = [
@@ -53,6 +54,7 @@ export default async function EditClientPage({
   const bizPlan                  = biz.plan as string
   const bizStripeCustomerId      = biz.stripe_customer_id as string | null
   const bizStripeSubscriptionId  = biz.stripe_subscription_id as string | null
+  const bizAccountDisabled       = biz.account_disabled as boolean
 
   // Test-mode keys (sk_test_...) and live keys (sk_live_...) each have their
   // own dashboard — get this wrong and the "View in Stripe" link 404s.
@@ -183,6 +185,14 @@ export default async function EditClientPage({
     }
 
     await admin.from('businesses').update({ plan_status: 'cancelled' }).eq('id', bizId)
+    redirect(`/admin/clients/${bizId}?saved=1`)
+  }
+
+  /** The one real access gate — see (dashboard)/layout.tsx. Unlike plan_status, this actually blocks the client's dashboard. */
+  async function toggleAccountDisabledAction() {
+    'use server'
+    const admin = createAdminClient()
+    await admin.from('businesses').update({ account_disabled: !bizAccountDisabled }).eq('id', bizId)
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -402,8 +412,15 @@ export default async function EditClientPage({
 
             <div className="rounded-2xl overflow-hidden"
               style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
-              <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
+              <div className="px-5 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid var(--b3)' }}>
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Account</h2>
+                <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+                  style={{
+                    color: bizAccountDisabled ? 'var(--coral)' : 'var(--signal)',
+                    background: bizAccountDisabled ? 'rgba(221,81,64,0.1)' : 'rgba(15,163,122,0.1)',
+                  }}>
+                  {bizAccountDisabled ? 'Access disabled' : 'Access enabled'}
+                </span>
               </div>
               <div className="p-5 flex flex-col gap-2">
                 <form action={sendPasswordReset}>
@@ -416,6 +433,17 @@ export default async function EditClientPage({
                   </AdminSubmitButton>
                 </form>
                 <CopyLinkButton action={generateInviteLinkAction.bind(null, clientEmail)} label="Copy Invite Link" />
+                <form action={toggleAccountDisabledAction}>
+                  <AdminSubmitButton
+                    pendingLabel={bizAccountDisabled ? 'Enabling…' : 'Disabling…'}
+                    icon={bizAccountDisabled ? <CheckCircle2 size={13} /> : <Ban size={13} />}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                    style={bizAccountDisabled
+                      ? { color: 'var(--signal)', background: 'rgba(15,163,122,0.08)', border: '1px solid rgba(15,163,122,0.2)' }
+                      : { color: 'var(--coral)', background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
+                    {bizAccountDisabled ? 'Enable Account Access' : 'Disable Account Access'}
+                  </AdminSubmitButton>
+                </form>
               </div>
             </div>
 

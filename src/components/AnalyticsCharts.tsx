@@ -363,6 +363,16 @@ export default function AnalyticsCharts({ calls, prevCalls, plan, timeZone, usag
               {' '}Ends {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
             </p>
           </div>
+        ) : usage.isUnlimited ? (
+          <div>
+            <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
+              <span>{usage.used} calls used this cycle</span>
+              <span>No monthly cap</span>
+            </div>
+            <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>
+              Usage renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}
+            </p>
+          </div>
         ) : (() => {
           const pct    = usage.pct ?? 0
           const barPct = Math.min(pct, 100)

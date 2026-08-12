@@ -28,7 +28,7 @@ export default async function AnalyticsPage({
   const prevPeriodStart = addDaysInZone(now, -days * 2, timeZone)
   const prevPeriodEndStr = dateStrInZone(addDaysInZone(now, -days, timeZone), timeZone)
 
-  const defaultUsage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date(), isTrial: false, trialDaysLeft: null }
+  const defaultUsage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date(), isTrial: false, isUnlimited: false, trialDaysLeft: null }
   let calls: LocalCallListItem[] = []
   let prevCalls: LocalCallListItem[] = []
   let usage = defaultUsage

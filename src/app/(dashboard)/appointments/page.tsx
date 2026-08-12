@@ -9,7 +9,7 @@ import CopyButton from '@/components/CopyButton'
 import AddAppointmentModal from '@/components/AddAppointmentModal'
 import AppointmentActions from '@/components/AppointmentActions'
 import MonthGrid, { type MonthChip } from '@/components/MonthGrid'
-import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink, CalendarSync } from 'lucide-react'
+import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { LinkIconOrSpinner, LinkPendingFade } from '@/components/LinkPending'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
@@ -212,15 +212,6 @@ export default async function AppointmentsPage({
               <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Everything Ellie has booked into your calendar</p>
             </div>
             <div className="flex items-center gap-2">
-              <Link
-                href="/settings"
-                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}
-                title="Sync with Google Calendar"
-              >
-                <CalendarSync size={14} />
-                <span className="hidden sm:inline">Sync with Google Calendar</span>
-              </Link>
               {biz && (
                 <AddAppointmentModal
                   defaultDate={selectedDate}

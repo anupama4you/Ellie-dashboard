@@ -248,6 +248,18 @@ export default async function TodayPage() {
           </div>
         )}
 
+        {/* Unlimited plan status */}
+        {usage?.isUnlimited && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'var(--signal-soft)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
+            <CheckCircle2 size={15} className="shrink-0" />
+            <span>
+              You&apos;re on the Unlimited plan — {usage.used} call{usage.used !== 1 ? 's' : ''} this billing cycle, no monthly cap.
+              {' '}Renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
+            </span>
+          </div>
+        )}
+
         {/* Plan usage warning */}
         {usage && usage.pct != null && usage.pct >= 80 && (
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"

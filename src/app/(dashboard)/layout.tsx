@@ -4,12 +4,22 @@ import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
 import { dateStrInZone, addDaysInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
 import Sidebar from '@/components/Sidebar'
+import AccountDisabledScreen from '@/components/AccountDisabledScreen'
 
 const WINDOW_DAYS = 14
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, business: biz } = await getCurrentBusiness()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
+
+  const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
+
+  // The one real access gate in the app — plan_status (trial/active/cancelled)
+  // is purely a display label with no enforcement anywhere else. Admins are
+  // exempt so they can never lock themselves out of their own business row.
+  if (biz?.account_disabled && !isAdmin) {
+    return <AccountDisabledScreen businessName={biz.name} />
+  }
 
   const now   = new Date()
   const since = addDaysInZone(now, -WINDOW_DAYS, timeZone)
@@ -55,8 +65,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     }
   }
 
-  const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
-
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--paper)' }}>
       <Sidebar
@@ -74,6 +82,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           limit: usage.limit,
           pct: usage.pct,
           isTrial: usage.isTrial,
+          isUnlimited: usage.isUnlimited,
           trialDaysLeft: usage.trialDaysLeft,
           renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
         } : null}
