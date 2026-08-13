@@ -197,7 +197,7 @@ export default async function EditClientPage({
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-4xl mx-auto flex flex-col gap-5">
 
         <AdminClientHeader
@@ -246,7 +246,7 @@ export default async function EditClientPage({
           </div>
         )}
 
-        <div className="grid gap-5" style={{ gridTemplateColumns: '1.4fr 1fr' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
 
           {/* Edit form */}
           <form action={updateBusiness}
@@ -259,7 +259,7 @@ export default async function EditClientPage({
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Client details</h2>
             </div>
 
-            <div className="p-5 grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
                 <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Email</label>
                 <input type="email" name="email" defaultValue={clientEmail} className="admin-input" />

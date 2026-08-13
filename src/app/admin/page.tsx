@@ -24,17 +24,17 @@ export default async function AdminPage() {
   }, {} as Record<string, number>)
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-3xl mx-auto flex flex-col gap-6">
 
         {/* Header */}
-        <div className="flex items-start justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Admin Panel</h1>
             <p className="text-sm mt-0.5" style={{ color: 'var(--t5)' }}>Manage all Ellie clients and their packages</p>
           </div>
           <Link href="/admin/clients/new"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-opacity hover:opacity-90 shrink-0"
             style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))', color: '#fff', boxShadow: '0 0 20px rgba(109,74,255,0.2)' }}>
             <Plus size={14} />
             Add Client
@@ -42,7 +42,7 @@ export default async function AdminPage() {
         </div>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: 'Total Clients',     value: list.length,                                       color: 'var(--violet)', icon: Building2 },
             { label: 'Active Assistants', value: list.filter(b => b.vapi_assistant_id).length,      color: 'var(--signal)', icon: Zap       },

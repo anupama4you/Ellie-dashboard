@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { Users, LayoutDashboard, LogOut, ArrowLeft, Loader2 } from 'lucide-react'
+import { Users, LayoutDashboard, LogOut, ArrowLeft, Loader2, Menu, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 const NAV = [
@@ -16,6 +16,15 @@ export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }
   const pathname = usePathname()
   const router   = useRouter()
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [mobileOpen, setMobileOpen]     = useState(false)
+
+  // Close the drawer on route change — adjusted during render rather than in
+  // an effect, per https://react.dev/learn/you-might-not-need-an-effect.
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname)
+    setMobileOpen(false)
+  }
 
   async function signOut() {
     setIsSigningOut(true)
@@ -25,11 +34,50 @@ export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }
   }
 
   return (
-    <aside className="w-56 shrink-0 flex flex-col h-full"
+    <>
+    {/* Mobile top bar — the nav itself is an off-canvas drawer below md */}
+    <div
+      className="fixed top-0 left-0 right-0 z-30 h-14 flex items-center justify-between px-4 md:hidden"
+      style={{ background: 'var(--bg2)', borderBottom: '1px solid var(--b3)' }}
+    >
+      <button
+        onClick={() => setMobileOpen(o => !o)}
+        className="w-9 h-9 -ml-1.5 rounded-lg flex items-center justify-center transition-colors hover:bg-white/5"
+        style={{ color: 'var(--text)' }}
+        aria-label={mobileOpen ? 'Close menu' : 'Open menu'}
+        aria-expanded={mobileOpen}
+      >
+        {mobileOpen ? <X size={18} /> : <Menu size={18} />}
+      </button>
+      <div className="flex items-center gap-2">
+        <Image src="/favicon.png" alt="Ellie" width={64} height={64} className="h-6 w-6 rounded-md" />
+        <span className="font-extrabold text-sm" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Ellie</span>
+        <span className="text-[0.6rem] px-1.5 py-0.5 rounded-md font-bold tracking-wide"
+          style={{ background: 'rgba(217,138,11,0.12)', color: 'var(--amber)', border: '1px solid rgba(217,138,11,0.25)' }}>
+          ADMIN
+        </span>
+      </div>
+      <div className="w-9" />
+    </div>
+
+    {/* Backdrop, mobile drawer only */}
+    {mobileOpen && (
+      <div
+        className="fixed inset-0 z-20 md:hidden"
+        style={{ background: 'rgba(0,0,0,0.55)' }}
+        onClick={() => setMobileOpen(false)}
+        aria-hidden="true"
+      />
+    )}
+
+    <aside
+      className={`fixed md:static top-0 left-0 h-full z-40 md:z-auto w-64 md:w-56 shrink-0 flex flex-col transition-transform duration-200 ease-in-out ${
+        mobileOpen ? 'translate-x-0' : '-translate-x-full'
+      } md:translate-x-0 overflow-y-auto`}
       style={{ background: 'var(--bg2)', borderRight: '1px solid var(--b2)' }}>
 
-      {/* Logo + admin badge */}
-      <div className="px-4 h-14 flex items-center gap-2.5 shrink-0"
+      {/* Logo + admin badge — desktop only, mobile has its own top bar */}
+      <div className="hidden md:flex px-4 h-14 items-center gap-2.5 shrink-0"
         style={{ borderBottom: '1px solid var(--b3)' }}>
         <Image src="/favicon.png" alt="Ellie" width={64} height={64} className="h-7 w-7 rounded-md" />
         <span className="font-extrabold text-sm" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Ellie</span>
@@ -90,5 +138,6 @@ export default function AdminNav({ pendingReviewCount = 0, usageAlertCount = 0 }
         </button>
       </div>
     </aside>
+    </>
   )
 }

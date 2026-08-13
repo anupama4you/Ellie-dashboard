@@ -4,7 +4,7 @@ const COLS = '2fr 2fr 1fr 1.2fr 1.3fr 80px'
 
 function RowSkeleton({ last }: { last?: boolean }) {
   return (
-    <div className="grid items-center px-5 py-4 gap-3"
+    <div className="flex flex-col gap-2.5 px-4 py-4 md:grid md:items-center md:gap-3 md:px-5"
       style={{ gridTemplateColumns: COLS, borderBottom: last ? 'none' : '1px solid var(--b4)' }}>
       <Sk w={140} h={14} r={5} />
       <Sk w={160} h={12} r={4} />
@@ -24,10 +24,10 @@ function RowSkeleton({ last }: { last?: boolean }) {
 
 export default function AdminClientsLoading() {
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-5xl mx-auto flex flex-col gap-5">
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-2">
             <Sk w={100} h={26} r={6} />
             <Sk w={160} h={13} r={4} />

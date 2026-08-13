@@ -74,8 +74,8 @@ export default function AdminClientHeader({ id, name, email, plan, planStatus, h
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1" style={{ borderBottom: '1px solid var(--border)' }}>
+      {/* Tabs — horizontally scrollable so three tabs never get crushed unreadable on a phone */}
+      <div className="flex gap-1 overflow-x-auto" style={{ borderBottom: '1px solid var(--border)' }}>
         {[
           { key: 'details' as const,  href: `/admin/clients/${id}`,          label: 'Details',              icon: IdCard     },
           { key: 'briefing' as const, href: `/admin/clients/${id}/briefing`, label: 'Company Information',  icon: Building2  },
@@ -86,7 +86,7 @@ export default function AdminClientHeader({ id, name, email, plan, planStatus, h
             <Link
               key={key}
               href={href}
-              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors relative -mb-px"
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors relative -mb-px shrink-0 whitespace-nowrap"
               style={{
                 color: isActive ? 'var(--violet)' : 'var(--t3)',
                 borderBottom: `2px solid ${isActive ? 'var(--violet)' : 'transparent'}`,

@@ -116,7 +116,7 @@ export default function SystemPromptEditor({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--text)' }}>
             System prompt
@@ -125,7 +125,7 @@ export default function SystemPromptEditor({
             What&apos;s actually live on Vapi right now. Edits here push straight to the real assistant.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {status === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Saved &amp; pushed to Vapi</span>}
           {status === 'error' && <span className="text-sm font-semibold" style={{ color: 'var(--coral)' }}>Failed to save</span>}
           {applyStatus === 'saved' && <span className="text-sm font-semibold" style={{ color: 'var(--signal)' }}>Draft applied &amp; pushed to Vapi</span>}

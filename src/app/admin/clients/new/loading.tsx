@@ -11,7 +11,7 @@ function Field({ labelW = 80, h = 40 }: { labelW?: number; h?: number }) {
 
 export default function NewClientLoading() {
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-lg mx-auto flex flex-col gap-5">
 
         <div className="flex items-center gap-3">

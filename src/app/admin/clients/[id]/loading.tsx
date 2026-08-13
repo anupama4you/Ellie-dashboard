@@ -16,13 +16,13 @@ export default function AdminClientDetailsLoading() {
 
         <AdminClientHeaderSkeleton />
 
-        <div className="grid gap-5" style={{ gridTemplateColumns: '1.4fr 1fr' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
 
           <div className="rounded-2xl overflow-hidden h-fit" style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
             <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
               <Sk w={100} h={14} r={5} />
             </div>
-            <div className="p-5 grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field labelW={40} span />
               <Field labelW={90} span />
               <Field labelW={40} />

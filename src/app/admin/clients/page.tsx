@@ -33,7 +33,7 @@ export default async function ClientsPage() {
   )
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-5xl mx-auto flex flex-col gap-5">
 
         {/* Header */}
@@ -86,7 +86,7 @@ export default async function ClientsPage() {
               const usage = usageByBusiness[biz.id]
               return (
                 <div key={biz.id}
-                  className="hover-row grid items-center px-5 py-4 gap-3 transition-colors"
+                  className="hover-row flex flex-col gap-2.5 px-4 py-4 md:grid md:items-center md:gap-3 md:px-5 transition-colors"
                   style={{
                     gridTemplateColumns: '2fr 2fr 1fr 1.2fr 1.3fr 80px',
                     borderBottom: i < list.length - 1 ? '1px solid var(--b4)' : 'none',
