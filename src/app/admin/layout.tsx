@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <div data-theme="admin" className="flex h-screen overflow-hidden" style={{ background: 'var(--bg)' }}>
       <AdminNav pendingReviewCount={count ?? 0} usageAlertCount={overUsage.length} />
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden pt-14 md:pt-0">
         {children}
       </div>
     </div>

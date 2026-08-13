@@ -71,13 +71,21 @@ export default async function EditClientPage({
       await admin.auth.admin.updateUserById(userId, { email: newEmail })
     }
 
+    const newPlan = formData.get('plan') as string
+
     await admin.from('businesses').update({
       name:                (formData.get('name') as string).trim(),
       phone:               (formData.get('phone') as string).trim() || null,
-      plan:                formData.get('plan') as string,
+      plan:                newPlan,
       vapi_assistant_id:   (formData.get('assistant_id') as string).trim() || null,
       twilio_phone_number: (formData.get('twilio_phone_number') as string).trim() || null,
       timezone:            formData.get('timezone') as string,
+      // Changing plans here is itself "starting" the new plan — reset the
+      // billing-cycle anchor to now, same as a real Stripe conversion would
+      // (checkout.session.completed in api/stripe-webhook). Otherwise the
+      // anchor silently stays wherever it was (e.g. still the trial-start
+      // moment), and renewal dates shown to the client stop making sense.
+      ...(newPlan !== bizPlan ? { plan_started_at: new Date().toISOString() } : {}),
     }).eq('id', bizId)
 
     redirect(`/admin/clients/${bizId}?saved=1`)
@@ -197,7 +205,7 @@ export default async function EditClientPage({
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6">
+    <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-4xl mx-auto flex flex-col gap-5">
 
         <AdminClientHeader
@@ -246,7 +254,7 @@ export default async function EditClientPage({
           </div>
         )}
 
-        <div className="grid gap-5" style={{ gridTemplateColumns: '1.4fr 1fr' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-5">
 
           {/* Edit form */}
           <form action={updateBusiness}
@@ -259,7 +267,7 @@ export default async function EditClientPage({
               <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Client details</h2>
             </div>
 
-            <div className="p-5 grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
                 <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Email</label>
                 <input type="email" name="email" defaultValue={clientEmail} className="admin-input" />

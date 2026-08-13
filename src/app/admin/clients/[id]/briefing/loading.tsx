@@ -23,7 +23,7 @@ export default function AdminBriefingLoading() {
 
         <Sk w={420} h={11} r={4} />
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <SectionSkeleton rows={4} />
           <SectionSkeleton rows={3} />
           <SectionSkeleton rows={5} />
