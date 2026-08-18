@@ -7,7 +7,7 @@ const DEFAULT_DURATION_MINUTES = 30
 const SLOT_STEP_MINUTES = 30
 const MIN_LEAD_MINUTES = 30
 const MAX_DAYS_AHEAD = 14
-const DEFAULT_SLOT_COUNT = 3
+export const DEFAULT_SLOT_COUNT = 3
 
 type ServiceRow = { name: string; duration_minutes: number | null }
 type ExistingAppointment = { scheduled_at: string; service: string | null; staff_id?: string | null }
@@ -202,6 +202,22 @@ export function isWithinOpenHours(opts: {
   const end = new Date(opts.date.getTime() + opts.durationMinutes * 60_000)
 
   return opts.date >= open && end <= close
+}
+
+/** Whether `staffId` (or, if null, an unassigned booking) already has an appointment overlapping [start, end) — used to pick an actually-free staff member for a caller with no preference. */
+export function hasConflictingAppointment(
+  existing: ExistingAppointment[],
+  staffId: string | null,
+  services: ServiceRow[],
+  start: Date,
+  end: Date,
+): boolean {
+  return existing.some(a => {
+    if ((a.staff_id ?? null) !== staffId) return false
+    const aStart = new Date(a.scheduled_at)
+    const aEnd = new Date(aStart.getTime() + durationFor(a.service, services) * 60_000)
+    return start < aEnd && aStart < end
+  })
 }
 
 export function formatSlot(d: Date, timeZone: string): string {
