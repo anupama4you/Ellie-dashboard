@@ -5,7 +5,7 @@ import { phoneDigitsKey, toE164Au } from '@/lib/sms'
 import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
-import { formatInZone } from '@/lib/timezone'
+import { formatInZone, dateStrInZone } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
 import { getPhoneNumber } from '@/lib/vapi'
@@ -39,20 +39,39 @@ function fmtDate(iso: string, timeZone: string) {
   return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
 }
 
+type ResolvedStaff = { id: string; name: string; hours: Hours | null }
+
+/** Case-insensitive lookup against the business's active roster — an unmatched/unresolved name is not an error, callers just fall through to unfiltered. */
+async function resolveStaffMember(bizId: string, name: string | undefined): Promise<ResolvedStaff | null> {
+  if (!name?.trim()) return null
+  const { data } = await supabase.from('business_staff').select('id, name, active, hours').eq('business_id', bizId)
+  const match = (data ?? []).find(s => s.active && s.name.toLowerCase() === name.trim().toLowerCase())
+  return match ? { id: match.id, name: match.name, hours: match.hours as Hours | null } : null
+}
+
+/** For conflict-recovery paths that already know a `staff_id` (a reschedule on an already-assigned appointment) rather than a raw spoken name. */
+async function getStaffById(bizId: string, staffId: string): Promise<ResolvedStaff | null> {
+  const { data } = await supabase.from('business_staff').select('id, name, hours').eq('id', staffId).eq('business_id', bizId).single()
+  return data ? { id: data.id, name: data.name, hours: data.hours as Hours | null } : null
+}
+
 /**
  * Shared by checkAvailability and bookAppointment's booking-conflict
  * recovery (two callers offered the same slot at once — see the unique
- * index on appointments(business_id, scheduled_at)) — both need the same
- * "what's actually free right now" computation.
+ * index on appointments(business_id, staff_id, scheduled_at)) — both need
+ * the same "what's actually free right now" computation.
  */
 async function computeAvailableSlots(
   biz: { id: string; hours: unknown; timezone: string },
   requestedService: string | undefined,
-): Promise<Date[]> {
-  const [{ data: services }, { data: existing }] = await Promise.all([
+  requestedStaffMember?: string,
+  requestedStaffId?: string | null,
+): Promise<{ slots: Date[]; resolvedStaffName: string | null }> {
+  const [{ data: services }, resolvedStaff, { data: existing }] = await Promise.all([
     supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
+    requestedStaffId ? getStaffById(biz.id, requestedStaffId) : resolveStaffMember(biz.id, requestedStaffMember),
     supabase.from('appointments')
-      .select('scheduled_at, service')
+      .select('scheduled_at, service, staff_id')
       .eq('business_id', biz.id)
       .neq('status', 'cancelled')
       .gte('scheduled_at', new Date().toISOString())
@@ -60,12 +79,13 @@ async function computeAvailableSlots(
       .limit(100),
   ])
 
+  const now = new Date()
+  const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
+
   let externalBusy: { start: Date; end: Date }[] = []
   try {
     const google = await getValidAccessToken(supabase, biz.id)
     if (google) {
-      const now = new Date()
-      const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
       const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
       externalBusy = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
     }
@@ -73,14 +93,35 @@ async function computeAvailableSlots(
     console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
   }
 
-  return findNextAvailableSlots({
+  let staffAvailabilityByDate: Map<string, { isAvailable: boolean; opensAt: string | null; closesAt: string | null }> | undefined
+  if (resolvedStaff) {
+    const { data: overrides } = await supabase
+      .from('business_staff_availability')
+      .select('date, is_available, opens_at, closes_at')
+      .eq('staff_id', resolvedStaff.id)
+      .gte('date', dateStrInZone(now, biz.timezone))
+      .lte('date', dateStrInZone(lookout, biz.timezone))
+
+    staffAvailabilityByDate = new Map((overrides ?? []).map(o => [o.date, {
+      isAvailable: o.is_available,
+      opensAt: o.opens_at ? (o.opens_at as string).slice(0, 5) : null,
+      closesAt: o.closes_at ? (o.closes_at as string).slice(0, 5) : null,
+    }]))
+  }
+
+  const slots = findNextAvailableSlots({
     hours: biz.hours as Hours,
     services: services ?? [],
     existing: existing ?? [],
     requestedService,
     externalBusy,
     timeZone: biz.timezone,
+    staffId: resolvedStaff ? resolvedStaff.id : undefined,
+    staffHours: resolvedStaff?.hours,
+    staffAvailabilityByDate,
   })
+
+  return { slots, resolvedStaffName: resolvedStaff?.name ?? null }
 }
 
 function fmtSlots(slots: Date[], timeZone: string): string {
@@ -210,11 +251,12 @@ export async function POST(req: Request) {
           if (!biz) {
             resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
           } else {
-            const slots = await computeAvailableSlots(biz, args.service as string | undefined)
+            const { slots, resolvedStaffName } = await computeAvailableSlots(biz, args.service as string | undefined, args.staffMember as string | undefined)
+            const forWhom = resolvedStaffName ? ` for ${resolvedStaffName}` : ''
 
             resultText = slots.length
-              ? `Next available slots: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose.`
-              : "No open slots found in the next two weeks — let the caller know you'll have someone reach out to schedule."
+              ? `Next available slots${forWhom}: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose${resolvedStaffName ? `, along with staffMember: "${resolvedStaffName}"` : ''}.`
+              : `No open slots found${forWhom} in the next two weeks — let the caller know you'll have someone reach out to schedule.`
           }
         } catch (err) {
           captureError(err, { handler: 'checkAvailability' })
@@ -287,7 +329,7 @@ export async function POST(req: Request) {
           } else {
             const { data: existing } = await supabase
               .from('appointments')
-              .select('id, service, customer_name, customer_phone, calendar_event_id')
+              .select('id, service, customer_name, customer_phone, calendar_event_id, staff_id')
               .eq('id', appointmentId)
               .eq('business_id', biz.id)
               .single()
@@ -301,6 +343,9 @@ export async function POST(req: Request) {
                 .eq('business_id', biz.id)
               const durationMins = durationFor(existing.service, services ?? [])
 
+              // Deliberately does not set staff_id here — a reschedule keeps
+              // whichever staff member the appointment was already booked
+              // against; preserved simply by never touching the column.
               const { error: updateError } = await supabase.from('appointments').update({
                 scheduled_at: args.newDateTime,
                 status:       'rescheduled',
@@ -310,7 +355,7 @@ export async function POST(req: Request) {
               if (updateError?.code === '23505') {
                 resultText = "That new time was just taken by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
                 try {
-                  const slots = await computeAvailableSlots(biz, existing.service ?? undefined)
+                  const { slots } = await computeAvailableSlots(biz, existing.service ?? undefined, undefined, existing.staff_id)
                   if (slots.length) {
                     resultText = `That new time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to rescheduleAppointment for whichever they choose.`
                   }
@@ -549,10 +594,10 @@ export async function POST(req: Request) {
         if (!biz) {
           resultText = "I couldn't find this business's account — let the caller know you'll have someone call them back to confirm."
         } else {
-          const { data: services } = await supabase
-            .from('business_services')
-            .select('name, duration_minutes')
-            .eq('business_id', biz.id)
+          const [{ data: services }, resolvedStaff] = await Promise.all([
+            supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
+            resolveStaffMember(biz.id, args.staffMember as string | undefined),
+          ])
           const durationMins = durationFor(args.service as string | undefined, services ?? [])
 
           const appointmentRow = {
@@ -565,6 +610,7 @@ export async function POST(req: Request) {
             status:         'confirmed',
             notes:          args.notes ?? null,
             vapi_call_id:   callId ?? null,
+            staff_id:       resolvedStaff?.id ?? null,
           }
 
           let { data: inserted, error: insertError } = await supabase.from('appointments').insert(appointmentRow).select('id').single()
@@ -584,9 +630,9 @@ export async function POST(req: Request) {
           if (insertError?.code === '23505') {
             resultText = "That time was just booked by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
             try {
-              const slots = await computeAvailableSlots(biz, args.service as string | undefined)
+              const { slots, resolvedStaffName } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, resolvedStaff?.id)
               if (slots.length) {
-                resultText = `That time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to bookAppointment for whichever they choose.`
+                resultText = `That time was just taken by another caller. Apologise briefly, then offer these instead${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to bookAppointment for whichever they choose.`
               }
             } catch (altErr) {
               console.error('Failed to compute alternative slots after a booking conflict:', altErr)
@@ -595,7 +641,7 @@ export async function POST(req: Request) {
             console.error('Failed to insert appointment:', insertError)
             resultText = "Something went wrong saving that booking — let the caller know you'll confirm it manually."
           } else {
-            resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'} on ${fmtDate(args.dateTime as string, biz.timezone)}.`
+            resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'}${resolvedStaff ? ` with ${resolvedStaff.name}` : ''} on ${fmtDate(args.dateTime as string, biz.timezone)}.`
 
             if (phone) {
               await rememberCustomerName(supabase, biz.id, phone, args.customerName as string | undefined)
@@ -628,7 +674,7 @@ export async function POST(req: Request) {
                 const end = new Date(start.getTime() + durationMins * 60_000)
 
                 const event = await createCalendarEvent(google.accessToken, google.calendarId, {
-                  summary: `${args.service ?? 'Appointment'} — ${args.customerName ?? 'Customer'}`,
+                  summary: `${args.service ?? 'Appointment'} — ${args.customerName ?? 'Customer'}${resolvedStaff ? ` (with ${resolvedStaff.name})` : ''}`,
                   description: [phone && `Phone: ${phone}`, args.customerEmail && `Email: ${args.customerEmail}`]
                     .filter(Boolean).join('\n'),
                   start,

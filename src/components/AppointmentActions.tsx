@@ -6,6 +6,7 @@ import { dateStrInZone } from '@/lib/timezone'
 import { rescheduleAppointmentAction, cancelAppointmentAction, editAppointmentAction } from '@/app/(dashboard)/appointments/actions'
 
 type ServiceOption = { name: string }
+type StaffOption = { id: string; name: string }
 
 type Props = {
   appointmentId: string
@@ -16,6 +17,8 @@ type Props = {
   scheduledAt: string // ISO
   timeZone: string
   services: ServiceOption[]
+  staff: StaffOption[]
+  currentStaffId: string | null
 }
 
 type ModalKind = 'reschedule' | 'edit' | 'cancel' | null
@@ -25,7 +28,7 @@ function timeStrInZone(date: Date, timeZone: string): string {
 }
 
 export default function AppointmentActions({
-  appointmentId, customerName, customerPhone, service, notes, scheduledAt, timeZone, services,
+  appointmentId, customerName, customerPhone, service, notes, scheduledAt, timeZone, services, staff, currentStaffId,
 }: Props) {
   const [modal, setModal]     = useState<ModalKind>(null)
   const apptDate              = new Date(scheduledAt)
@@ -37,6 +40,7 @@ export default function AppointmentActions({
   const [editPhone, setEditPhone] = useState(customerPhone ?? '')
   const [editService, setEditService] = useState(service ?? '')
   const [editNotes, setEditNotes] = useState(notes ?? '')
+  const [editStaffId, setEditStaffId] = useState(currentStaffId ?? '')
 
   const [isPending, startTransition] = useTransition()
   const [error, setError]     = useState('')
@@ -70,7 +74,7 @@ export default function AppointmentActions({
     setError('')
     startTransition(async () => {
       try {
-        await editAppointmentAction({ appointmentId, customerName: editName, customerPhone: editPhone, service: editService, notes: editNotes })
+        await editAppointmentAction({ appointmentId, customerName: editName, customerPhone: editPhone, service: editService, notes: editNotes, staffId: editStaffId || null })
         setModal(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to save changes')
@@ -189,6 +193,16 @@ export default function AppointmentActions({
                       <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} rows={2}
                         className="text-sm rounded-lg px-3 py-2" style={{ border: '1px solid var(--line)', color: 'var(--ink)', resize: 'vertical' }} />
                     </div>
+                    {staff.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Staff member</label>
+                        <select value={editStaffId} onChange={e => setEditStaffId(e.target.value)}
+                          className="text-sm rounded-lg px-3 py-2" style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}>
+                          <option value="">No preference</option>
+                          {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    )}
                   </>
                 )}
 

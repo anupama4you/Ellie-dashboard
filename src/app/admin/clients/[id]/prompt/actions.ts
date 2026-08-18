@@ -91,6 +91,34 @@ export async function applyDraftAndPushPrompt(
     if (error) throw new Error(error.message)
   }
 
+  // Unlike services/faqs above, staff is synced by diff (update/insert/delete
+  // by id) rather than delete-all-then-reinsert — appointments.staff_id is a
+  // real FK to business_staff.id, and delete+reinsert generates new ids,
+  // which would silently null out every appointment's staff assignment (via
+  // the FK's `on delete set null`) on every single Apply & Push.
+  const { data: liveStaffRows } = await admin.from('business_staff').select('id').eq('business_id', businessId)
+  const liveStaffIds = new Set((liveStaffRows ?? []).map(r => r.id))
+  const draftStaffIds = new Set((draft.staff ?? []).filter(s => s.id).map(s => s.id!))
+
+  const removedStaffIds = [...liveStaffIds].filter(id => !draftStaffIds.has(id))
+  if (removedStaffIds.length > 0) {
+    const { error } = await admin.from('business_staff').delete().in('id', removedStaffIds)
+    if (error) throw new Error(error.message)
+  }
+
+  for (const [i, s] of (draft.staff ?? []).entries()) {
+    if (s.id && liveStaffIds.has(s.id)) {
+      const { error } = await admin.from('business_staff')
+        .update({ name: s.name, active: s.active, hours: s.hours, sort_order: i })
+        .eq('id', s.id)
+      if (error) throw new Error(error.message)
+    } else {
+      const { error } = await admin.from('business_staff')
+        .insert({ business_id: businessId, name: s.name, active: s.active, hours: s.hours, sort_order: i })
+      if (error) throw new Error(error.message)
+    }
+  }
+
   await syncAssistantPrompt(biz.vapi_assistant_id, payload)
 
   await admin.from('businesses').update({

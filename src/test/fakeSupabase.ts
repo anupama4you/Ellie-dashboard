@@ -5,10 +5,16 @@
  * enough to smoke-test book/reschedule/cancel/transfer without hitting a
  * real database. Also replicates the one production constraint that matters
  * for these tests: the partial unique index on
- * appointments(business_id, scheduled_at) where status <> 'cancelled'
- * (see supabase-schema-appointments-unique-slot.sql) — a duplicate insert
- * returns the same Postgres error code (23505) the real DB would.
+ * appointments(business_id, coalesce(staff_id, sentinel), scheduled_at)
+ * where status <> 'cancelled' (see
+ * 20260818090002_appointments_staff_slot_unique.sql) — a duplicate insert
+ * returns the same Postgres error code (23505) the real DB would. staff_id is
+ * coalesced to a sentinel the same way the real index does, so two NULL-staff
+ * rows at the same slot still collide (today's behavior for staff-less
+ * businesses) while two different real staff IDs at the same slot don't.
  */
+
+const NO_STAFF_SENTINEL = '00000000-0000-0000-0000-000000000000'
 
 type Row = Record<string, unknown>
 type Op = 'eq' | 'neq' | 'gte' | 'lte'
@@ -59,8 +65,12 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
       for (const raw of this.insertRows) {
         const row: Row = { id: raw.id ?? crypto.randomUUID(), ...raw }
         if (this.tableName === 'appointments' && row.status !== 'cancelled') {
+          const staffKey = (row.staff_id as string | null | undefined) ?? NO_STAFF_SENTINEL
           const dup = this.table.rows.some(r =>
-            r.business_id === row.business_id && r.scheduled_at === row.scheduled_at && r.status !== 'cancelled',
+            r.business_id === row.business_id
+            && ((r.staff_id as string | null | undefined) ?? NO_STAFF_SENTINEL) === staffKey
+            && r.scheduled_at === row.scheduled_at
+            && r.status !== 'cancelled',
           )
           if (dup) return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } }
         }

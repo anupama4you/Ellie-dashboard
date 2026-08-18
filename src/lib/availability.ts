@@ -10,12 +10,23 @@ const MAX_DAYS_AHEAD = 14
 const DEFAULT_SLOT_COUNT = 3
 
 type ServiceRow = { name: string; duration_minutes: number | null }
-type ExistingAppointment = { scheduled_at: string; service: string | null }
+type ExistingAppointment = { scheduled_at: string; service: string | null; staff_id?: string | null }
+type StaffDateOverride = { isAvailable: boolean; opensAt: string | null; closesAt: string | null }
 
 export function durationFor(serviceName: string | null | undefined, services: ServiceRow[]): number {
   if (!serviceName) return DEFAULT_DURATION_MINUTES
   const match = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
   return match?.duration_minutes ?? DEFAULT_DURATION_MINUTES
+}
+
+/** Narrower of two windows on the same day — later open, earlier close; closed if either side is closed. */
+function intersectDayHours(a: Hours[keyof Hours], b: Hours[keyof Hours]): Hours[keyof Hours] {
+  if (!a.open || !b.open) return { open: false, opensAt: a.opensAt, closesAt: a.closesAt }
+  return {
+    open: true,
+    opensAt: a.opensAt > b.opensAt ? a.opensAt : b.opensAt,
+    closesAt: a.closesAt < b.closesAt ? a.closesAt : b.closesAt,
+  }
 }
 
 /**
@@ -36,14 +47,24 @@ export function findNextAvailableSlots(opts: {
   externalBusy?: { start: Date; end: Date }[]
   /** IANA timezone the business actually operates in, e.g. "Australia/Adelaide". */
   timeZone: string
+  /** Tri-state staff filter: undefined = unfiltered, null = only unassigned appointments, id = only that staff's. */
+  staffId?: string | null
+  /** A resolved staff member's own weekly template, intersected with `hours` each day. null/omitted = same as business hours. */
+  staffHours?: Hours | null
+  /** Per-date overrides (keyed `YYYY-MM-DD` in `timeZone`) — takes precedence over `staffHours` and `hours` for that date. */
+  staffAvailabilityByDate?: Map<string, StaffDateOverride>
 }): Date[] {
   const now = opts.now ?? new Date()
   const duration = durationFor(opts.requestedService, opts.services)
   const wantCount = opts.count ?? DEFAULT_SLOT_COUNT
   const earliestStart = new Date(now.getTime() + MIN_LEAD_MINUTES * 60_000)
 
+  const existing = opts.staffId === undefined
+    ? opts.existing
+    : opts.existing.filter(a => (a.staff_id ?? null) === opts.staffId)
+
   const busy = [
-    ...opts.existing.map(a => {
+    ...existing.map(a => {
       const start = new Date(a.scheduled_at)
       const end = new Date(start.getTime() + durationFor(a.service, opts.services) * 60_000)
       return { start, end }
@@ -67,7 +88,17 @@ export function findNextAvailableSlots(opts: {
     const d = dayCalendar.getUTCDate()
     const dow = dayCalendar.getUTCDay()
 
-    const dayHours = opts.hours[DAY_KEYS[dow]]
+    let dayHours = opts.hours[DAY_KEYS[dow]]
+    if (opts.staffHours) dayHours = intersectDayHours(dayHours, opts.staffHours[DAY_KEYS[dow]])
+
+    const dateKey = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const override = opts.staffAvailabilityByDate?.get(dateKey)
+    if (override) {
+      dayHours = override.isAvailable && override.opensAt && override.closesAt
+        ? intersectDayHours(opts.hours[DAY_KEYS[dow]], { open: true, opensAt: override.opensAt, closesAt: override.closesAt })
+        : { open: false, opensAt: dayHours.opensAt, closesAt: dayHours.closesAt }
+    }
+
     if (!dayHours.open) continue
 
     const [openH, openM] = dayHours.opensAt.split(':').map(Number)

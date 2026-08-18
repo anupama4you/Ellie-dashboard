@@ -31,6 +31,7 @@ type Appointment = {
   calendar_event_id?: string | null
   calendar_event_link?: string | null
   vapi_call_id?: string | null
+  staff_id?: string | null
 }
 
 const DOW = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
@@ -107,7 +108,7 @@ export default async function AppointmentsPage({
   const prevMonthDateStr = shiftMonthStr(selectedDate, -1)
   const nextMonthDateStr = shiftMonthStr(selectedDate, 1)
 
-  const [{ data: appointments }, { data: servicesRaw }] = await Promise.all([
+  const [{ data: appointments }, { data: servicesRaw }, { data: staffRaw }] = await Promise.all([
     supabase
       .from('appointments')
       .select('*')
@@ -117,11 +118,16 @@ export default async function AppointmentsPage({
       .lte('scheduled_at', rangeEnd.toISOString())
       .order('scheduled_at', { ascending: true }),
     supabase.from('business_services').select('name, duration_minutes, price_cents').eq('business_id', biz?.id),
+    // All rows, not just active — a past appointment tied to a deactivated staff member should still show their name.
+    supabase.from('business_staff').select('id, name, active').eq('business_id', biz?.id).order('sort_order'),
   ])
 
   const rangeAppts = (appointments ?? []) as Appointment[]
   const services   = servicesRaw ?? []
   const serviceByName = new Map(services.map(s => [s.name.toLowerCase(), s]))
+  const allStaff   = staffRaw ?? []
+  const activeStaff = allStaff.filter(s => s.active)
+  const staffNameById = new Map(allStaff.map(s => [s.id, s.name]))
 
   // Calls that resulted in one of this range's Ellie-booked appointments, so
   // each appointment can link back to "when the caller actually booked this".
@@ -216,6 +222,7 @@ export default async function AppointmentsPage({
                 <AddAppointmentModal
                   defaultDate={selectedDate}
                   services={services.map(s => ({ name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents }))}
+                  staff={activeStaff.map(s => ({ id: s.id, name: s.name }))}
                 />
               )}
             </div>
@@ -384,6 +391,7 @@ export default async function AppointmentsPage({
                     appt.service || null,
                     svc?.duration_minutes ? `${svc.duration_minutes} min` : null,
                     svc?.price_cents != null ? `$${(svc.price_cents / 100).toFixed(0)}` : null,
+                    appt.staff_id ? staffNameById.get(appt.staff_id) ?? null : null,
                   ].filter(Boolean)
 
                   const bookedByEllie = !!appt.vapi_call_id
@@ -465,6 +473,8 @@ export default async function AppointmentsPage({
                             scheduledAt={appt.scheduled_at}
                             timeZone={timeZone}
                             services={services.map(s => ({ name: s.name }))}
+                            staff={activeStaff.map(s => ({ id: s.id, name: s.name }))}
+                            currentStaffId={appt.staff_id ?? null}
                           />
                         )}
                       </div>

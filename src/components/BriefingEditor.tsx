@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { saveBriefing, type Hours, type ServiceDraft, type FaqDraft, type CompanyInfo } from '@/app/(dashboard)/briefing/actions'
+import { saveBriefing, type Hours, type ServiceDraft, type StaffDraft, type FaqDraft, type CompanyInfo } from '@/app/(dashboard)/briefing/actions'
+import { setStaffDateOverride, clearStaffDateOverride } from '@/app/(dashboard)/briefing/rosterActions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
 
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']
@@ -30,6 +31,146 @@ function toServiceDraft(r: ServiceRow): ServiceDraft {
 /** Only ever lets a valid partial decimal (whole dollars, or up to 2 decimal places) through. */
 const PRICE_INPUT_RE = /^\d*\.?\d{0,2}$/
 
+/** The same day-by-day open/close editor used for both business hours and an individual staff member's optional custom hours. */
+function HoursGrid({ hours, onChange }: { hours: Hours; onChange: (next: Hours) => void }) {
+  return (
+    <>
+      {DAY_LABELS.map(({ key, label }, i) => {
+        const d = hours[key]
+        return (
+          <div key={key} className="flex items-center gap-3 px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
+            <b className="w-10 text-sm font-semibold" style={{ color: 'var(--t2)' }}>{label}</b>
+            {d.open ? (
+              <div className="flex items-center gap-1.5 flex-1 font-mono text-sm" style={{ color: 'var(--text)' }}>
+                <input type="time" value={d.opensAt}
+                  onChange={e => onChange({ ...hours, [key]: { ...hours[key], opensAt: e.target.value } })}
+                  className="rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
+                <span style={{ color: 'var(--t3)' }}>–</span>
+                <input type="time" value={d.closesAt}
+                  onChange={e => onChange({ ...hours, [key]: { ...hours[key], closesAt: e.target.value } })}
+                  className="rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
+              </div>
+            ) : (
+              <span className="flex-1 text-sm italic" style={{ color: 'var(--t3)' }}>Closed</span>
+            )}
+            <button
+              onClick={() => onChange({ ...hours, [key]: { ...hours[key], open: !hours[key].open } })}
+              role="switch" aria-checked={d.open}
+              className="w-[38px] h-[22px] rounded-full relative shrink-0"
+              style={{ background: d.open ? 'var(--signal)' : 'var(--border)' }}
+            >
+              <span className="absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all" style={{ left: d.open ? 19 : 3 }} />
+            </button>
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+const BLANK_HOURS: Hours = {
+  mon: { open: true, opensAt: '09:00', closesAt: '17:00' },
+  tue: { open: true, opensAt: '09:00', closesAt: '17:00' },
+  wed: { open: true, opensAt: '09:00', closesAt: '17:00' },
+  thu: { open: true, opensAt: '09:00', closesAt: '17:00' },
+  fri: { open: true, opensAt: '09:00', closesAt: '17:00' },
+  sat: { open: true, opensAt: '09:00', closesAt: '17:00' },
+  sun: { open: true, opensAt: '09:00', closesAt: '17:00' },
+}
+
+export type StaffAvailabilityRow = { id: string; staff_id: string; date: string; is_available: boolean; opens_at: string | null; closes_at: string | null }
+
+/**
+ * A staff member's upcoming per-date exceptions to their normal hours —
+ * lives outside the surrounding form entirely (no unsaved-changes state,
+ * calls the live roster actions directly on every add/remove) since it
+ * writes straight through, unlike everything else on this page.
+ */
+function StaffExceptions({ staffId, initialOverrides }: { staffId: string; initialOverrides: StaffAvailabilityRow[] }) {
+  const [overrides, setOverrides] = useState(() => [...initialOverrides].sort((a, b) => a.date.localeCompare(b.date)))
+  const [date, setDate] = useState('')
+  const [isAvailable, setIsAvailable] = useState(false)
+  const [opensAt, setOpensAt] = useState('09:00')
+  const [closesAt, setClosesAt] = useState('17:00')
+  const [isPending, startTransition] = useTransition()
+  const [error, setError] = useState('')
+
+  const todayStr = new Date().toISOString().slice(0, 10)
+
+  function add() {
+    if (!date) return
+    setError('')
+    startTransition(async () => {
+      try {
+        await setStaffDateOverride(staffId, date, { isAvailable, opensAt: isAvailable ? opensAt : null, closesAt: isAvailable ? closesAt : null })
+        setOverrides(prev => [
+          ...prev.filter(o => o.date !== date),
+          { id: date, staff_id: staffId, date, is_available: isAvailable, opens_at: isAvailable ? opensAt : null, closes_at: isAvailable ? closesAt : null },
+        ].sort((a, b) => a.date.localeCompare(b.date)))
+        setDate('')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to save')
+      }
+    })
+  }
+
+  function remove(overrideDate: string) {
+    setError('')
+    startTransition(async () => {
+      try {
+        await clearStaffDateOverride(staffId, overrideDate)
+        setOverrides(prev => prev.filter(o => o.date !== overrideDate))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to remove')
+      }
+    })
+  }
+
+  return (
+    <div className="rounded-xl p-3 mt-1 flex flex-col gap-2" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+      <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Upcoming exceptions — saved instantly, no review needed</span>
+      {overrides.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {overrides.map(o => (
+            <li key={o.date} className="flex items-center justify-between text-xs" style={{ color: 'var(--t2)' }}>
+              <span>
+                {new Date(`${o.date}T00:00:00`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
+                {' — '}
+                {o.is_available ? `${o.opens_at?.slice(0, 5)}–${o.closes_at?.slice(0, 5)}` : 'Not working'}
+              </span>
+              <button onClick={() => remove(o.date)} disabled={isPending} style={{ color: 'var(--coral)' }}><Trash2 size={12} /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <input type="date" value={date} min={todayStr} onChange={e => setDate(e.target.value)}
+          className="text-xs rounded-lg px-2 py-1" style={{ border: '1px solid var(--border)', color: 'var(--text)' }} />
+        <select value={isAvailable ? 'custom' : 'off'} onChange={e => setIsAvailable(e.target.value === 'custom')}
+          className="text-xs rounded-lg px-2 py-1" style={{ border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg3)' }}>
+          <option value="off">Not working</option>
+          <option value="custom">Working (custom hours)</option>
+        </select>
+        {isAvailable && (
+          <>
+            <input type="time" value={opensAt} onChange={e => setOpensAt(e.target.value)}
+              className="text-xs rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
+            <span style={{ color: 'var(--t3)' }}>–</span>
+            <input type="time" value={closesAt} onChange={e => setClosesAt(e.target.value)}
+              className="text-xs rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
+          </>
+        )}
+        <button onClick={add} disabled={!date || isPending}
+          className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg disabled:opacity-60"
+          style={{ border: '1px solid var(--border)', color: 'var(--text)' }}>
+          <Plus size={11} /> Add
+        </button>
+      </div>
+      {error && <span className="text-xs" style={{ color: 'var(--coral)' }}>{error}</span>}
+    </div>
+  )
+}
+
 type Props = {
   businessId: string
   businessName: string
@@ -39,6 +180,8 @@ type Props = {
   initialTransferRules: string
   initialTransferPhoneNumber: string
   initialServices: ServiceDraft[]
+  initialStaff: StaffDraft[]
+  initialStaffAvailability: StaffAvailabilityRow[]
   initialFaqs: FaqDraft[]
   initialCompanyInfo: CompanyInfo
   isPendingReview?: boolean
@@ -52,7 +195,7 @@ const TRANSFER_INSTRUCTIONS_PLACEHOLDER =
 
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
-  initialHours, initialTransferRules, initialTransferPhoneNumber, initialServices, initialFaqs, initialCompanyInfo,
+  initialHours, initialTransferRules, initialTransferPhoneNumber, initialServices, initialStaff, initialStaffAvailability, initialFaqs, initialCompanyInfo,
   isPendingReview,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
@@ -62,6 +205,7 @@ export default function BriefingEditor({
   const [transferRules, setTransferRules]           = useState(initialTransferRules)
   const [transferPhoneNumber, setTransferPhoneNumber] = useState(initialTransferPhoneNumber)
   const [services, setServices]                     = useState(() => initialServices.map(toServiceRow))
+  const [staff, setStaff]                            = useState(initialStaff)
   const [faqs, setFaqs]                              = useState(initialFaqs)
   const [companyInfo, setCompanyInfo]               = useState(initialCompanyInfo)
   const [isPending, startTransition]                = useTransition()
@@ -70,7 +214,7 @@ export default function BriefingEditor({
   function save() {
     startTransition(async () => {
       try {
-        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services: services.map(toServiceDraft), faqs, companyInfo })
+        await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services: services.map(toServiceDraft), staff, faqs, companyInfo })
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
@@ -337,35 +481,68 @@ export default function BriefingEditor({
               <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Business hours</h2>
               <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Outside these, Ellie still answers and books for the next open day</p>
             </div>
-            {DAY_LABELS.map(({ key, label }, i) => {
-              const d = hours[key]
-              return (
-                <div key={key} className="flex items-center gap-3 px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
-                  <b className="w-10 text-sm font-semibold" style={{ color: 'var(--t2)' }}>{label}</b>
-                  {d.open ? (
-                    <div className="flex items-center gap-1.5 flex-1 font-mono text-sm" style={{ color: 'var(--text)' }}>
-                      <input type="time" value={d.opensAt}
-                        onChange={e => setHours(h => ({ ...h, [key]: { ...h[key], opensAt: e.target.value } }))}
-                        className="rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
-                      <span style={{ color: 'var(--t3)' }}>–</span>
-                      <input type="time" value={d.closesAt}
-                        onChange={e => setHours(h => ({ ...h, [key]: { ...h[key], closesAt: e.target.value } }))}
-                        className="rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
-                    </div>
-                  ) : (
-                    <span className="flex-1 text-sm italic" style={{ color: 'var(--t3)' }}>Closed</span>
-                  )}
+            <HoursGrid hours={hours} onChange={setHours} />
+          </section>
+
+          {/* Team */}
+          <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
+            <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
+              <div>
+                <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Team</h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Ellie can offer and book against a specific person</p>
+              </div>
+              <button
+                onClick={() => setStaff(s => [...s, { name: '', active: true, hours: null }])}
+                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
+                style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+              >
+                <Plus size={12} /> Add
+              </button>
+            </div>
+            {staff.length === 0 && <p className="px-5 py-6 text-sm" style={{ color: 'var(--t3)' }}>No team members added — Ellie will treat this as a single-provider business</p>}
+            {staff.map((member, i) => (
+              <div key={i} className="flex flex-col gap-2 px-5 py-3" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={member.name}
+                    onChange={e => setStaff(s => s.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    placeholder="Staff member's name"
+                    className="flex-1 text-sm rounded-lg px-2.5 py-1.5 min-w-0"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                  />
                   <button
-                    onClick={() => setHours(h => ({ ...h, [key]: { ...h[key], open: !h[key].open } }))}
-                    role="switch" aria-checked={d.open}
+                    onClick={() => setStaff(s => s.map((x, j) => j === i ? { ...x, active: !x.active } : x))}
+                    role="switch" aria-checked={member.active}
+                    title={member.active ? 'Active — Ellie can offer them' : 'Inactive — hidden from Ellie, past appointments unaffected'}
                     className="w-[38px] h-[22px] rounded-full relative shrink-0"
-                    style={{ background: d.open ? 'var(--signal)' : 'var(--border)' }}
+                    style={{ background: member.active ? 'var(--signal)' : 'var(--border)' }}
                   >
-                    <span className="absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all" style={{ left: d.open ? 19 : 3 }} />
+                    <span className="absolute top-[3px] w-4 h-4 rounded-full bg-white transition-all" style={{ left: member.active ? 19 : 3 }} />
+                  </button>
+                  <button onClick={() => setStaff(s => s.filter((_, j) => j !== i))} className="shrink-0" style={{ color: 'var(--coral)' }}>
+                    <Trash2 size={14} />
                   </button>
                 </div>
-              )
-            })}
+
+                <label className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--t3)' }}>
+                  <input
+                    type="checkbox"
+                    checked={member.hours != null}
+                    onChange={e => setStaff(s => s.map((x, j) => j === i ? { ...x, hours: e.target.checked ? BLANK_HOURS : null } : x))}
+                  />
+                  Custom hours (unchecked = works the business&apos;s hours above)
+                </label>
+                {member.hours && (
+                  <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                    <HoursGrid hours={member.hours} onChange={next => setStaff(s => s.map((x, j) => j === i ? { ...x, hours: next } : x))} />
+                  </div>
+                )}
+
+                {member.id && (
+                  <StaffExceptions staffId={member.id} initialOverrides={initialStaffAvailability.filter(o => o.staff_id === member.id)} />
+                )}
+              </div>
+            ))}
           </section>
 
           {/* FAQs */}

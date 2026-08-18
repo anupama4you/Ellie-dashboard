@@ -41,12 +41,13 @@ type Props = {
 }
 
 export default function BriefingReadOnly({ businessName, hasDraft, draft, live, companyInfoSlot }: Props) {
-  const { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services, faqs } = draft
+  const { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services, staff, faqs } = draft
   const placeholderGreeting = defaultGreeting(businessName)
 
   const changed = hasDraft ? {
     greeting: greeting.trim() !== live.greetingScript.trim(),
     services: JSON.stringify(stripIds(services)) !== JSON.stringify(stripIds(live.services)),
+    staff: JSON.stringify(stripIds(staff)) !== JSON.stringify(stripIds(live.staff)),
     customInstructions: customInstructions.trim() !== live.customInstructions.trim(),
     hours: JSON.stringify(hours) !== JSON.stringify(live.hours),
     faqs: JSON.stringify(stripIds(faqs)) !== JSON.stringify(stripIds(live.faqs)),
@@ -125,6 +126,34 @@ export default function BriefingReadOnly({ businessName, hasDraft, draft, live, 
               </div>
             )
           })}
+        </section>
+
+        {/* Team */}
+        <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
+          <div className="px-5 pt-4 pb-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)' }}>
+            <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Team</h2>
+            <ChangedPill show={changed?.staff} />
+          </div>
+          {staff.length === 0 && <p className="px-5 py-6 text-sm" style={{ color: 'var(--t3)' }}>No team members — single-provider business</p>}
+          {staff.map((member, i) => (
+            <div key={i} className="flex flex-col gap-1 px-5 py-2.5 text-sm" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
+              <div className="flex items-center gap-2">
+                <span className="flex-1 font-semibold" style={{ color: member.active ? 'var(--text)' : 'var(--t3)' }}>
+                  {member.name || '—'}{!member.active && ' (inactive)'}
+                </span>
+              </div>
+              {member.hours ? (
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 font-mono text-xs" style={{ color: 'var(--t3)' }}>
+                  {DAY_LABELS.map(({ key, label }) => {
+                    const d = member.hours![key]
+                    return <span key={key}>{label}: {d.open ? `${d.opensAt}–${d.closesAt}` : 'Closed'}</span>
+                  })}
+                </div>
+              ) : (
+                <span className="text-xs" style={{ color: 'var(--t4)' }}>Same as business hours</span>
+              )}
+            </div>
+          ))}
         </section>
 
         {/* FAQs */}

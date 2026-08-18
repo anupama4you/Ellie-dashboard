@@ -16,6 +16,7 @@ export type ManualAppointmentInput = {
   service: string
   date: string // YYYY-MM-DD
   time: string // HH:MM
+  staffId?: string | null
 }
 
 /**
@@ -47,6 +48,7 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
     scheduled_at:   scheduledAt.toISOString(),
     status:         'confirmed',
     vapi_call_id:   null,
+    staff_id:       input.staffId ?? null,
   })
   if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
 
@@ -198,6 +200,7 @@ export type EditAppointmentInput = {
   customerPhone: string
   service: string
   notes: string
+  staffId?: string | null
 }
 
 /** Edits the booking's details (name/phone/service/notes) — doesn't touch the time; use rescheduleAppointmentAction for that. */
@@ -214,6 +217,7 @@ export async function editAppointmentAction(input: EditAppointmentInput): Promis
     customer_phone: input.customerPhone.trim() || null,
     service: input.service.trim() || null,
     notes: input.notes.trim() || null,
+    staff_id: input.staffId ?? null,
   }).eq('id', input.appointmentId).eq('business_id', biz.id)
   if (error) throw new Error(error.message)
 

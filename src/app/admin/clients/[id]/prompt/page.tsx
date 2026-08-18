@@ -21,13 +21,14 @@ export default async function AdminSystemPromptPage({
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
   if (!biz) redirect('/admin/clients')
 
-  const [{ data: services }, { data: faqs }, { data: { user: clientUser } }] = await Promise.all([
+  const [{ data: services }, { data: faqs }, { data: staff }, { data: { user: clientUser } }] = await Promise.all([
     admin.from('business_services').select('*').eq('business_id', biz.id).order('sort_order'),
     admin.from('business_faqs').select('*').eq('business_id', biz.id).order('sort_order'),
+    admin.from('business_staff').select('*').eq('business_id', biz.id).order('sort_order'),
     admin.auth.admin.getUserById(biz.user_id),
   ])
 
-  const resolved = resolveBriefing(biz, services ?? [], faqs ?? [])
+  const resolved = resolveBriefing(biz, services ?? [], faqs ?? [], staff ?? [])
   const hasDraft = !!biz.draft_briefing
 
   const briefing = {
@@ -36,6 +37,7 @@ export default async function AdminSystemPromptPage({
     hours: resolved.hours,
     transferRules: resolved.transferRules,
     services: resolved.services,
+    staff: resolved.staff,
     faqs: resolved.faqs,
     companyInfo: resolved.companyInfo,
   }

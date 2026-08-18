@@ -3,6 +3,11 @@
  * One-time setup: creates the "bookAppointment" function tool in Vapi and
  * prints its ID to paste into .env as VAPI_BOOK_APPOINTMENT_TOOL_ID.
  *
+ * If VAPI_BOOK_APPOINTMENT_TOOL_ID is already set in your environment, this
+ * PATCHes that existing tool in place instead of creating a new one — safe
+ * to re-run any time the schema changes (e.g. after adding staffMember),
+ * since the tool ID is shared globally across every business's assistant.
+ *
  * Vapi cannot call `localhost` — pass a publicly reachable URL (an ngrok
  * tunnel for local testing, or your deployed webhook URL).
  *
@@ -29,10 +34,11 @@ if (!vapiKey) {
   process.exit(1)
 }
 
+const existingToolId = process.env.VAPI_BOOK_APPOINTMENT_TOOL_ID
 const server = { url: serverUrl, ...(credentialId ? { credentialId } : {}) }
 
-const res = await fetch('https://api.vapi.ai/tool', {
-  method: 'POST',
+const res = await fetch(`https://api.vapi.ai/tool${existingToolId ? `/${existingToolId}` : ''}`, {
+  method: existingToolId ? 'PATCH' : 'POST',
   headers: {
     Authorization: `Bearer ${vapiKey}`,
     'Content-Type': 'application/json',
@@ -51,6 +57,7 @@ const res = await fetch('https://api.vapi.ai/tool', {
           service:       { type: 'string', description: 'The service being booked' },
           dateTime:      { type: 'string', description: 'The appointment date and time as a full ISO 8601 datetime in the business\'s local timezone' },
           notes:         { type: 'string', description: "A short, optional note about what the customer wants for this specific booking — e.g. a design/colour preference, an allergy/sensitivity mention, or any other detail they shared. Omit if they didn't mention anything specific." },
+          staffMember:   { type: 'string', description: 'The name of the staff member the caller wants, if the business has a team and the caller specified or was offered one — omit for single-provider businesses or when no preference was given.' },
         },
         required: ['customerName', 'customerPhone', 'dateTime'],
       },
@@ -71,9 +78,13 @@ if (!res.ok) {
   process.exit(1)
 }
 
-console.log('Tool created successfully.')
-console.log('Add this to your .env:')
-console.log(`VAPI_BOOK_APPOINTMENT_TOOL_ID=${body.id}`)
+if (existingToolId) {
+  console.log(`Tool ${existingToolId} updated successfully.`)
+} else {
+  console.log('Tool created successfully.')
+  console.log('Add this to your .env:')
+  console.log(`VAPI_BOOK_APPOINTMENT_TOOL_ID=${body.id}`)
+}
 if (credentialId) {
   console.log('Also set VAPI_WEBHOOK_SECRET in .env to the same token you used for the Custom Credential.')
 }

@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { toE164Au } from '@/lib/sms'
+import { dateStrInZone } from '@/lib/timezone'
 import type { FakeSupabase } from '@/test/fakeSupabase'
 
 /**
@@ -138,6 +139,94 @@ describe('bookAppointment', () => {
     // No duplicate row should have been created for the conflicting slot.
     const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-book-2' && r.status !== 'cancelled')
     expect(rows).toHaveLength(1)
+  })
+})
+
+describe('bookAppointment with a staff roster', () => {
+  it('books two different staff members at the identical slot', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-staff-1', vapi_assistant_id: 'asst-staff-1', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-staff-1', name: 'Cut', duration_minutes: 30 }])
+    fakeSupabase.seed('business_staff', [
+      { id: 'staff-alice', business_id: 'biz-staff-1', name: 'Alice', active: true, hours: null },
+      { id: 'staff-bob', business_id: 'biz-staff-1', name: 'Bob', active: true, hours: null },
+    ])
+
+    const dateTime = '2026-08-03T04:00:00.000Z'
+    const reqAlice = toolCallRequest('asst-staff-1', 'call-staff-1a', 'bookAppointment', {
+      customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Cut', dateTime, staffMember: 'Alice',
+    })
+    const reqBob = toolCallRequest('asst-staff-1', 'call-staff-1b', 'bookAppointment', {
+      customerName: 'John Roe', customerPhone: '0400333444', service: 'Cut', dateTime, staffMember: 'Bob',
+    })
+
+    const resAlice = await POST(reqAlice)
+    const jsonAlice = await resAlice.json()
+    const resBob = await POST(reqBob)
+    const jsonBob = await resBob.json()
+
+    expect(jsonAlice.results[0].result).toMatch(/^Booked Cut for Jane Doe with Alice on/)
+    expect(jsonBob.results[0].result).toMatch(/^Booked Cut for John Roe with Bob on/)
+
+    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-staff-1' && r.status !== 'cancelled')
+    expect(rows).toHaveLength(2)
+    expect(rows.map(r => r.staff_id).sort()).toEqual(['staff-alice', 'staff-bob'])
+  })
+
+  it('still conflicts when the same staff member is booked twice at the same slot', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-staff-2', vapi_assistant_id: 'asst-staff-2', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-staff-2', name: 'Cut', duration_minutes: 30 }])
+    fakeSupabase.seed('business_staff', [{ id: 'staff-carol', business_id: 'biz-staff-2', name: 'Carol', active: true, hours: null }])
+    fakeSupabase.seed('appointments', [{
+      id: 'apt-carol-existing', business_id: 'biz-staff-2', service: 'Cut', staff_id: 'staff-carol',
+      customer_name: 'Existing Customer', customer_phone: '0499888777',
+      scheduled_at: '2026-08-03T05:00:00.000Z', status: 'confirmed',
+    }])
+
+    const req = toolCallRequest('asst-staff-2', 'call-staff-2', 'bookAppointment', {
+      customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Cut',
+      dateTime: '2026-08-03T05:00:00.000Z', staffMember: 'Carol',
+    })
+
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/^That time was just/)
+    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-staff-2' && r.status !== 'cancelled')
+    expect(rows).toHaveLength(1)
+  })
+})
+
+describe('checkAvailability with a per-date staff availability override', () => {
+  it('never offers a date where the staff member has an "unavailable" override, even though business hours are open that day', async () => {
+    // Every day open, so the assertion below doesn't depend on which day of the week "tomorrow" happens to be.
+    const allOpenHours = {
+      mon: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      tue: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      wed: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      thu: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      fri: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      sat: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      sun: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    }
+    const tz = 'Australia/Sydney'
+    const tomorrowKey = dateStrInZone(new Date(Date.now() + 24 * 60 * 60_000), tz)
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-avail-1', vapi_assistant_id: 'asst-avail-1', ...business({ hours: allOpenHours, timezone: tz }) }])
+    fakeSupabase.seed('business_staff', [{ id: 'staff-dana', business_id: 'biz-avail-1', name: 'Dana', active: true, hours: null }])
+    fakeSupabase.seed('business_staff_availability', [
+      { staff_id: 'staff-dana', date: tomorrowKey, is_available: false, opens_at: null, closes_at: null },
+    ])
+
+    const req = toolCallRequest('asst-avail-1', 'call-avail-1', 'checkAvailability', { staffMember: 'Dana' })
+    const res = await POST(req)
+    const json = await res.json()
+    const resultText = json.results[0].result as string
+
+    const isoTimestamps = [...resultText.matchAll(/\(([^)]+)\)/g)].map(m => m[1])
+    expect(isoTimestamps.length).toBeGreaterThan(0) // sanity check the tool actually returned slots at all
+    for (const iso of isoTimestamps) {
+      expect(dateStrInZone(new Date(iso), tz)).not.toBe(tomorrowKey)
+    }
   })
 })
 

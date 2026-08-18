@@ -56,9 +56,12 @@ type BizBriefingRow = {
 
 type LiveServiceRow = { id: string; name: string; duration_minutes: number | null; price_cents: number | null }
 type LiveFaqRow = { id: string; question: string; answer: string }
+type LiveStaffRow = { id: string; name: string; active: boolean; hours: unknown }
 
 /** Always the *live* values, ignoring any pending draft — used as the diff baseline. */
-export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[]): BriefingPayload {
+export function liveBriefing(
+  biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[], liveStaff: LiveStaffRow[],
+): BriefingPayload {
   return {
     greetingScript: biz.greeting_script ?? '',
     customInstructions: biz.custom_instructions ?? '',
@@ -66,6 +69,7 @@ export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[]
     transferRules: normalizeTransferRules(biz.transfer_rules),
     transferPhoneNumber: biz.transfer_phone_number ?? '',
     services: liveServices.map(s => ({ id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents })),
+    staff: liveStaff.map(s => ({ id: s.id, name: s.name, active: s.active, hours: s.hours as Hours | null })),
     faqs: liveFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer })),
     companyInfo: {
       description: biz.description ?? '',
@@ -81,11 +85,11 @@ export function liveBriefing(biz: BizBriefingRow, liveServices: LiveServiceRow[]
 
 /** Draft-preferred: returns the pending client draft if one exists, else falls back to live values. */
 export function resolveBriefing(
-  biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[],
+  biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[], liveStaff: LiveStaffRow[],
 ): BriefingPayload & { isDraft: boolean } {
   if (biz.draft_briefing) {
     const draft = biz.draft_briefing as BriefingPayload
-    return { ...draft, transferRules: normalizeTransferRules(draft.transferRules), isDraft: true }
+    return { ...draft, transferRules: normalizeTransferRules(draft.transferRules), staff: draft.staff ?? [], isDraft: true }
   }
-  return { ...liveBriefing(biz, liveServices, liveFaqs), isDraft: false }
+  return { ...liveBriefing(biz, liveServices, liveFaqs, liveStaff), isDraft: false }
 }

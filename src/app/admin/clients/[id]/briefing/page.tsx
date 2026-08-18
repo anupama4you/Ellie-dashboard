@@ -23,16 +23,17 @@ export default async function AdminBriefingPage({
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
   if (!biz) redirect('/admin/clients')
 
-  const [{ data: services }, { data: faqs }, { data: { user: clientUser } }] = await Promise.all([
+  const [{ data: services }, { data: faqs }, { data: staff }, { data: { user: clientUser } }] = await Promise.all([
     admin.from('business_services').select('*').eq('business_id', biz.id).order('sort_order'),
     admin.from('business_faqs').select('*').eq('business_id', biz.id).order('sort_order'),
+    admin.from('business_staff').select('*').eq('business_id', biz.id).order('sort_order'),
     admin.auth.admin.getUserById(biz.user_id),
   ])
 
   const reject = rejectDraftBriefing.bind(null, biz.id)
   const hasDraft = !!biz.draft_briefing
-  const draft = resolveBriefing(biz, services ?? [], faqs ?? [])
-  const live = liveBriefing(biz, services ?? [], faqs ?? [])
+  const draft = resolveBriefing(biz, services ?? [], faqs ?? [], staff ?? [])
+  const live = liveBriefing(biz, services ?? [], faqs ?? [], staff ?? [])
 
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">

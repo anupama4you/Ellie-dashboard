@@ -5,12 +5,14 @@ import { X, Plus } from 'lucide-react'
 import { createManualAppointment } from '@/app/(dashboard)/appointments/actions'
 
 type ServiceOption = { name: string; durationMinutes: number | null; priceCents: number | null }
+type StaffOption = { id: string; name: string }
 
-export default function AddAppointmentModal({ services, defaultDate }: { services: ServiceOption[]; defaultDate: string }) {
+export default function AddAppointmentModal({ services, staff, defaultDate }: { services: ServiceOption[]; staff: StaffOption[]; defaultDate: string }) {
   const [open, setOpen]         = useState(false)
   const [name, setName]         = useState('')
   const [phone, setPhone]       = useState('')
   const [service, setService]   = useState('')
+  const [staffId, setStaffId]   = useState('')
   const [date, setDate]         = useState(defaultDate)
   const [time, setTime]         = useState('09:00')
   const [isPending, startTransition] = useTransition()
@@ -25,9 +27,9 @@ export default function AddAppointmentModal({ services, defaultDate }: { service
     setError('')
     startTransition(async () => {
       try {
-        await createManualAppointment({ customerName: name, customerPhone: phone, service, date, time })
+        await createManualAppointment({ customerName: name, customerPhone: phone, service, date, time, staffId: staffId || null })
         setOpen(false)
-        setName(''); setPhone(''); setService('')
+        setName(''); setPhone(''); setService(''); setStaffId('')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to add appointment')
       }
@@ -106,6 +108,21 @@ export default function AddAppointmentModal({ services, defaultDate }: { service
                 />
               )}
             </div>
+
+            {staff.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Staff member</label>
+                <select
+                  value={staffId}
+                  onChange={e => setStaffId(e.target.value)}
+                  className="text-sm rounded-lg px-3 py-2"
+                  style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
+                >
+                  <option value="">No preference</option>
+                  {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">

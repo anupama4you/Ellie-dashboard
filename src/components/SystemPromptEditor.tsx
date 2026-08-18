@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { buildAssistantConfig, patchPromptSections, defaultGreeting } from '@/lib/assistantPrompt'
-import type { Hours, ServiceDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
+import type { Hours, ServiceDraft, StaffDraft, FaqDraft, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 import { adminSaveSystemPrompt, applyDraftAndPushPrompt } from '@/app/admin/clients/[id]/prompt/actions'
 
 type Props = {
@@ -17,6 +17,7 @@ type Props = {
     hours: Hours
     transferRules: string
     services: ServiceDraft[]
+    staff: StaffDraft[]
     faqs: FaqDraft[]
     companyInfo: CompanyInfo
   }
@@ -26,7 +27,7 @@ type Props = {
 
 const SECTION_LABEL: Record<string, string> = {
   description: 'description', location: 'location', website: 'website',
-  hours: 'hours', services: 'services', faqs: 'FAQs', transferRules: 'transfer rules',
+  hours: 'hours', services: 'services', staff: 'team', faqs: 'FAQs', transferRules: 'transfer rules',
 }
 
 export default function SystemPromptEditor({
@@ -53,6 +54,7 @@ export default function SystemPromptEditor({
         customInstructions: briefing.customInstructions,
         hours: briefing.hours,
         services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
+        staff: briefing.staff.map(s => ({ name: s.name, active: s.active })),
         faqs: briefing.faqs,
         transferRules: briefing.transferRules,
         companyInfo: briefing.companyInfo,
@@ -69,6 +71,7 @@ export default function SystemPromptEditor({
     const { patched, appliedSections, missingSections } = patchPromptSections(systemPrompt, {
       hours: briefing.hours,
       services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
+      staff: briefing.staff.map(s => ({ name: s.name, active: s.active })),
       faqs: briefing.faqs,
       transferRules: briefing.transferRules,
       companyInfo: briefing.companyInfo,

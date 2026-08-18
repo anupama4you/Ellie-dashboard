@@ -2,6 +2,7 @@ import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 type ServiceInput = { name: string; durationMinutes: number | null; priceCents: number | null }
 type FaqInput = { question: string; answer: string }
+type StaffInput = { name: string; active: boolean }
 
 const DAY_LABEL: Record<keyof Hours, string> = {
   mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
@@ -28,6 +29,13 @@ export function fmtServices(services: ServiceInput[]): string {
 export function fmtFaqs(faqs: FaqInput[]): string {
   if (faqs.length === 0) return '(No common questions configured yet.)'
   return faqs.map(f => `- Q: ${f.question}\n  A: ${f.answer}`).join('\n')
+}
+
+/** Only active staff are ever surfaced to Ellie — an inactive/removed staff member shouldn't be offered on calls even though the row still exists for historical appointments. */
+export function fmtStaff(staff: StaffInput[]): string {
+  const active = staff.filter(s => s.active)
+  if (active.length === 0) return '(No specific team members listed — treat this as a single-provider business and never ask who the caller wants.)'
+  return active.map(s => `- ${s.name}`).join('\n')
 }
 
 export function fmtTransferRules(instructions: string): string {
@@ -68,9 +76,9 @@ export function defaultGreeting(businessName: string): string {
  * in a given prompt — e.g. description as its own paragraph, location inline
  * after a "Location:" label the admin writes themselves.
  */
-export type BriefingSectionKey = 'description' | 'location' | 'website' | 'hours' | 'services' | 'faqs' | 'transferRules'
+export type BriefingSectionKey = 'description' | 'location' | 'website' | 'hours' | 'services' | 'staff' | 'faqs' | 'transferRules'
 
-const SECTION_KEYS: BriefingSectionKey[] = ['description', 'location', 'website', 'hours', 'services', 'faqs', 'transferRules']
+const SECTION_KEYS: BriefingSectionKey[] = ['description', 'location', 'website', 'hours', 'services', 'staff', 'faqs', 'transferRules']
 
 /** Sections meant to sit inline within hand-written text (e.g. after a "Location:" label) — patched without surrounding newlines. Everything else is a standalone block. */
 const INLINE_SECTIONS = new Set<BriefingSectionKey>(['location', 'website'])
@@ -82,6 +90,7 @@ export function sectionMarkers(key: BriefingSectionKey): { open: string; close: 
 export type BriefingSectionData = {
   hours: Hours
   services: ServiceInput[]
+  staff: StaffInput[]
   faqs: FaqInput[]
   transferRules: string
   companyInfo?: CompanyInfoInput
@@ -94,6 +103,7 @@ function sectionContent(key: BriefingSectionKey, data: BriefingSectionData): str
     case 'website':          return fmtWebsite(data.companyInfo)
     case 'hours':             return fmtHours(data.hours)
     case 'services':          return fmtServices(data.services)
+    case 'staff':              return fmtStaff(data.staff)
     case 'faqs':               return fmtFaqs(data.faqs)
     case 'transferRules':     return fmtTransferRules(data.transferRules)
   }
@@ -138,6 +148,7 @@ export function buildAssistantConfig(input: {
   customInstructions?: string
   hours: Hours
   services: ServiceInput[]
+  staff: StaffInput[]
   faqs: FaqInput[]
   transferRules: string
   companyInfo?: CompanyInfoInput
@@ -152,9 +163,21 @@ export function buildAssistantConfig(input: {
     website: sectionMarkers('website'),
     hours: sectionMarkers('hours'),
     services: sectionMarkers('services'),
+    staff: sectionMarkers('staff'),
     faqs: sectionMarkers('faqs'),
     transferRules: sectionMarkers('transferRules'),
   }
+
+  const activeStaffCount = input.staff.filter(s => s.active).length
+  const bookingSteps = [
+    'Ask for their first name. Repeat it back to confirm, e.g. "Got that as [name] — is that right?" If they say it\'s wrong or you\'re not confident you heard it clearly, apologise briefly and ask them to repeat it slowly.',
+    'Ask which service they\'d like. If they mention any specific detail about what they want (a particular design, a preference, an allergy or sensitivity, anything special) note it naturally in conversation — don\'t interrogate them for it, just capture whatever they volunteer.',
+    ...(activeStaffCount > 1
+      ? ['Ask which team member they\'d like, if any — offer to check the next available person if they have no preference. Pass whoever\'s chosen (or leave it out entirely if they have no preference) as staffMember on checkAvailability and bookAppointment.']
+      : []),
+    'Call the checkAvailability tool to see real open slots, then offer the next available time rather than asking an open "when works for you?" — suggest a specific slot (or two) from the tool\'s result and let them accept or ask for another. Never invent a time yourself.',
+    'You already have the caller\'s number as {{customer.number}} — never ask them to read out a number. Just confirm once that it\'s alright to text the booking confirmation to the number they\'re calling from.',
+  ].map((step, i) => `  ${i + 1}. ${step}`).join('\n')
 
   const systemPrompt = `You are Ellie, the AI receptionist for ${input.businessName}.
 
@@ -178,6 +201,11 @@ ${m.services.open}
 ${fmtServices(input.services)}
 ${m.services.close}
 
+Team:
+${m.staff.open}
+${fmtStaff(input.staff)}
+${m.staff.close}
+
 Common questions you can answer directly:
 ${m.faqs.open}
 ${fmtFaqs(input.faqs)}
@@ -192,11 +220,8 @@ ${customSection}
 How to handle every call:
 - Greet callers warmly and get straight to helping them.
 - For bookings, go one step at a time — never ask for several things in the same breath:
-  1. Ask for their first name. Repeat it back to confirm, e.g. "Got that as [name] — is that right?" If they say it's wrong or you're not confident you heard it clearly, apologise briefly and ask them to repeat it slowly.
-  2. Ask which service they'd like. If they mention any specific detail about what they want (a particular design, a preference, an allergy or sensitivity, anything special) note it naturally in conversation — don't interrogate them for it, just capture whatever they volunteer.
-  3. Call the checkAvailability tool to see real open slots, then offer the next available time rather than asking an open "when works for you?" — suggest a specific slot (or two) from the tool's result and let them accept or ask for another. Never invent a time yourself.
-  4. You already have the caller's number as {{customer.number}} — never ask them to read out a number. Just confirm once that it's alright to text the booking confirmation to the number they're calling from.
-  Once you have their name, service, and a chosen time, call the bookAppointment tool to actually confirm it — don't just say it's booked without calling the tool. If they mentioned any specific detail in step 2, pass it in the tool's optional notes field, in your own words, briefly. Booking this way automatically sends the caller a text confirmation, so you can tell them one is on its way.
+${bookingSteps}
+  Once you have their name, service, and a chosen time, call the bookAppointment tool to actually confirm it — don't just say it's booked without calling the tool. If they mentioned any specific detail earlier, pass it in the tool's optional notes field, in your own words, briefly. Booking this way automatically sends the caller a text confirmation, so you can tell them one is on its way.
 - For questions answerable from the context above: answer confidently and briefly.
 - For questions you cannot answer: "I'll make sure the team gets back to you on that — can I take your name and number?"
 - If directly asked whether you're an AI: be honest, then reassure them you can still fully help.

@@ -197,71 +197,33 @@ export async function getPhoneNumber(id: string): Promise<VapiPhoneNumber> {
   return vapiRequest(`/phone-number/${id}`, { cache: 'no-store' })
 }
 
-/** Tool IDs every assistant should have attached — created once via scripts/setup-vapi-tool.mjs */
-function requiredToolIds(): string[] {
-  return [
-    process.env.VAPI_BOOK_APPOINTMENT_TOOL_ID,
-    process.env.VAPI_CHECK_AVAILABILITY_TOOL_ID,
-    process.env.VAPI_FIND_APPOINTMENTS_TOOL_ID,
-    process.env.VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID,
-    process.env.VAPI_CANCEL_APPOINTMENT_TOOL_ID,
-    process.env.VAPI_TRANSFER_CALL_TOOL_ID,
-  ].filter((id): id is string => !!id)
-}
-
 /**
- * Assistant-level server.url is what makes Vapi send call-lifecycle events
- * (end-of-call-report, etc.) to us — separate from each tool's own
- * server.url, which only covers tool-calls. Without this, saved calls never
- * arrive. `server.secret`, if configured, is sent back by Vapi on every
- * webhook request for verification (exact header TBC against Vapi's current
- * docs — treat as best-effort until confirmed, real verification is tracked
- * separately).
+ * Fetch-then-patch so we only ever replace firstMessage and the system
+ * message — nothing else on the assistant. PATCH isn't guaranteed to
+ * deep-merge nested objects, so `model` is spread from the current value
+ * first (voice/transcriber/provider/toolIds all preserved exactly as they
+ * were) with only `messages` overwritten.
+ *
+ * Deliberately does NOT touch server.url, toolIds, or the analysis plan —
+ * those used to be auto-synced here too (via now-removed requiredServerConfig
+ * / requiredToolIds helpers), but that meant every "Save & push to Vapi" from
+ * the admin panel could silently overwrite a live assistant's server.url
+ * with whatever APP_URL/NEXT_PUBLIC_SITE_URL happened to be set to in
+ * *this* environment — including a developer's local `http://localhost:3000`
+ * if the admin panel was ever run locally against the production Supabase
+ * project. That's how one assistant ended up with a localhost server.url in
+ * production. Required tools and server config now have to be set another
+ * way (directly in the Vapi dashboard, or a one-off script) — this path is
+ * prompt-only, full stop.
  */
-function requiredServerConfig(current?: VapiAssistant['server']): VapiAssistant['server'] | undefined {
-  const base = process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL
-  if (!base) return current
-  const url = `${base.replace(/\/$/, '')}/api/vapi-webhook`
-  const secret = process.env.VAPI_WEBHOOK_SECRET
-  return { ...current, url, ...(secret ? { secret } : {}) }
-}
-
-/**
- * Fetch-then-patch so we only ever replace firstMessage, the system message,
- * and our required tools. PATCH isn't guaranteed to deep-merge nested
- * objects, so voice/transcriber/model provider are explicitly preserved
- * rather than risked, and any tool IDs already on the assistant (e.g. added
- * manually in the Vapi dashboard) are kept alongside ours.
- */
-/**
- * Vapi's summary is blank by default unless the assistant has an explicit
- * summaryPrompt — same deal for caller-name capture, which isn't something
- * Vapi resolves on its own for phone calls and has to be extracted from the
- * transcript via structuredDataSchema. Both land in the end-of-call-report's
- * `analysis` field (`analysis.summary`, `analysis.structuredData.callerName`).
- */
-const ANALYSIS_PLAN = {
-  summaryPrompt: "Summarize this call in one short line (under 12 words) describing what the caller wanted and the outcome — e.g. \"Booked haircut & blow dry, asked about parking\" or \"Asked about pricing, sent price list by SMS\". Plain text, no quotes, no mention that this is an AI or phone call.",
-  structuredDataPrompt: "Extract the caller's first name if they mentioned it at any point during the call. If they never gave a name, return null.",
-  structuredDataSchema: {
-    type: 'object',
-    properties: {
-      callerName: { type: 'string', description: "The caller's first name, or null if never mentioned" },
-    },
-  },
-}
-
 export async function syncAssistantPrompt(
   assistantId: string,
   opts: { firstMessage: string; systemPrompt: string },
 ): Promise<void> {
   const current = await getAssistant(assistantId)
-  const toolIds = Array.from(new Set([...(current.model?.toolIds ?? []), ...requiredToolIds()]))
   await updateAssistant(assistantId, {
     firstMessage: opts.firstMessage,
-    model: { ...current.model, messages: [{ role: 'system', content: opts.systemPrompt }], toolIds },
-    server: requiredServerConfig(current.server),
-    analysisPlan: ANALYSIS_PLAN,
+    model: { ...current.model, messages: [{ role: 'system', content: opts.systemPrompt }] },
   })
 }
 
