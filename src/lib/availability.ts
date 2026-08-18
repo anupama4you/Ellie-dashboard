@@ -164,12 +164,16 @@ export function findNextAvailableSlots(opts: {
 
 /**
  * Re-check that a specific instant `bookAppointment` is about to insert
- * actually falls inside the resolved staff/business hours for that day —
- * `bookAppointment` otherwise trusts `dateTime` verbatim from the model, with
- * no guarantee it came from a real prior `checkAvailability` call. Does NOT
- * check for overlap with existing appointments — the DB's unique index
- * already catches an exact double-booked slot; this only catches a time that
- * was never open in the first place (outside hours, or a staff day off).
+ * actually falls inside the resolved staff/business hours for that day, and
+ * isn't already in the past (or inside the same minimum lead time
+ * `findNextAvailableSlots` would've excluded it for) — a model that
+ * misresolves a relative day like "Thursday" to today's date instead of next
+ * week can otherwise produce a well-formed ISO timestamp for a slot hours
+ * behind the actual call, which "is this within business hours" alone
+ * doesn't catch. `bookAppointment` otherwise trusts `dateTime` verbatim from
+ * the model, with no guarantee it came from a real prior `checkAvailability`
+ * call. Does NOT check for overlap with existing appointments — the DB's
+ * unique index already catches an exact double-booked slot.
  */
 export function isWithinOpenHours(opts: {
   date: Date
@@ -178,8 +182,12 @@ export function isWithinOpenHours(opts: {
   timeZone: string
   staffHours?: Hours | null
   staffAvailabilityByDate?: Map<string, StaffDateOverride>
+  now?: Date
 }): boolean {
   if (isNaN(opts.date.getTime())) return false
+
+  const earliestStart = new Date((opts.now ?? new Date()).getTime() + MIN_LEAD_MINUTES * 60_000)
+  if (opts.date < earliestStart) return false
 
   const dateKey = dateStrInZone(opts.date, opts.timeZone)
   const dow = dayOfWeekInZone(opts.date, opts.timeZone)
