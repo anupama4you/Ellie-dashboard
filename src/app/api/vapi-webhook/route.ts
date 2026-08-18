@@ -66,6 +66,7 @@ async function computeAvailableSlots(
   requestedService: string | undefined,
   requestedStaffMember?: string,
   requestedStaffId?: string | null,
+  preferredDate?: string,
 ): Promise<{ slots: Date[]; resolvedStaffName: string | null }> {
   const [{ data: services }, resolvedStaff, { data: existing }] = await Promise.all([
     supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
@@ -119,6 +120,7 @@ async function computeAvailableSlots(
     staffId: resolvedStaff ? resolvedStaff.id : undefined,
     staffHours: resolvedStaff?.hours,
     staffAvailabilityByDate,
+    preferredDate,
   })
 
   return { slots, resolvedStaffName: resolvedStaff?.name ?? null }
@@ -251,12 +253,17 @@ export async function POST(req: Request) {
           if (!biz) {
             resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
           } else {
-            const { slots, resolvedStaffName } = await computeAvailableSlots(biz, args.service as string | undefined, args.staffMember as string | undefined)
+            const preferredDate = args.preferredDate as string | undefined
+            const { slots, resolvedStaffName } = await computeAvailableSlots(
+              biz, args.service as string | undefined, args.staffMember as string | undefined, undefined, preferredDate,
+            )
             const forWhom = resolvedStaffName ? ` for ${resolvedStaffName}` : ''
+            const firstSlotDate = slots[0] ? dateStrInZone(slots[0], biz.timezone) : null
+            const missedPreferredDay = !!preferredDate && !!firstSlotDate && firstSlotDate !== preferredDate
 
             resultText = slots.length
-              ? `Next available slots${forWhom}: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose${resolvedStaffName ? `, along with staffMember: "${resolvedStaffName}"` : ''}.`
-              : `No open slots found${forWhom} in the next two weeks — let the caller know you'll have someone reach out to schedule.`
+              ? `${missedPreferredDay ? "Nothing was open on the caller's preferred date, so these are the closest available instead — say so naturally, don't just offer them as if they matched what was asked. " : ''}Next available slots${forWhom}: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose${resolvedStaffName ? `, along with staffMember: "${resolvedStaffName}"` : ''}.`
+              : `No open slots found${forWhom}${preferredDate ? ' on or after the caller\'s preferred date' : ' in the next two weeks'} — let the caller know you'll have someone reach out to schedule.`
           }
         } catch (err) {
           captureError(err, { handler: 'checkAvailability' })

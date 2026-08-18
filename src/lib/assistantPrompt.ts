@@ -175,7 +175,7 @@ export function buildAssistantConfig(input: {
     ...(activeStaffCount > 1
       ? ['Ask which team member they\'d like, if any — offer to check the next available person if they have no preference. Pass whoever\'s chosen (or leave it out entirely if they have no preference) as staffMember on checkAvailability and bookAppointment.']
       : []),
-    'Call the checkAvailability tool to see real open slots, then offer the next available time rather than asking an open "when works for you?" — suggest a specific slot (or two) from the tool\'s result and let them accept or ask for another. Never invent a time yourself.',
+    'Call the checkAvailability tool to see real open slots, then offer the next available time rather than asking an open "when works for you?" — suggest a specific slot (or two) from the tool\'s result and let them accept or ask for another. If the caller named a specific day (e.g. "Thursday", "next Friday"), resolve it to a YYYY-MM-DD date and pass it as preferredDate so that day actually gets checked, rather than always getting whatever\'s soonest. Never invent a time yourself.',
     'You already have the caller\'s number as {{customer.number}} — never ask them to read out a number. Just confirm once that it\'s alright to text the booking confirmation to the number they\'re calling from.',
   ].map((step, i) => `  ${i + 1}. ${step}`).join('\n')
 

@@ -145,3 +145,63 @@ describe('findNextAvailableSlots — staff filtering and hours intersection', ()
     }
   })
 })
+
+describe('findNextAvailableSlots — preferredDate', () => {
+  it('starts the search at the preferred date instead of today, when that date is open', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 3,
+      preferredDate: dayKey(3), // Thursday — well after today (Monday)
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(3)
+    for (const s of slots) expect(localDateOf(s.toISOString())).toBe(dayKey(3))
+  })
+
+  it('falls through to later days when the preferred date itself has nothing open', () => {
+    // Business closed on the preferred day (Thursday) — should offer Friday instead of going all the way back to today.
+    const closedThursday: Hours = { ...ALL_OPEN, thu: { open: false, opensAt: '09:00', closesAt: '17:00' } }
+    const slots = findNextAvailableSlots({
+      hours: closedThursday,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(3),
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(localDateOf(slots[0].toISOString())).toBe(dayKey(4)) // Friday
+  })
+
+  it('ignores a preferred date in the past and searches from today as usual', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(-1), // yesterday
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(localDateOf(slots[0].toISOString())).toBe(dayKey(0))
+  })
+
+  it('ignores a malformed preferred date rather than erroring', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: 'next thursday',
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(localDateOf(slots[0].toISOString())).toBe(dayKey(0))
+  })
+})

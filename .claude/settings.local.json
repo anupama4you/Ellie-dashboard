@@ -16,7 +16,8 @@
       "Bash(grep -n \"NEXT_PUBLIC\\\\|SITE_URL\\\\|VERCEL_URL\" .env.local)",
       "Bash(grep -rn \"NEXT_PUBLIC_SITE_URL\\\\|process.env.URL\\\\|VERCEL_URL\" src)",
       "Bash(curl -sL \"https://bookings.gettimely.com/browzbeauty2/book?uri=https%3A%2F%2Fbook.gettimely.com%2FBooking%2FLocationSelected%3Fobg%3Da74dee5e-e7d1-4b67-8e42-f982216a3031\" -o /tmp/timely_page.html -D /tmp/timely_headers.txt -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36 \\(KHTML, like Gecko\\) Chrome/120.0 Safari/537.36\")",
-      "Bash(npx vitest *)"
+      "Bash(npx vitest *)",
+      "Bash(node -e ' *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\dilshana\\Documents\\projects\\ellie-dashboard\\src\\app\\admin\\clients"

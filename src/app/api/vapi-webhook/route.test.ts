@@ -230,6 +230,71 @@ describe('checkAvailability with a per-date staff availability override', () => 
   })
 })
 
+describe('checkAvailability with preferredDate', () => {
+  it('checks the caller\'s named day instead of always returning the soonest slots', async () => {
+    const allOpenHours = {
+      mon: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      tue: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      wed: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      thu: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      fri: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      sat: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      sun: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    }
+    const tz = 'Australia/Sydney'
+    // Five days out — clear of "today" so a bug that ignores preferredDate and just returns the soonest slots is caught.
+    const preferredDate = dateStrInZone(new Date(Date.now() + 5 * 24 * 60 * 60_000), tz)
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-pref-1', vapi_assistant_id: 'asst-pref-1', ...business({ hours: allOpenHours, timezone: tz }) }])
+
+    const req = toolCallRequest('asst-pref-1', 'call-pref-1', 'checkAvailability', { preferredDate })
+    const res = await POST(req)
+    const json = await res.json()
+    const resultText = json.results[0].result as string
+
+    const isoTimestamps = [...resultText.matchAll(/\(([^)]+)\)/g)].map(m => m[1])
+    expect(isoTimestamps.length).toBeGreaterThan(0)
+    for (const iso of isoTimestamps) {
+      expect(dateStrInZone(new Date(iso), tz)).toBe(preferredDate)
+    }
+    expect(resultText).not.toMatch(/nothing was open on the caller's preferred date/i)
+  })
+
+  it('offers the closest alternative and flags it when the preferred date has nothing open', async () => {
+    const closedFriday = {
+      mon: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      tue: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      wed: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      thu: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      fri: { open: false, opensAt: '00:00', closesAt: '23:59' },
+      sat: { open: true, opensAt: '00:00', closesAt: '23:59' },
+      sun: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    }
+    const tz = 'Australia/Sydney'
+    // Find the next actual Friday from "now" so the closed-day config lines up with the date under test.
+    let preferredDate = dateStrInZone(new Date(Date.now() + 24 * 60 * 60_000), tz)
+    for (let i = 0; i < 8; i++) {
+      const d = new Date(`${preferredDate}T12:00:00.000Z`)
+      if (new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d) === 'Fri') break
+      preferredDate = dateStrInZone(new Date(d.getTime() + 24 * 60 * 60_000), tz)
+    }
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-pref-2', vapi_assistant_id: 'asst-pref-2', ...business({ hours: closedFriday, timezone: tz }) }])
+
+    const req = toolCallRequest('asst-pref-2', 'call-pref-2', 'checkAvailability', { preferredDate })
+    const res = await POST(req)
+    const json = await res.json()
+    const resultText = json.results[0].result as string
+
+    const isoTimestamps = [...resultText.matchAll(/\(([^)]+)\)/g)].map(m => m[1])
+    expect(isoTimestamps.length).toBeGreaterThan(0)
+    for (const iso of isoTimestamps) {
+      expect(dateStrInZone(new Date(iso), tz)).not.toBe(preferredDate) // Friday is closed, so nothing should land on it
+    }
+    expect(resultText).toMatch(/nothing was open on the caller's preferred date/i)
+  })
+})
+
 describe('rescheduleAppointment', () => {
   it('moves the appointment and sends an updated confirmation SMS', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-resch-1', vapi_assistant_id: 'asst-resch-1', ...business({}) }])

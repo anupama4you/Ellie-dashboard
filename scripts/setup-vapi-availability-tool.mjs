@@ -47,8 +47,9 @@ const res = await fetch(`https://api.vapi.ai/tool${existingToolId ? `/${existing
       parameters: {
         type: 'object',
         properties: {
-          service:     { type: 'string', description: 'The service the caller wants to book, if known — used to look up its duration' },
-          staffMember: { type: 'string', description: 'The name of the staff member the caller wants, if the business has a team and the caller specified or was offered one — omit for single-provider businesses or when no preference was given, to check availability across the whole team.' },
+          service:       { type: 'string', description: 'The service the caller wants to book, if known — used to look up its duration' },
+          staffMember:   { type: 'string', description: 'The name of the staff member the caller wants, if the business has a team and the caller specified or was offered one — omit for single-provider businesses or when no preference was given, to check availability across the whole team.' },
+          preferredDate: { type: 'string', description: 'If the caller named a specific day they want (e.g. "Thursday", "next Friday", "the 20th"), resolve it to a concrete calendar date and pass it here as YYYY-MM-DD. This makes the search start from that date instead of the soonest day, so their actual preferred day gets checked rather than always returning whatever\'s earliest. Omit if they gave no day preference at all.' },
         },
         required: [],
       },

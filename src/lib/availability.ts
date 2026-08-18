@@ -53,6 +53,16 @@ export function findNextAvailableSlots(opts: {
   staffHours?: Hours | null
   /** Per-date overrides (keyed `YYYY-MM-DD` in `timeZone`) — takes precedence over `staffHours` and `hours` for that date. */
   staffAvailabilityByDate?: Map<string, StaffDateOverride>
+  /**
+   * A specific calendar date (`YYYY-MM-DD`, in `timeZone`) the caller asked
+   * about — e.g. "do you have anything Thursday?". When given, the walk
+   * starts at that date instead of today, so a day the caller explicitly
+   * named is actually checked (and offered first if open) rather than
+   * always being crowded out by whatever's soonest. Falls through to the
+   * normal today-first walk if it's missing, unparseable, in the past, or
+   * beyond the search window — never an error, just no preference applied.
+   */
+  preferredDate?: string | null
 }): Date[] {
   const now = opts.now ?? new Date()
   const duration = durationFor(opts.requestedService, opts.services)
@@ -81,7 +91,19 @@ export function findNextAvailableSlots(opts: {
   const [ty, tm, td] = dateStrInZone(now, opts.timeZone).split('-').map(Number)
   const todayCalendarMs = Date.UTC(ty, tm - 1, td)
 
-  for (let dayOffset = 0; dayOffset <= MAX_DAYS_AHEAD && slots.length < wantCount; dayOffset++) {
+  // A well-formed preferred date within the search window shifts where the
+  // walk starts; anything else (past, malformed, too far out) is silently
+  // ignored rather than rejected, so a caller's date preference can never
+  // itself cause a hard failure.
+  let startOffset = 0
+  const preferredMatch = opts.preferredDate?.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (preferredMatch) {
+    const preferredMs = Date.UTC(Number(preferredMatch[1]), Number(preferredMatch[2]) - 1, Number(preferredMatch[3]))
+    const offset = Math.round((preferredMs - todayCalendarMs) / 86_400_000)
+    if (offset > 0 && offset <= MAX_DAYS_AHEAD) startOffset = offset
+  }
+
+  for (let dayOffset = startOffset; dayOffset <= MAX_DAYS_AHEAD && slots.length < wantCount; dayOffset++) {
     const dayCalendar = new Date(todayCalendarMs + dayOffset * 86_400_000)
     const y = dayCalendar.getUTCFullYear()
     const mo = dayCalendar.getUTCMonth() + 1
