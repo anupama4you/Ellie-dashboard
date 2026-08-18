@@ -30,6 +30,33 @@ function intersectDayHours(a: Hours[keyof Hours], b: Hours[keyof Hours]): Hours[
 }
 
 /**
+ * Effective open/close window for one calendar day: business hours narrowed
+ * by the staff member's own weekly template (if any), then overridden
+ * entirely by a per-date staff exception (if one exists for that date) —
+ * shared by the slot-search walk and the single-instant check below so the
+ * two can never disagree about what "open" means for a given day.
+ */
+function resolveDayHours(
+  dow: number,
+  dateKey: string,
+  hours: Hours,
+  staffHours?: Hours | null,
+  staffAvailabilityByDate?: Map<string, StaffDateOverride>,
+): Hours[keyof Hours] {
+  let dayHours = hours[DAY_KEYS[dow]]
+  if (staffHours) dayHours = intersectDayHours(dayHours, staffHours[DAY_KEYS[dow]])
+
+  const override = staffAvailabilityByDate?.get(dateKey)
+  if (override) {
+    dayHours = override.isAvailable && override.opensAt && override.closesAt
+      ? intersectDayHours(hours[DAY_KEYS[dow]], { open: true, opensAt: override.opensAt, closesAt: override.closesAt })
+      : { open: false, opensAt: dayHours.opensAt, closesAt: dayHours.closesAt }
+  }
+
+  return dayHours
+}
+
+/**
  * Walks forward day by day (respecting business hours, in the business's own
  * timezone — not the server's) looking for gaps that don't overlap any
  * existing appointment. Appointments don't store their own end time, so each
@@ -109,17 +136,8 @@ export function findNextAvailableSlots(opts: {
     const mo = dayCalendar.getUTCMonth() + 1
     const d = dayCalendar.getUTCDate()
     const dow = dayCalendar.getUTCDay()
-
-    let dayHours = opts.hours[DAY_KEYS[dow]]
-    if (opts.staffHours) dayHours = intersectDayHours(dayHours, opts.staffHours[DAY_KEYS[dow]])
-
     const dateKey = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    const override = opts.staffAvailabilityByDate?.get(dateKey)
-    if (override) {
-      dayHours = override.isAvailable && override.opensAt && override.closesAt
-        ? intersectDayHours(opts.hours[DAY_KEYS[dow]], { open: true, opensAt: override.opensAt, closesAt: override.closesAt })
-        : { open: false, opensAt: dayHours.opensAt, closesAt: dayHours.closesAt }
-    }
+    const dayHours = resolveDayHours(dow, dateKey, opts.hours, opts.staffHours, opts.staffAvailabilityByDate)
 
     if (!dayHours.open) continue
 
@@ -142,6 +160,40 @@ export function findNextAvailableSlots(opts: {
   }
 
   return slots
+}
+
+/**
+ * Re-check that a specific instant `bookAppointment` is about to insert
+ * actually falls inside the resolved staff/business hours for that day —
+ * `bookAppointment` otherwise trusts `dateTime` verbatim from the model, with
+ * no guarantee it came from a real prior `checkAvailability` call. Does NOT
+ * check for overlap with existing appointments — the DB's unique index
+ * already catches an exact double-booked slot; this only catches a time that
+ * was never open in the first place (outside hours, or a staff day off).
+ */
+export function isWithinOpenHours(opts: {
+  date: Date
+  durationMinutes: number
+  hours: Hours
+  timeZone: string
+  staffHours?: Hours | null
+  staffAvailabilityByDate?: Map<string, StaffDateOverride>
+}): boolean {
+  if (isNaN(opts.date.getTime())) return false
+
+  const dateKey = dateStrInZone(opts.date, opts.timeZone)
+  const dow = dayOfWeekInZone(opts.date, opts.timeZone)
+  const dayHours = resolveDayHours(dow, dateKey, opts.hours, opts.staffHours, opts.staffAvailabilityByDate)
+  if (!dayHours.open) return false
+
+  const [y, mo, d] = dateKey.split('-').map(Number)
+  const [openH, openM] = dayHours.opensAt.split(':').map(Number)
+  const [closeH, closeM] = dayHours.closesAt.split(':').map(Number)
+  const open = zonedTimeToUtc(opts.timeZone, y, mo, d, openH, openM)
+  const close = zonedTimeToUtc(opts.timeZone, y, mo, d, closeH, closeM)
+  const end = new Date(opts.date.getTime() + opts.durationMinutes * 60_000)
+
+  return opts.date >= open && end <= close
 }
 
 export function formatSlot(d: Date, timeZone: string): string {

@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
 import { phoneDigitsKey, toE164Au } from '@/lib/sms'
-import { findNextAvailableSlots, formatSlot, durationFor } from '@/lib/availability'
+import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone, dateStrInZone } from '@/lib/timezone'
@@ -261,9 +261,18 @@ export async function POST(req: Request) {
             const firstSlotDate = slots[0] ? dateStrInZone(slots[0], biz.timezone) : null
             const missedPreferredDay = !!preferredDate && !!firstSlotDate && firstSlotDate !== preferredDate
 
-            resultText = slots.length
+            // Grounds the model against the real clock every time — it has
+            // to resolve relative days ("Thursday", "tomorrow") itself with
+            // nothing else anchoring "today" in its own context, so a wrong
+            // guess here is otherwise never caught (see PROJECT_CONTEXT.md).
+            // Repeating this on every call lets it self-correct mid-booking
+            // rather than only ever getting it from a stale system prompt.
+            const todayLabel = formatInZone(new Date(), biz.timezone, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+            const dateAnchor = `Today is ${todayLabel} in ${biz.timezone}. `
+
+            resultText = dateAnchor + (slots.length
               ? `${missedPreferredDay ? "Nothing was open on the caller's preferred date, so these are the closest available instead — say so naturally, don't just offer them as if they matched what was asked. " : ''}Next available slots${forWhom}: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose${resolvedStaffName ? `, along with staffMember: "${resolvedStaffName}"` : ''}.`
-              : `No open slots found${forWhom}${preferredDate ? ' on or after the caller\'s preferred date' : ' in the next two weeks'} — let the caller know you'll have someone reach out to schedule.`
+              : `No open slots found${forWhom}${preferredDate ? ' on or after the caller\'s preferred date' : ' in the next two weeks'} — let the caller know you'll have someone reach out to schedule.`)
           }
         } catch (err) {
           captureError(err, { handler: 'checkAvailability' })
@@ -606,6 +615,50 @@ export async function POST(req: Request) {
             resolveStaffMember(biz.id, args.staffMember as string | undefined),
           ])
           const durationMins = durationFor(args.service as string | undefined, services ?? [])
+
+          // `dateTime` is trusted verbatim from the model — nothing upstream
+          // guarantees it actually came from a real checkAvailability result
+          // (the model can misresolve a relative day like "Thursday" and
+          // still pass a well-formed but wrong ISO string). Re-check it
+          // against real hours before writing it, rather than only catching
+          // an exact double-booked slot via the DB's unique index below.
+          let staffAvailabilityByDate: Map<string, { isAvailable: boolean; opensAt: string | null; closesAt: string | null }> | undefined
+          if (resolvedStaff) {
+            const { data: overrides } = await supabase
+              .from('business_staff_availability')
+              .select('date, is_available, opens_at, closes_at')
+              .eq('staff_id', resolvedStaff.id)
+              .eq('date', dateStrInZone(new Date(args.dateTime as string), biz.timezone))
+
+            staffAvailabilityByDate = new Map((overrides ?? []).map(o => [o.date, {
+              isAvailable: o.is_available,
+              opensAt: o.opens_at ? (o.opens_at as string).slice(0, 5) : null,
+              closesAt: o.closes_at ? (o.closes_at as string).slice(0, 5) : null,
+            }]))
+          }
+
+          const withinHours = isWithinOpenHours({
+            date: new Date(args.dateTime as string),
+            durationMinutes: durationMins,
+            hours: biz.hours as Hours,
+            timeZone: biz.timezone,
+            staffHours: resolvedStaff?.hours,
+            staffAvailabilityByDate,
+          })
+
+          if (!withinHours) {
+            let recoveryText = "That time isn't actually available — apologise briefly, then call checkAvailability again to offer the caller a real time."
+            try {
+              const { slots, resolvedStaffName } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, resolvedStaff?.id)
+              if (slots.length) {
+                recoveryText = `That time isn't actually available${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to bookAppointment for whichever they choose.`
+              }
+            } catch (altErr) {
+              console.error('Failed to compute alternative slots after an out-of-hours booking attempt:', altErr)
+            }
+            results.push({ toolCallId: toolCall.id, result: recoveryText })
+            continue
+          }
 
           const appointmentRow = {
             business_id:    biz.id,

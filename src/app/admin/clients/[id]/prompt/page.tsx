@@ -40,6 +40,7 @@ export default async function AdminSystemPromptPage({
     staff: resolved.staff,
     faqs: resolved.faqs,
     companyInfo: resolved.companyInfo,
+    timezone: biz.timezone,
   }
 
   let initialFirstMessage = defaultGreeting(biz.name)

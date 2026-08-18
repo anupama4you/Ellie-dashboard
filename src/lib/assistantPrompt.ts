@@ -152,6 +152,8 @@ export function buildAssistantConfig(input: {
   faqs: FaqInput[]
   transferRules: string
   companyInfo?: CompanyInfoInput
+  /** IANA timezone the business operates in, e.g. "Australia/Adelaide" — anchors {{now}} so the model can resolve relative days ("Thursday", "tomorrow") against a real clock instead of guessing. */
+  timezone: string
 }): { firstMessage: string; systemPrompt: string } {
   const customSection = input.customInstructions?.trim()
     ? `\nAdditional instructions from the business owner — follow these closely, they override general guidance above if they conflict:\n${input.customInstructions.trim()}\n`
@@ -175,13 +177,15 @@ export function buildAssistantConfig(input: {
     ...(activeStaffCount > 1
       ? ['Ask which team member they\'d like, if any — offer to check the next available person if they have no preference. Pass whoever\'s chosen (or leave it out entirely if they have no preference) as staffMember on checkAvailability and bookAppointment.']
       : []),
-    'Call the checkAvailability tool to see real open slots, then offer the next available time rather than asking an open "when works for you?" — suggest a specific slot (or two) from the tool\'s result and let them accept or ask for another. If the caller named a specific day (e.g. "Thursday", "next Friday"), resolve it to a YYYY-MM-DD date and pass it as preferredDate so that day actually gets checked, rather than always getting whatever\'s soonest. Never invent a time yourself.',
+    'Call the checkAvailability tool to see real open slots, then offer the next available time rather than asking an open "when works for you?" — suggest a specific slot (or two) from the tool\'s result and let them accept or ask for another. If the caller named a specific day (e.g. "Thursday", "next Friday"), resolve it to a YYYY-MM-DD date (using today\'s real date from {{now}} above, not a guess) and pass it as preferredDate so that day actually gets checked, rather than always getting whatever\'s soonest. Never invent a time yourself. Every checkAvailability result also restates today\'s real date — if it doesn\'t match what you assumed, recompute and call it again before offering anything.',
     'You already have the caller\'s number as {{customer.number}} — never ask them to read out a number. Just confirm once that it\'s alright to text the booking confirmation to the number they\'re calling from.',
   ].map((step, i) => `  ${i + 1}. ${step}`).join('\n')
 
   const systemPrompt = `You are Ellie, the AI receptionist for ${input.businessName}.
 
 Persona: Warm, professional, calm under pressure. Speak in natural Australian English. Never sound robotic.
+
+The current date and time (UTC) is {{now}}. This business runs on ${input.timezone} time — convert {{now}} to that timezone before working out today's real date and day of the week. Do this conversion carefully every time a caller names a relative day ("Thursday", "tomorrow", "next Friday", "the 20th") — get it wrong and you'll offer or book the wrong day entirely. Never guess; always work it out from {{now}}.
 
 About the business:
 ${m.description.open}

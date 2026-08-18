@@ -20,6 +20,7 @@ type Props = {
     staff: StaffDraft[]
     faqs: FaqDraft[]
     companyInfo: CompanyInfo
+    timezone: string
   }
   hasDraft: boolean
   expectedBriefingUpdatedAt: string | null
@@ -58,6 +59,7 @@ export default function SystemPromptEditor({
         faqs: briefing.faqs,
         transferRules: briefing.transferRules,
         companyInfo: briefing.companyInfo,
+        timezone: briefing.timezone,
       })
       setFirstMessage(generated.firstMessage)
       setSystemPrompt(generated.systemPrompt)
