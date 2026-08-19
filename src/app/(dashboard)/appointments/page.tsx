@@ -10,7 +10,7 @@ import RefreshButton from '@/components/RefreshButton'
 import AddAppointmentModal from '@/components/AddAppointmentModal'
 import AppointmentActions from '@/components/AppointmentActions'
 import MonthGrid, { type MonthChip } from '@/components/MonthGrid'
-import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
+import { CalendarDays, Phone, ChevronLeft, ChevronRight, ExternalLink, User } from 'lucide-react'
 import { LinkIconOrSpinner, LinkPendingFade } from '@/components/LinkPending'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string; border: string }> = {
@@ -399,8 +399,8 @@ export default async function AppointmentsPage({
                     appt.service || null,
                     svc?.duration_minutes ? `${svc.duration_minutes} min` : null,
                     svc?.price_cents != null ? `$${(svc.price_cents / 100).toFixed(0)}` : null,
-                    appt.staff_id ? staffNameById.get(appt.staff_id) ?? null : null,
                   ].filter(Boolean)
+                  const staffName = appt.staff_id ? staffNameById.get(appt.staff_id) ?? null : null
 
                   const bookedByEllie = !!appt.vapi_call_id
                   const callInfo = appt.vapi_call_id ? callInfoByVapiId.get(appt.vapi_call_id) : undefined
@@ -426,6 +426,15 @@ export default async function AppointmentsPage({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{appt.customer_name}</p>
+                            {staffName && (
+                              <span
+                                className="flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-full shrink-0 capitalize"
+                                style={{ background: 'var(--violet-soft)', color: 'var(--violet)' }}
+                              >
+                                <User size={9} />
+                                {staffName}
+                              </span>
+                            )}
                             {appt.customer_phone && (
                               <span className="flex items-center gap-1 shrink-0" style={{ color: 'var(--ink-3)' }}>
                                 <Phone size={9} />
