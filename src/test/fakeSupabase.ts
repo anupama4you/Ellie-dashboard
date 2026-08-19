@@ -17,7 +17,7 @@
 const NO_STAFF_SENTINEL = '00000000-0000-0000-0000-000000000000'
 
 type Row = Record<string, unknown>
-type Op = 'eq' | 'neq' | 'gte' | 'lte'
+type Op = 'eq' | 'neq' | 'gte' | 'lte' | 'in'
 
 class Table {
   rows: Row[] = []
@@ -44,6 +44,7 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
   neq(k: string, v: unknown) { this.filters.push([k, 'neq', v]); return this }
   gte(k: string, v: unknown) { this.filters.push([k, 'gte', v]); return this }
   lte(k: string, v: unknown) { this.filters.push([k, 'lte', v]); return this }
+  in(k: string, v: unknown[]) { this.filters.push([k, 'in', v]); return this }
   order(k: string) { this.orderKey = k; return this }
   limit(n: number) { this.limitN = n; return this }
   single() { this.wantsSingle = true; return this }
@@ -55,6 +56,7 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
       if (op === 'neq') return rv !== v
       if (op === 'gte') return (rv as string) >= (v as string)
       if (op === 'lte') return (rv as string) <= (v as string)
+      if (op === 'in') return (v as unknown[]).includes(rv)
       return true
     })
   }

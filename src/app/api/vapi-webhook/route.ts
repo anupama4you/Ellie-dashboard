@@ -18,6 +18,45 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+/**
+ * Short-lived cache for the one genuinely slow, safely-cacheable step in
+ * checkAvailability: the round trip to Google's free/busy API. A call often
+ * asks checkAvailability three or four times in quick succession (different
+ * staff, different day, "anything later?") — each one otherwise re-paying
+ * that external network hop even though the answer can't realistically have
+ * changed in the last few seconds. Local data (appointments, staff, services)
+ * is deliberately NOT cached here — those reads are already fast (same
+ * Supabase project) and freshness matters most for them, since they're what
+ * actually prevents a double-booking. Keyed per business, process-local
+ * (each warm serverless instance has its own — fine, since consecutive tool
+ * calls within one live call almost always land on the same instance; a
+ * cold/different instance just pays the round trip again, same as today).
+ */
+const FREE_BUSY_CACHE_TTL_MS = 30_000
+const freeBusyCache = new Map<string, { expires: number; data: { start: Date; end: Date }[] }>()
+
+async function getFreeBusy(bizId: string, now: Date, lookout: Date): Promise<{ start: Date; end: Date }[]> {
+  const cached = freeBusyCache.get(bizId)
+  if (cached && cached.expires > Date.now()) return cached.data
+
+  try {
+    const google = await getValidAccessToken(supabase, bizId)
+    if (!google) return []
+    const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
+    const data = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
+    freeBusyCache.set(bizId, { expires: Date.now() + FREE_BUSY_CACHE_TTL_MS, data })
+    return data
+  } catch (calErr) {
+    console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
+    return []
+  }
+}
+
+/** Call right after any successful Google Calendar mutation, so the next checkAvailability in the same call never offers a slot the call itself just filled or freed up. */
+function invalidateFreeBusyCache(bizId: string): void {
+  freeBusyCache.delete(bizId)
+}
+
 type ToolCall = {
   id: string
   name?: string
@@ -84,16 +123,7 @@ async function computeAvailableSlots(
   const now = new Date()
   const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
 
-  let externalBusy: { start: Date; end: Date }[] = []
-  try {
-    const google = await getValidAccessToken(supabase, biz.id)
-    if (google) {
-      const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
-      externalBusy = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
-    }
-  } catch (calErr) {
-    console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
-  }
+  const externalBusy = await getFreeBusy(biz.id, now, lookout)
 
   const fetchOverridesByStaff = async (staffIds: string[]) => {
     const { data: overrides } = await supabase
@@ -452,6 +482,7 @@ export async function POST(req: Request) {
                       const start = new Date(args.newDateTime as string)
                       const end = new Date(start.getTime() + durationMins * 60_000)
                       await updateCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id, { start, end })
+                      invalidateFreeBusyCache(biz.id)
                     }
                   } catch (calErr) {
                     console.error('Failed to update Google Calendar event — reschedule already saved locally:', calErr)
@@ -531,6 +562,7 @@ export async function POST(req: Request) {
                     const google = await getValidAccessToken(supabase, biz.id)
                     if (google) {
                       await deleteCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id)
+                      invalidateFreeBusyCache(biz.id)
                     }
                   } catch (calErr) {
                     console.error('Failed to delete Google Calendar event — cancellation already saved locally:', calErr)
@@ -811,6 +843,7 @@ export async function POST(req: Request) {
                 await supabase.from('appointments')
                   .update({ calendar_event_id: event.id, calendar_event_link: event.htmlLink ?? null })
                   .eq('id', inserted!.id)
+                invalidateFreeBusyCache(biz.id)
               }
             } catch (calErr) {
               console.error('Failed to create Google Calendar event — booking already saved locally:', calErr)

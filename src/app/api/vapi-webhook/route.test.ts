@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { toE164Au } from '@/lib/sms'
-import { dateStrInZone } from '@/lib/timezone'
+import { dateStrInZone, zonedTimeToUtc } from '@/lib/timezone'
 import type { FakeSupabase } from '@/test/fakeSupabase'
 
 /**
@@ -62,6 +62,24 @@ function business(overrides: Record<string, unknown>) {
   }
 }
 
+/**
+ * A future weekday instant N days out, nudged past any weekend so it always
+ * falls within the fixed Mon-Fri HOURS fixture above. A hardcoded literal
+ * calendar date would eventually become "the past" as real time moves on —
+ * which the deliberate isWithinOpenHours() past-time rejection then
+ * (correctly) rejects, breaking these tests for reasons that have nothing
+ * to do with what they're actually testing.
+ */
+function futureWeekdayIso(daysAhead: number, localHHMM: string, tz = 'Australia/Sydney'): string {
+  let d = new Date(Date.now() + daysAhead * 24 * 60 * 60_000)
+  while (['Sat', 'Sun'].includes(new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(d))) {
+    d = new Date(d.getTime() + 24 * 60 * 60_000)
+  }
+  const [y, mo, day] = dateStrInZone(d, tz).split('-').map(Number)
+  const [h, m] = localHHMM.split(':').map(Number)
+  return zonedTimeToUtc(tz, y, mo, day, h, m).toISOString()
+}
+
 let fakeSupabase: FakeSupabase
 let sendSms: ReturnType<typeof vi.fn>
 let POST: typeof import('./route').POST
@@ -101,7 +119,7 @@ describe('bookAppointment', () => {
       customerName: 'Jane Doe',
       customerPhone: '0400111222',
       service: 'Manicure',
-      dateTime: '2026-08-03T04:00:00.000Z',
+      dateTime: futureWeekdayIso(10, '14:00'),
     })
 
     const res = await POST(req)
@@ -118,18 +136,19 @@ describe('bookAppointment', () => {
   it('recovers with an apology instead of a dead-end when the slot was just taken', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-book-2', vapi_assistant_id: 'asst-book-2', ...business({}) }])
     fakeSupabase.seed('business_services', [{ business_id: 'biz-book-2', name: 'Manicure', duration_minutes: 45 }])
+    const conflictTime = futureWeekdayIso(11, '15:00')
     // Simulate another caller having already booked this exact slot.
     fakeSupabase.seed('appointments', [{
       id: 'apt-existing', business_id: 'biz-book-2', service: 'Manicure',
       customer_name: 'Other Customer', customer_phone: '0499888777',
-      scheduled_at: '2026-08-03T05:00:00.000Z', status: 'confirmed',
+      scheduled_at: conflictTime, status: 'confirmed',
     }])
 
     const req = toolCallRequest('asst-book-2', 'call-2', 'bookAppointment', {
       customerName: 'Jane Doe',
       customerPhone: '0400111222',
       service: 'Manicure',
-      dateTime: '2026-08-03T05:00:00.000Z',
+      dateTime: conflictTime,
     })
 
     const res = await POST(req)
@@ -151,7 +170,7 @@ describe('bookAppointment with a staff roster', () => {
       { id: 'staff-bob', business_id: 'biz-staff-1', name: 'Bob', active: true, hours: null },
     ])
 
-    const dateTime = '2026-08-03T04:00:00.000Z'
+    const dateTime = futureWeekdayIso(12, '14:00')
     const reqAlice = toolCallRequest('asst-staff-1', 'call-staff-1a', 'bookAppointment', {
       customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Cut', dateTime, staffMember: 'Alice',
     })
@@ -176,15 +195,16 @@ describe('bookAppointment with a staff roster', () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-staff-2', vapi_assistant_id: 'asst-staff-2', ...business({}) }])
     fakeSupabase.seed('business_services', [{ business_id: 'biz-staff-2', name: 'Cut', duration_minutes: 30 }])
     fakeSupabase.seed('business_staff', [{ id: 'staff-carol', business_id: 'biz-staff-2', name: 'Carol', active: true, hours: null }])
+    const carolTime = futureWeekdayIso(13, '15:00')
     fakeSupabase.seed('appointments', [{
       id: 'apt-carol-existing', business_id: 'biz-staff-2', service: 'Cut', staff_id: 'staff-carol',
       customer_name: 'Existing Customer', customer_phone: '0499888777',
-      scheduled_at: '2026-08-03T05:00:00.000Z', status: 'confirmed',
+      scheduled_at: carolTime, status: 'confirmed',
     }])
 
     const req = toolCallRequest('asst-staff-2', 'call-staff-2', 'bookAppointment', {
       customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Cut',
-      dateTime: '2026-08-03T05:00:00.000Z', staffMember: 'Carol',
+      dateTime: carolTime, staffMember: 'Carol',
     })
 
     const res = await POST(req)
@@ -295,19 +315,61 @@ describe('checkAvailability with preferredDate', () => {
   })
 })
 
+describe('checkAvailability caches Google Calendar free/busy', () => {
+  it('reuses the free/busy result across consecutive calls, and refetches once a booking invalidates it', async () => {
+    const googleModule = await import('@/lib/googleCalendar')
+    const getValidAccessToken = googleModule.getValidAccessToken as unknown as ReturnType<typeof vi.fn>
+    const freeBusyQuery = googleModule.freeBusyQuery as unknown as ReturnType<typeof vi.fn>
+    const createCalendarEvent = googleModule.createCalendarEvent as unknown as ReturnType<typeof vi.fn>
+
+    getValidAccessToken.mockResolvedValue({ accessToken: 'test-token', calendarId: 'cal-cache-1' })
+    freeBusyQuery.mockResolvedValue([])
+    createCalendarEvent.mockResolvedValue({ id: 'evt-cache-1', htmlLink: 'https://calendar.google.com/evt-cache-1' })
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-cache-1', vapi_assistant_id: 'asst-cache-1', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-cache-1', name: 'Manicure', duration_minutes: 30 }])
+
+    const check = () => POST(toolCallRequest('asst-cache-1', 'call-cache-1', 'checkAvailability', {}))
+
+    try {
+      await check()
+      expect(freeBusyQuery).toHaveBeenCalledTimes(1)
+
+      await check()
+      expect(freeBusyQuery).toHaveBeenCalledTimes(1) // cache hit — no second network call
+
+      const bookRes = await POST(toolCallRequest('asst-cache-1', 'call-cache-1b', 'bookAppointment', {
+        customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Manicure',
+        dateTime: futureWeekdayIso(20, '14:00'),
+      }))
+      const bookJson = await bookRes.json()
+      expect(bookJson.results[0].result).toMatch(/^Booked Manicure for Jane Doe on/)
+
+      await check()
+      expect(freeBusyQuery).toHaveBeenCalledTimes(2) // the booking's calendar mutation invalidated the cache
+    } finally {
+      // Restore the file's shared mocks to their original defaults so later tests aren't affected.
+      getValidAccessToken.mockResolvedValue(null)
+      freeBusyQuery.mockReset()
+      createCalendarEvent.mockReset()
+    }
+  })
+})
+
 describe('rescheduleAppointment', () => {
   it('moves the appointment and sends an updated confirmation SMS', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-resch-1', vapi_assistant_id: 'asst-resch-1', ...business({}) }])
     fakeSupabase.seed('business_services', [{ business_id: 'biz-resch-1', name: 'Pedicure', duration_minutes: 60 }])
+    const newTime = futureWeekdayIso(15, '15:00')
     fakeSupabase.seed('appointments', [{
       id: 'apt-resch-1', business_id: 'biz-resch-1', service: 'Pedicure',
       customer_name: 'John Smith', customer_phone: '0400333444',
-      scheduled_at: '2026-08-04T04:00:00.000Z', status: 'confirmed', calendar_event_id: null,
+      scheduled_at: futureWeekdayIso(14, '14:00'), status: 'confirmed', calendar_event_id: null,
     }])
 
     const req = toolCallRequest('asst-resch-1', 'call-resch-1', 'rescheduleAppointment', {
       appointmentId: 'apt-resch-1',
-      newDateTime: '2026-08-05T05:00:00.000Z',
+      newDateTime: newTime,
     })
 
     const res = await POST(req)
@@ -317,7 +379,7 @@ describe('rescheduleAppointment', () => {
     expect(sendSms).toHaveBeenCalledWith('0400333444', expect.stringContaining('moved'), '+61400000000')
 
     const row = fakeSupabase.rows('appointments').find(r => r.id === 'apt-resch-1')
-    expect(row).toMatchObject({ status: 'rescheduled', scheduled_at: '2026-08-05T05:00:00.000Z' })
+    expect(row).toMatchObject({ status: 'rescheduled', scheduled_at: newTime })
   })
 })
 
@@ -327,7 +389,7 @@ describe('cancelAppointment', () => {
     fakeSupabase.seed('appointments', [{
       id: 'apt-cancel-1', business_id: 'biz-cancel-1', service: 'Haircut',
       customer_name: 'Amy Lee', customer_phone: '0400555666',
-      scheduled_at: '2026-08-06T02:00:00.000Z', status: 'confirmed', calendar_event_id: null,
+      scheduled_at: futureWeekdayIso(16, '12:00'), status: 'confirmed', calendar_event_id: null,
     }])
 
     const req = toolCallRequest('asst-cancel-1', 'call-cancel-1', 'cancelAppointment', {
