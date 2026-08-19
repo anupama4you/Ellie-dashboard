@@ -72,6 +72,27 @@ describe('findNextAvailableSlots — staff filtering and hours intersection', ()
     expect(slots.some(s => s.toISOString() === conflictSlot)).toBe(true)
   })
 
+  it('offers the exact moment a non-round-duration booking ends, not the next 30-minute grid mark', () => {
+    // A 45-minute booking from 09:00 frees up at 09:45 — not on the :00/:30
+    // grid the search otherwise steps on, so it must be found by jumping
+    // straight to the busy interval's real end, not by assuming every
+    // service is a multiple of the step size.
+    const bookedStart = localInstant(3, '09:00')
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [{ name: 'Gel Manicure', duration_minutes: 45 }],
+      existing: [{ scheduled_at: bookedStart, service: 'Gel Manicure', staff_id: 'staff-sarah' }],
+      now: NOW,
+      count: 1,
+      staffId: 'staff-sarah',
+      requestedService: 'Gel Manicure',
+      preferredDate: dayKey(3),
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(3, '09:45'))
+  })
+
   it('intersects staffHours with business hours — narrower of the two wins', () => {
     // Only Tuesday open at the business level, so every returned slot is unambiguously on the day under test regardless of how many other days would otherwise have filled the count.
     const CLOSED = { open: false, opensAt: '09:00', closesAt: '17:00' }

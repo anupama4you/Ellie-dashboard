@@ -160,13 +160,25 @@ export function findNextAvailableSlots(opts: {
     }
 
     while (candidate.getTime() + duration * 60_000 <= close.getTime()) {
+      const candidateEnd = new Date(candidate.getTime() + duration * 60_000)
+      const overlapping = busy.filter(b => candidate < b.end && b.start < candidateEnd)
+
+      if (overlapping.length > 0) {
+        // Jump straight to the exact moment this candidate is actually free
+        // again — the latest end time among everything it overlapped —
+        // rather than blindly stepping by SLOT_STEP_MINUTES. A booked
+        // service's duration is rarely a clean multiple of the step size
+        // (e.g. a 45-minute gel manicure from 9:00 leaves the staff member
+        // free again at 9:45, not the next :00/:30 mark), and always
+        // stepping past that real moment would silently skip a legitimately
+        // available slot in favour of one later than necessary.
+        candidate.setTime(Math.max(...overlapping.map(b => b.end.getTime())))
+        continue
+      }
+
       if (candidate >= earliestStart) {
-        const candidateEnd = new Date(candidate.getTime() + duration * 60_000)
-        const overlaps = busy.some(b => candidate < b.end && b.start < candidateEnd)
-        if (!overlaps) {
-          slots.push(new Date(candidate))
-          if (slots.length >= wantCount) break
-        }
+        slots.push(new Date(candidate))
+        if (slots.length >= wantCount) break
       }
       candidate.setTime(candidate.getTime() + SLOT_STEP_MINUTES * 60_000)
     }
