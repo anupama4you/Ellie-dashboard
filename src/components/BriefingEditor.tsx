@@ -17,15 +17,15 @@ const DAY_LABELS: { key: keyof Hours; label: string }[] = [
 // so the input can be typed freely — round-tripping every keystroke through
 // cents and reformatting to a fixed "x.00" shape (the old approach) fights
 // the cursor and makes it impossible to type more than one digit.
-type ServiceRow = { id?: string; name: string; durationMinutes: number | null; price: string }
+type ServiceRow = { id?: string; name: string; durationMinutes: number | null; price: string; staffNames: string[] }
 
 function toServiceRow(s: ServiceDraft): ServiceRow {
-  return { id: s.id, name: s.name, durationMinutes: s.durationMinutes, price: s.priceCents != null ? (s.priceCents / 100).toFixed(2) : '' }
+  return { id: s.id, name: s.name, durationMinutes: s.durationMinutes, price: s.priceCents != null ? (s.priceCents / 100).toFixed(2) : '', staffNames: s.staffNames ?? [] }
 }
 
 function toServiceDraft(r: ServiceRow): ServiceDraft {
   const n = parseFloat(r.price)
-  return { id: r.id, name: r.name, durationMinutes: r.durationMinutes, priceCents: isNaN(n) ? null : Math.round(n * 100) }
+  return { id: r.id, name: r.name, durationMinutes: r.durationMinutes, priceCents: isNaN(n) ? null : Math.round(n * 100), staffNames: r.staffNames }
 }
 
 /** Only ever lets a valid partial decimal (whole dollars, or up to 2 decimal places) through. */
@@ -384,7 +384,7 @@ export default function BriefingEditor({
                 <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Ellie quotes these when callers ask</p>
               </div>
               <button
-                onClick={() => setServices(s => [...s, { name: '', durationMinutes: 30, price: '' }])}
+                onClick={() => setServices(s => [...s, { name: '', durationMinutes: 30, price: '', staffNames: [] }])}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                 style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
               >
@@ -400,56 +400,79 @@ export default function BriefingEditor({
                 <span className="w-3.5 shrink-0" aria-hidden />
               </div>
             )}
-            {services.map((svc, i) => (
-              <div key={i} className="flex flex-col sm:flex-row sm:items-center gap-2 px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
-                <div className="flex items-center gap-2 sm:flex-1 sm:min-w-0">
-                  <input
-                    value={svc.name}
-                    onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
-                    placeholder="Service name"
-                    className="flex-1 text-sm rounded-lg px-2.5 py-1.5 min-w-0"
-                    style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                  />
-                  <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="shrink-0 sm:hidden" style={{ color: 'var(--coral)' }}>
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 sm:flex-none sm:w-24 flex items-center gap-1.5">
+            {services.map((svc, i) => {
+              const namedStaff = staff.filter(m => m.name.trim())
+              return (
+              <div key={i} className="px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                  <div className="flex items-center gap-2 sm:flex-1 sm:min-w-0">
                     <input
-                      type="number"
-                      min={0}
-                      step={5}
-                      value={svc.durationMinutes ?? ''}
-                      onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, durationMinutes: e.target.value ? parseInt(e.target.value) : null } : x))}
-                      placeholder="30"
-                      className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                      value={svc.name}
+                      onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                      placeholder="Service name"
+                      className="flex-1 text-sm rounded-lg px-2.5 py-1.5 min-w-0"
                       style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
                     />
-                    <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>min</span>
+                    <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="shrink-0 sm:hidden" style={{ color: 'var(--coral)' }}>
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  <div className="flex-1 sm:flex-none sm:w-24 flex items-center gap-1">
-                    <span className="text-sm shrink-0" style={{ color: 'var(--t3)' }}>$</span>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={svc.price}
-                      onChange={e => {
-                        const v = e.target.value
-                        if (PRICE_INPUT_RE.test(v)) setServices(s => s.map((x, j) => j === i ? { ...x, price: v } : x))
-                      }}
-                      onBlur={() => setServices(s => s.map((x, j) => j === i && x.price ? { ...x, price: (parseFloat(x.price) || 0).toFixed(2) } : x))}
-                      placeholder="0.00"
-                      className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
-                      style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
-                    />
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 sm:flex-none sm:w-24 flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min={0}
+                        step={5}
+                        value={svc.durationMinutes ?? ''}
+                        onChange={e => setServices(s => s.map((x, j) => j === i ? { ...x, durationMinutes: e.target.value ? parseInt(e.target.value) : null } : x))}
+                        placeholder="30"
+                        className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                        style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                      />
+                      <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>min</span>
+                    </div>
+                    <div className="flex-1 sm:flex-none sm:w-24 flex items-center gap-1">
+                      <span className="text-sm shrink-0" style={{ color: 'var(--t3)' }}>$</span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={svc.price}
+                        onChange={e => {
+                          const v = e.target.value
+                          if (PRICE_INPUT_RE.test(v)) setServices(s => s.map((x, j) => j === i ? { ...x, price: v } : x))
+                        }}
+                        onBlur={() => setServices(s => s.map((x, j) => j === i && x.price ? { ...x, price: (parseFloat(x.price) || 0).toFixed(2) } : x))}
+                        placeholder="0.00"
+                        className="w-full min-w-0 text-sm rounded-lg px-2 py-1.5 font-mono"
+                        style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
+                      />
+                    </div>
+                    <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="hidden sm:block shrink-0" style={{ color: 'var(--coral)' }}>
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  <button onClick={() => setServices(s => s.filter((_, j) => j !== i))} className="hidden sm:block shrink-0" style={{ color: 'var(--coral)' }}>
-                    <Trash2 size={14} />
-                  </button>
                 </div>
+                {namedStaff.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
+                    <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>Who does this (none checked = anyone on the team):</span>
+                    {namedStaff.map(m => (
+                      <label key={m.name} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--t3)' }}>
+                        <input
+                          type="checkbox"
+                          checked={svc.staffNames.includes(m.name)}
+                          onChange={e => setServices(s => s.map((x, j) => j === i ? {
+                            ...x,
+                            staffNames: e.target.checked ? [...x.staffNames, m.name] : x.staffNames.filter(n => n !== m.name),
+                          } : x))}
+                        />
+                        {m.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
+              )
+            })}
           </section>
 
           {/* Custom instructions — catch-all for anything the structured fields don't cover */}

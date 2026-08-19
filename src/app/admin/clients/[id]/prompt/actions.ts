@@ -71,12 +71,48 @@ export async function applyDraftAndPushPrompt(
   }).eq('id', businessId)
   if (bizError) throw new Error(bizError.message)
 
+  // Unlike services/faqs below, staff is synced by diff (update/insert/delete
+  // by id) rather than delete-all-then-reinsert — appointments.staff_id is a
+  // real FK to business_staff.id, and delete+reinsert generates new ids,
+  // which would silently null out every appointment's staff assignment (via
+  // the FK's `on delete set null`) on every single Apply & Push. This runs
+  // before services below so a service's staffNames (draft-time names — a
+  // brand-new staff member added in this same draft has no id yet to
+  // reference) can be resolved against the final, stable staff ids.
+  const { data: liveStaffRows } = await admin.from('business_staff').select('id').eq('business_id', businessId)
+  const liveStaffIds = new Set((liveStaffRows ?? []).map(r => r.id))
+  const draftStaffIds = new Set((draft.staff ?? []).filter(s => s.id).map(s => s.id!))
+
+  const removedStaffIds = [...liveStaffIds].filter(id => !draftStaffIds.has(id))
+  if (removedStaffIds.length > 0) {
+    const { error } = await admin.from('business_staff').delete().in('id', removedStaffIds)
+    if (error) throw new Error(error.message)
+  }
+
+  const finalStaffIdByName = new Map<string, string>()
+  for (const [i, s] of (draft.staff ?? []).entries()) {
+    if (s.id && liveStaffIds.has(s.id)) {
+      const { error } = await admin.from('business_staff')
+        .update({ name: s.name, active: s.active, hours: s.hours, sort_order: i })
+        .eq('id', s.id)
+      if (error) throw new Error(error.message)
+      finalStaffIdByName.set(s.name.trim().toLowerCase(), s.id)
+    } else {
+      const { data: insertedStaff, error } = await admin.from('business_staff')
+        .insert({ business_id: businessId, name: s.name, active: s.active, hours: s.hours, sort_order: i })
+        .select('id').single()
+      if (error) throw new Error(error.message)
+      finalStaffIdByName.set(s.name.trim().toLowerCase(), insertedStaff!.id)
+    }
+  }
+
   const { error: delServicesError } = await admin.from('business_services').delete().eq('business_id', businessId)
   if (delServicesError) throw new Error(delServicesError.message)
   if (draft.services.length > 0) {
     const { error } = await admin.from('business_services').insert(
       draft.services.map((s, i) => ({
         business_id: businessId, name: s.name, duration_minutes: s.durationMinutes, price_cents: s.priceCents, sort_order: i,
+        staff_ids: (s.staffNames ?? []).map(n => finalStaffIdByName.get(n.trim().toLowerCase())).filter((sid): sid is string => !!sid),
       }))
     )
     if (error) throw new Error(error.message)
@@ -89,34 +125,6 @@ export async function applyDraftAndPushPrompt(
       draft.faqs.map((f, i) => ({ business_id: businessId, question: f.question, answer: f.answer, sort_order: i }))
     )
     if (error) throw new Error(error.message)
-  }
-
-  // Unlike services/faqs above, staff is synced by diff (update/insert/delete
-  // by id) rather than delete-all-then-reinsert — appointments.staff_id is a
-  // real FK to business_staff.id, and delete+reinsert generates new ids,
-  // which would silently null out every appointment's staff assignment (via
-  // the FK's `on delete set null`) on every single Apply & Push.
-  const { data: liveStaffRows } = await admin.from('business_staff').select('id').eq('business_id', businessId)
-  const liveStaffIds = new Set((liveStaffRows ?? []).map(r => r.id))
-  const draftStaffIds = new Set((draft.staff ?? []).filter(s => s.id).map(s => s.id!))
-
-  const removedStaffIds = [...liveStaffIds].filter(id => !draftStaffIds.has(id))
-  if (removedStaffIds.length > 0) {
-    const { error } = await admin.from('business_staff').delete().in('id', removedStaffIds)
-    if (error) throw new Error(error.message)
-  }
-
-  for (const [i, s] of (draft.staff ?? []).entries()) {
-    if (s.id && liveStaffIds.has(s.id)) {
-      const { error } = await admin.from('business_staff')
-        .update({ name: s.name, active: s.active, hours: s.hours, sort_order: i })
-        .eq('id', s.id)
-      if (error) throw new Error(error.message)
-    } else {
-      const { error } = await admin.from('business_staff')
-        .insert({ business_id: businessId, name: s.name, active: s.active, hours: s.hours, sort_order: i })
-      if (error) throw new Error(error.message)
-    }
   }
 
   await syncAssistantPrompt(biz.vapi_assistant_id, payload)

@@ -54,7 +54,7 @@ type BizBriefingRow = {
   draft_briefing: unknown
 }
 
-type LiveServiceRow = { id: string; name: string; duration_minutes: number | null; price_cents: number | null }
+type LiveServiceRow = { id: string; name: string; duration_minutes: number | null; price_cents: number | null; staff_ids: string[] | null }
 type LiveFaqRow = { id: string; question: string; answer: string }
 type LiveStaffRow = { id: string; name: string; active: boolean; hours: unknown }
 
@@ -62,13 +62,17 @@ type LiveStaffRow = { id: string; name: string; active: boolean; hours: unknown 
 export function liveBriefing(
   biz: BizBriefingRow, liveServices: LiveServiceRow[], liveFaqs: LiveFaqRow[], liveStaff: LiveStaffRow[],
 ): BriefingPayload {
+  const staffNameById = new Map(liveStaff.map(s => [s.id, s.name]))
   return {
     greetingScript: biz.greeting_script ?? '',
     customInstructions: biz.custom_instructions ?? '',
     hours: biz.hours as Hours,
     transferRules: normalizeTransferRules(biz.transfer_rules),
     transferPhoneNumber: biz.transfer_phone_number ?? '',
-    services: liveServices.map(s => ({ id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents })),
+    services: liveServices.map(s => ({
+      id: s.id, name: s.name, durationMinutes: s.duration_minutes, priceCents: s.price_cents,
+      staffNames: (s.staff_ids ?? []).map(id => staffNameById.get(id)).filter((n): n is string => !!n),
+    })),
     staff: liveStaff.map(s => ({ id: s.id, name: s.name, active: s.active, hours: s.hours as Hours | null })),
     faqs: liveFaqs.map(f => ({ id: f.id, question: f.question, answer: f.answer })),
     companyInfo: {
@@ -89,7 +93,13 @@ export function resolveBriefing(
 ): BriefingPayload & { isDraft: boolean } {
   if (biz.draft_briefing) {
     const draft = biz.draft_briefing as BriefingPayload
-    return { ...draft, transferRules: normalizeTransferRules(draft.transferRules), staff: draft.staff ?? [], isDraft: true }
+    return {
+      ...draft,
+      transferRules: normalizeTransferRules(draft.transferRules),
+      staff: draft.staff ?? [],
+      services: (draft.services ?? []).map(s => ({ ...s, staffNames: s.staffNames ?? [] })),
+      isDraft: true,
+    }
   }
   return { ...liveBriefing(biz, liveServices, liveFaqs, liveStaff), isDraft: false }
 }

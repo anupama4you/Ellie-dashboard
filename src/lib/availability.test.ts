@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findNextAvailableSlots } from './availability'
+import { findNextAvailableSlots, encodeSlotRef, decodeSlotRef, isStaffEligibleForService } from './availability'
 import { dateStrInZone } from '@/lib/timezone'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -203,5 +203,66 @@ describe('findNextAvailableSlots — preferredDate', () => {
     })
     expect(slots.length).toBe(1)
     expect(localDateOf(slots[0].toISOString())).toBe(dayKey(0))
+  })
+})
+
+describe('isStaffEligibleForService', () => {
+  const services = [
+    { name: 'Colour', duration_minutes: 90, staff_ids: ['staff-sarah', 'staff-jessica'] },
+    { name: 'Haircut', duration_minutes: 30, staff_ids: null },
+    { name: 'Massage', duration_minutes: 60, staff_ids: [] },
+  ]
+
+  it('restricts a service with staff_ids to only those staff', () => {
+    expect(isStaffEligibleForService('staff-sarah', 'Colour', services)).toBe(true)
+    expect(isStaffEligibleForService('staff-brian', 'Colour', services)).toBe(false)
+  })
+
+  it('matches the service name case-insensitively', () => {
+    expect(isStaffEligibleForService('staff-brian', 'COLOUR', services)).toBe(false)
+    expect(isStaffEligibleForService('staff-sarah', 'colour', services)).toBe(true)
+  })
+
+  it('is unrestricted when staff_ids is null (no restriction configured)', () => {
+    expect(isStaffEligibleForService('staff-brian', 'Haircut', services)).toBe(true)
+  })
+
+  it('is unrestricted when staff_ids is an empty array', () => {
+    expect(isStaffEligibleForService('staff-brian', 'Massage', services)).toBe(true)
+  })
+
+  it('is unrestricted when no service name is given', () => {
+    expect(isStaffEligibleForService('staff-brian', undefined, services)).toBe(true)
+    expect(isStaffEligibleForService('staff-brian', null, services)).toBe(true)
+  })
+
+  it('is unrestricted when the named service has no matching row', () => {
+    expect(isStaffEligibleForService('staff-brian', 'Nonexistent Service', services)).toBe(true)
+  })
+})
+
+describe('encodeSlotRef / decodeSlotRef', () => {
+  it('round-trips an instant with a staff id', () => {
+    const ref = encodeSlotRef('2026-08-27T02:30:00.000Z', 'staff-sarah')
+    expect(decodeSlotRef(ref)).toEqual({ iso: '2026-08-27T02:30:00Z', staffId: 'staff-sarah' })
+  })
+
+  it('round-trips an instant with no staff id (null)', () => {
+    const ref = encodeSlotRef('2026-08-27T02:30:00.000Z', null)
+    expect(decodeSlotRef(ref)).toEqual({ iso: '2026-08-27T02:30:00Z', staffId: null })
+  })
+
+  it('returns null for malformed base64', () => {
+    expect(decodeSlotRef('!!!not-base64!!!')).toBeNull()
+  })
+
+  it('returns null when the decoded payload has no separator', () => {
+    const noSeparator = Buffer.from('2026-08-27T02:30:00Z', 'utf8').toString('base64url')
+    expect(decodeSlotRef(noSeparator)).toBeNull()
+  })
+
+  it('returns null when the date half does not parse', () => {
+    const badDate = Buffer.from('not-a-date|staff-sarah', 'utf8').toString('base64url')
+    expect(decodeSlotRef(badDate)).toBeNull()
   })
 })

@@ -6,7 +6,8 @@ import { saveDraftBriefing } from '@/lib/briefing'
 
 export type DayHours = { open: boolean; opensAt: string; closesAt: string }
 export type Hours = Record<'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun', DayHours>
-export type ServiceDraft = { id?: string; name: string; durationMinutes: number | null; priceCents: number | null }
+/** `staffNames` (not ids) — referencing by the staff member's current name lets a service restriction point at a staff member added or renamed in this same unsaved draft, who has no real id yet. Empty = unrestricted (any active staff member). */
+export type ServiceDraft = { id?: string; name: string; durationMinutes: number | null; priceCents: number | null; staffNames: string[] }
 export type FaqDraft = { id?: string; question: string; answer: string }
 export type StaffDraft = { id?: string; name: string; active: boolean; hours: Hours | null }
 

@@ -3,6 +3,11 @@
  * One-time setup: creates the "rescheduleAppointment" function tool in Vapi
  * and prints its ID to paste into .env as VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID.
  *
+ * If VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID is already set in your environment,
+ * this PATCHes that existing tool in place instead of creating a new one —
+ * safe to re-run any time the schema changes, since the tool ID is shared
+ * globally across every business's assistant.
+ *
  * Vapi cannot call `localhost` — pass a publicly reachable URL (an ngrok
  * tunnel for local testing, or your deployed webhook URL).
  *
@@ -29,10 +34,11 @@ if (!vapiKey) {
   process.exit(1)
 }
 
+const existingToolId = process.env.VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID
 const server = { url: serverUrl, ...(credentialId ? { credentialId } : {}) }
 
-const res = await fetch('https://api.vapi.ai/tool', {
-  method: 'POST',
+const res = await fetch(`https://api.vapi.ai/tool${existingToolId ? `/${existingToolId}` : ''}`, {
+  method: existingToolId ? 'PATCH' : 'POST',
   headers: {
     Authorization: `Bearer ${vapiKey}`,
     'Content-Type': 'application/json',
@@ -46,9 +52,10 @@ const res = await fetch('https://api.vapi.ai/tool', {
         type: 'object',
         properties: {
           appointmentId: { type: 'string', description: 'The exact appointment reference returned by findUpcomingAppointments for the booking the caller confirmed' },
-          newDateTime:   { type: 'string', description: 'The new appointment date and time as a full ISO 8601 datetime in the business\'s local timezone' },
+          slotRef:       { type: 'string', description: 'The exact ref returned in parentheses next to the slot the caller chose from checkAvailability\'s result, e.g. from "Thursday at 12pm (ref: xxxx)" pass exactly "xxxx". This is the preferred way to specify the new time — always use it when you have one.' },
+          newDateTime:   { type: 'string', description: 'Fallback only — use this if you genuinely have no ref from a checkAvailability result. Full ISO 8601 datetime in the business\'s local timezone. Never guess or reconstruct this from a spoken time when a ref is available.' },
         },
-        required: ['appointmentId', 'newDateTime'],
+        required: ['appointmentId'],
       },
     },
     messages: [
@@ -67,9 +74,13 @@ if (!res.ok) {
   process.exit(1)
 }
 
-console.log('Tool created successfully.')
-console.log('Add this to your .env:')
-console.log(`VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID=${body.id}`)
+if (existingToolId) {
+  console.log(`Tool ${existingToolId} updated successfully.`)
+} else {
+  console.log('Tool created successfully.')
+  console.log('Add this to your .env:')
+  console.log(`VAPI_RESCHEDULE_APPOINTMENT_TOOL_ID=${body.id}`)
+}
 if (credentialId) {
   console.log('Also set VAPI_WEBHOOK_SECRET in .env to the same token you used for the Custom Credential.')
 }

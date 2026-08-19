@@ -9,7 +9,7 @@ const MIN_LEAD_MINUTES = 30
 const MAX_DAYS_AHEAD = 14
 export const DEFAULT_SLOT_COUNT = 3
 
-type ServiceRow = { name: string; duration_minutes: number | null }
+type ServiceRow = { name: string; duration_minutes: number | null; staff_ids?: string[] | null }
 type ExistingAppointment = { scheduled_at: string; service: string | null; staff_id?: string | null }
 type StaffDateOverride = { isAvailable: boolean; opensAt: string | null; closesAt: string | null }
 
@@ -17,6 +17,20 @@ export function durationFor(serviceName: string | null | undefined, services: Se
   if (!serviceName) return DEFAULT_DURATION_MINUTES
   const match = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
   return match?.duration_minutes ?? DEFAULT_DURATION_MINUTES
+}
+
+/**
+ * Whether `staffId` is allowed to perform `serviceName`, per that service's
+ * configured roster restriction. An unmatched service name, or a service
+ * with no `staff_ids` configured (the default for every existing service,
+ * and any new one until a client opts in on the Briefing page), imposes no
+ * restriction — matches today's "any active staff member" behavior.
+ */
+export function isStaffEligibleForService(staffId: string, serviceName: string | null | undefined, services: ServiceRow[]): boolean {
+  if (!serviceName) return true
+  const match = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
+  if (!match?.staff_ids?.length) return true
+  return match.staff_ids.includes(staffId)
 }
 
 /** Narrower of two windows on the same day — later open, earlier close; closed if either side is closed. */
@@ -222,6 +236,43 @@ export function hasConflictingAppointment(
 
 export function formatSlot(d: Date, timeZone: string): string {
   return formatInZone(d, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })
+}
+
+/**
+ * Encodes a candidate slot (instant + which staff it's for, if a specific
+ * one was resolved) into a short opaque reference — no DB row or cache
+ * needed, so it resolves correctly no matter which serverless instance
+ * handles the later bookAppointment call, or how much later. This exists
+ * because a raw ISO timestamp printed in a tool result is something a model
+ * can plausibly (and does, in practice) reconstruct wrong from the spoken
+ * clock time several turns later ("12pm" -> treated as UTC) instead of
+ * copying the real value — the same failure class findUpcomingAppointments'
+ * `(ref: id)` pattern already avoids by using a token with no plausible
+ * alternate derivation. Milliseconds are stripped since a generated slot is
+ * always on an exact minute boundary.
+ */
+export function encodeSlotRef(isoInstant: string, staffId: string | null): string {
+  const iso = isoInstant.replace(/\.\d{3}Z$/, 'Z')
+  return Buffer.from(`${iso}|${staffId ?? ''}`, 'utf8').toString('base64url')
+}
+
+/**
+ * Decodes a slot ref produced by encodeSlotRef. Returns null for anything
+ * malformed — Buffer's base64url decoder doesn't throw on garbage input, so
+ * the real validation is these two content checks (a '|' separator present,
+ * and the date half actually parses), not the try/catch alone.
+ */
+export function decodeSlotRef(ref: string): { iso: string; staffId: string | null } | null {
+  try {
+    const decoded = Buffer.from(ref, 'base64url').toString('utf8')
+    const sep = decoded.indexOf('|')
+    if (sep === -1) return null
+    const iso = decoded.slice(0, sep)
+    if (isNaN(new Date(iso).getTime())) return null
+    return { iso, staffId: decoded.slice(sep + 1) || null }
+  } catch {
+    return null
+  }
 }
 
 /** Whether `date` falls outside the business's configured hours for its day of week. */

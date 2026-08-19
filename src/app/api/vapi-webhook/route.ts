@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
 import { phoneDigitsKey, toE164Au } from '@/lib/sms'
-import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, hasConflictingAppointment, DEFAULT_SLOT_COUNT } from '@/lib/availability'
+import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, hasConflictingAppointment, isStaffEligibleForService, encodeSlotRef, decodeSlotRef, DEFAULT_SLOT_COUNT } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone, dateStrInZone } from '@/lib/timezone'
@@ -55,6 +55,61 @@ async function getFreeBusy(bizId: string, now: Date, lookout: Date): Promise<{ s
 /** Call right after any successful Google Calendar mutation, so the next checkAvailability in the same call never offers a slot the call itself just filled or freed up. */
 function invalidateFreeBusyCache(bizId: string): void {
   freeBusyCache.delete(bizId)
+}
+
+/**
+ * Resolves what bookAppointment/rescheduleAppointment should actually treat
+ * as "the requested instant" — preferring a slotRef (opaque, encodes exactly
+ * what checkAvailability computed, nothing for the model to get wrong) over
+ * a raw ISO datetime the model free-typed itself (still accepted as a
+ * fallback for a model that doesn't follow the new instruction, or a caller
+ * proposing a time that was never checked — but not trusted as strongly,
+ * same as today). `rawField` lets bookAppointment (`dateTime`) and
+ * rescheduleAppointment (`newDateTime`) share this without renaming either
+ * tool's existing argument.
+ */
+function resolveRequestedSlot(
+  args: Record<string, unknown>,
+  rawField: 'dateTime' | 'newDateTime' = 'dateTime',
+): { iso: string; staffId: string | null } | null {
+  if (typeof args.slotRef === 'string' && args.slotRef.trim()) {
+    const decoded = decodeSlotRef(args.slotRef)
+    if (decoded) return decoded
+    console.error(`resolveRequestedSlot: slotRef failed to decode, falling back to ${rawField}`, args.slotRef)
+  }
+  const raw = args[rawField]
+  if (typeof raw === 'string' && !isNaN(new Date(raw).getTime())) {
+    return { iso: raw, staffId: null }
+  }
+  return null
+}
+
+/**
+ * A caller can never get stuck in an infinite "offer alternatives, model
+ * mis-picks, offer alternatives again" loop — this counts consecutive
+ * scheduling failures for one call and escalates to a human once the cap is
+ * hit. Deliberately NOT the model self-tracking a count across turns (the
+ * exact reliability class of problem the slotRef fix above exists to avoid,
+ * just applied to a number instead of a timestamp) and deliberately NOT an
+ * in-process cache like freeBusyCache above (a cold/different serverless
+ * instance mid-call would silently reset an in-memory count, reproducing
+ * the very failure this exists to prevent — a DB round trip is the right
+ * tradeoff here, unlike the free/busy cache where a miss is harmless).
+ */
+const MAX_SCHEDULING_ATTEMPTS = 2
+const SCHEDULING_ESCALATION_TEXT =
+  "That time isn't available, and we've tried finding a new time more than once this call — apologise briefly, then call the transferCall tool right now instead of trying checkAvailability or bookAppointment again."
+
+async function recordSchedulingFailure(callId: string | undefined): Promise<number> {
+  if (!callId) return 0 // no call to correlate across turns (e.g. a chat-testing tool call) — behave as before, uncapped
+  try {
+    const { data, error } = await supabase.rpc('increment_call_scheduling_failures', { p_call_id: callId })
+    if (error) throw error
+    return (data as number | null) ?? 0
+  } catch (err) {
+    console.error('Failed to record scheduling failure count — failing open (not escalating this turn):', err)
+    return 0
+  }
 }
 
 type ToolCall = {
@@ -129,9 +184,9 @@ async function computeAvailableSlots(
   requestedStaffMember?: string,
   requestedStaffId?: string | null,
   preferredDate?: string,
-): Promise<{ slots: Date[]; resolvedStaffName: string | null }> {
+): Promise<{ slots: Date[]; resolvedStaffName: string | null; resolvedStaffId: string | null }> {
   const [{ data: services }, resolvedStaff, { data: existing }, { data: activeRoster }] = await Promise.all([
-    supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
+    supabase.from('business_services').select('name, duration_minutes, staff_ids').eq('business_id', biz.id),
     requestedStaffId ? getStaffById(biz.id, requestedStaffId) : resolveStaffMember(biz.id, requestedStaffMember),
     supabase.from('appointments')
       .select('scheduled_at, service, staff_id')
@@ -179,6 +234,13 @@ async function computeAvailableSlots(
   }
 
   if (resolvedStaff) {
+    // A caller can name a staff member who simply doesn't perform the
+    // requested service (e.g. "book Brian for a colour" at a salon where
+    // only Sarah/Jessica do colour) — report no slots for them rather than
+    // silently searching their calendar as if the restriction didn't exist.
+    if (!isStaffEligibleForService(resolvedStaff.id, requestedService, services ?? [])) {
+      return { slots: [], resolvedStaffName: resolvedStaff.name, resolvedStaffId: resolvedStaff.id }
+    }
     const overridesByStaff = await fetchOverridesByStaff([resolvedStaff.id])
     const slots = findNextAvailableSlots({
       ...baseOpts,
@@ -186,20 +248,22 @@ async function computeAvailableSlots(
       staffHours: resolvedStaff.hours,
       staffAvailabilityByDate: overridesByStaff.get(resolvedStaff.id),
     })
-    return { slots, resolvedStaffName: resolvedStaff.name }
+    return { slots, resolvedStaffName: resolvedStaff.name, resolvedStaffId: resolvedStaff.id }
   }
 
   // No staff preference given. A slot is only actually unavailable to the
-  // caller if EVERY active team member is busy then — not if any single one
-  // of them happens to be. Union each staff member's own availability
-  // (each already respects their own hours/day-off overrides) rather than
-  // treating one person's appointment as blocking the whole team, otherwise
-  // e.g. a slot Sarah is booked for reads as fully unavailable even when
-  // Amanda is completely free at that exact time.
+  // caller if EVERY active team member who can actually perform this service
+  // is busy then — not if any single one of them happens to be. Union each
+  // eligible staff member's own availability (each already respects their
+  // own hours/day-off overrides) rather than treating one person's
+  // appointment as blocking the whole team, otherwise e.g. a slot Sarah is
+  // booked for reads as fully unavailable even when Amanda is completely
+  // free at that exact time.
   if (activeRoster && activeRoster.length > 0) {
-    const overridesByStaff = await fetchOverridesByStaff(activeRoster.map(s => s.id))
+    const eligibleRoster = activeRoster.filter(m => isStaffEligibleForService(m.id, requestedService, services ?? []))
+    const overridesByStaff = await fetchOverridesByStaff(eligibleRoster.map(s => s.id))
     const merged = new Map<number, Date>()
-    for (const member of activeRoster) {
+    for (const member of eligibleRoster) {
       const memberSlots = findNextAvailableSlots({
         ...baseOpts,
         staffId: member.id,
@@ -209,16 +273,16 @@ async function computeAvailableSlots(
       for (const s of memberSlots) merged.set(s.getTime(), s)
     }
     const slots = [...merged.values()].sort((a, b) => a.getTime() - b.getTime()).slice(0, DEFAULT_SLOT_COUNT)
-    return { slots, resolvedStaffName: null }
+    return { slots, resolvedStaffName: null, resolvedStaffId: null }
   }
 
   // No staff roster configured at all — single shared resource, same as before staff support existed.
   const slots = findNextAvailableSlots({ ...baseOpts, staffId: undefined })
-  return { slots, resolvedStaffName: null }
+  return { slots, resolvedStaffName: null, resolvedStaffId: null }
 }
 
-function fmtSlots(slots: Date[], timeZone: string): string {
-  return slots.map(s => `${formatSlot(s, timeZone)} (${s.toISOString()})`).join('; ')
+function fmtSlots(slots: Date[], timeZone: string, staffId: string | null): string {
+  return slots.map(s => `${formatSlot(s, timeZone)} (ref: ${encodeSlotRef(s.toISOString(), staffId)})`).join('; ')
 }
 
 // end-of-call-report field extraction — Vapi has flattened some of these fields
@@ -342,11 +406,10 @@ export async function POST(req: Request) {
             .single()
 
           if (!biz) {
-            // TEMPORARY DIAGNOSTIC — see if the chat-shaped payload fallback in resolveAssistantId() actually matches what Vapi sends. Revert once confirmed.
-            resultText = `I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back. [debug resolveAssistantId=${JSON.stringify(resolveAssistantId(message))} assistant=${JSON.stringify(message.assistant)} chat=${JSON.stringify(message.chat)}]`
+            resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
           } else {
             const preferredDate = args.preferredDate as string | undefined
-            const { slots, resolvedStaffName } = await computeAvailableSlots(
+            const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(
               biz, args.service as string | undefined, args.staffMember as string | undefined, undefined, preferredDate,
             )
             const forWhom = resolvedStaffName ? ` for ${resolvedStaffName}` : ''
@@ -363,7 +426,7 @@ export async function POST(req: Request) {
             const dateAnchor = `Today is ${todayLabel} in ${biz.timezone}. `
 
             resultText = dateAnchor + (slots.length
-              ? `${missedPreferredDay ? "Nothing was open on the caller's preferred date, so these are the closest available instead — say so naturally, don't just offer them as if they matched what was asked. " : ''}Next available slots${forWhom}: ${fmtSlots(slots, biz.timezone)}. Offer these to the caller in natural speech — don't read out the ISO timestamps — and when you call bookAppointment, pass the exact ISO value for whichever slot they choose${resolvedStaffName ? `, along with staffMember: "${resolvedStaffName}"` : ''}.`
+              ? `${missedPreferredDay ? "Nothing was open on the caller's preferred date, so these are the closest available instead — say so naturally, don't just offer them as if they matched what was asked. " : ''}Next available slots${forWhom}: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Offer these to the caller in natural speech — never read out the "ref: ..." part — and when you call bookAppointment, pass the exact ref (not a time you compose yourself) as slotRef for whichever slot they choose${resolvedStaffName ? `, along with staffMember: "${resolvedStaffName}"` : ''}.`
               : `No open slots found${forWhom}${preferredDate ? ' on or after the caller\'s preferred date' : ' in the next two weeks'} — let the caller know you'll have someone reach out to schedule.`)
           }
         } catch (err) {
@@ -430,10 +493,14 @@ export async function POST(req: Request) {
             .eq('vapi_assistant_id', resolveAssistantId(message))
             .single()
 
+          const resolvedSlot = resolveRequestedSlot(args, 'newDateTime')
+
           if (!biz) {
             resultText = "I couldn't find this business's account — let the caller know you'll confirm the change manually."
           } else if (!appointmentId) {
             resultText = "There's no valid appointment reference — call findUpcomingAppointments again and confirm which booking the caller means."
+          } else if (!resolvedSlot) {
+            resultText = "There's no valid new time to move it to — call checkAvailability again and pass the ref it returns to rescheduleAppointment."
           } else {
             const { data: existing } = await supabase
               .from('appointments')
@@ -450,66 +517,129 @@ export async function POST(req: Request) {
                 .select('name, duration_minutes')
                 .eq('business_id', biz.id)
               const durationMins = durationFor(existing.service, services ?? [])
+              const requestedStart = new Date(resolvedSlot.iso)
+              const requestedEnd = new Date(requestedStart.getTime() + durationMins * 60_000)
 
-              // Deliberately does not set staff_id here — a reschedule keeps
-              // whichever staff member the appointment was already booked
-              // against; preserved simply by never touching the column.
-              const { error: updateError } = await supabase.from('appointments').update({
-                scheduled_at: args.newDateTime,
-                status:       'rescheduled',
-                vapi_call_id: callId ?? null,
-              }).eq('id', existing.id)
-
-              if (updateError?.code === '23505') {
-                resultText = "That new time was just taken by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
-                try {
-                  const { slots } = await computeAvailableSlots(biz, existing.service ?? undefined, undefined, existing.staff_id)
-                  if (slots.length) {
-                    resultText = `That new time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to rescheduleAppointment for whichever they choose.`
-                  }
-                } catch (altErr) {
-                  console.error('Failed to compute alternative slots after a reschedule conflict:', altErr)
+              // A reschedule never changes who the appointment is with —
+              // always validate against the ALREADY-booked staff member's
+              // real hours, regardless of anything a slotRef might carry
+              // (deliberately ignored here; see plan notes — that ref could
+              // reflect a different staff member if checkAvailability was
+              // called without pinning the existing staff's name).
+              let staffHours: Hours | null | undefined
+              let staffAvailabilityByDate: Map<string, { isAvailable: boolean; opensAt: string | null; closesAt: string | null }> | undefined
+              if (existing.staff_id) {
+                const existingStaff = await getStaffById(biz.id, existing.staff_id)
+                staffHours = existingStaff?.hours
+                const dateKey = dateStrInZone(requestedStart, biz.timezone)
+                const { data: overrideRows } = await supabase
+                  .from('business_staff_availability')
+                  .select('is_available, opens_at, closes_at')
+                  .eq('staff_id', existing.staff_id)
+                  .eq('date', dateKey)
+                const override = overrideRows?.[0]
+                if (override) {
+                  staffAvailabilityByDate = new Map([[dateKey, {
+                    isAvailable: override.is_available,
+                    opensAt: override.opens_at ? (override.opens_at as string).slice(0, 5) : null,
+                    closesAt: override.closes_at ? (override.closes_at as string).slice(0, 5) : null,
+                  }]])
                 }
-              } else if (updateError) {
-                console.error('Failed to reschedule appointment:', updateError)
-                resultText = "Something went wrong moving that booking — let the caller know you'll confirm it manually."
-              } else {
-                resultText = `Rescheduled${existing.service ? ` ${existing.service}` : ''} for ${existing.customer_name ?? 'the caller'} to ${fmtDate(args.newDateTime as string, biz.timezone)}.`
+              }
 
-                const phone = existing.customer_phone
-                if (phone) {
+              // `newDateTime`/a decoded slotRef is still re-checked against
+              // real hours before writing it — rescheduleAppointment had no
+              // safety net here at all before this fix (unlike bookAppointment,
+              // which already re-checks); a misresolved relative day could
+              // otherwise silently move a booking to a genuinely closed time.
+              const withinHours = isWithinOpenHours({
+                date: requestedStart,
+                durationMinutes: durationMins,
+                hours: biz.hours as Hours,
+                timeZone: biz.timezone,
+                staffHours,
+                staffAvailabilityByDate,
+              })
+
+              if (!withinHours) {
+                const attempts = await recordSchedulingFailure(callId)
+                if (attempts >= MAX_SCHEDULING_ATTEMPTS) {
+                  resultText = SCHEDULING_ESCALATION_TEXT
+                } else {
+                  resultText = "That new time isn't actually available — apologise briefly, then call checkAvailability again to offer the caller a real time."
                   try {
-                    const link = mapsLink(biz)
-                    const smsBody = [
-                      `Hi ${existing.customer_name ?? ''} 👋`,
-                      '',
-                      `Your ${existing.service ?? 'appointment'} with ${biz.name} has been moved to:`,
-                      `📅 ${fmtDate(args.newDateTime as string, biz.timezone)}`,
-                      `⏱️ ${durationMins} minutes`,
-                      ...(link ? ['', `📍 ${link}`] : []),
-                      '',
-                      'See you then! ✅',
-                    ].join('\n')
-
-                    await sendSms(phone, smsBody, biz.twilio_phone_number)
-                    await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
-                  } catch (smsError) {
-                    console.error('Failed to send reschedule confirmation SMS:', smsError)
-                    // Reschedule already succeeded — don't fail the tool call over a text delivery issue.
-                  }
-                }
-
-                if (existing.calendar_event_id) {
-                  try {
-                    const google = await getValidAccessToken(supabase, biz.id)
-                    if (google) {
-                      const start = new Date(args.newDateTime as string)
-                      const end = new Date(start.getTime() + durationMins * 60_000)
-                      await updateCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id, { start, end })
-                      invalidateFreeBusyCache(biz.id)
+                    const { slots, resolvedStaffId } = await computeAvailableSlots(biz, existing.service ?? undefined, undefined, existing.staff_id)
+                    if (slots.length) {
+                      resultText = `That new time isn't actually available. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to rescheduleAppointment for whichever they choose.`
                     }
-                  } catch (calErr) {
-                    console.error('Failed to update Google Calendar event — reschedule already saved locally:', calErr)
+                  } catch (altErr) {
+                    console.error('Failed to compute alternative slots after an out-of-hours reschedule attempt:', altErr)
+                  }
+                }
+              } else {
+                // Deliberately does not set staff_id here — a reschedule keeps
+                // whichever staff member the appointment was already booked
+                // against; preserved simply by never touching the column.
+                const { error: updateError } = await supabase.from('appointments').update({
+                  scheduled_at: resolvedSlot.iso,
+                  status:       'rescheduled',
+                  vapi_call_id: callId ?? null,
+                }).eq('id', existing.id)
+
+                if (updateError?.code === '23505') {
+                  const attempts = await recordSchedulingFailure(callId)
+                  if (attempts >= MAX_SCHEDULING_ATTEMPTS) {
+                    resultText = SCHEDULING_ESCALATION_TEXT
+                  } else {
+                    resultText = "That new time was just taken by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
+                    try {
+                      const { slots, resolvedStaffId } = await computeAvailableSlots(biz, existing.service ?? undefined, undefined, existing.staff_id)
+                      if (slots.length) {
+                        resultText = `That new time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to rescheduleAppointment for whichever they choose.`
+                      }
+                    } catch (altErr) {
+                      console.error('Failed to compute alternative slots after a reschedule conflict:', altErr)
+                    }
+                  }
+                } else if (updateError) {
+                  console.error('Failed to reschedule appointment:', updateError)
+                  resultText = "Something went wrong moving that booking — let the caller know you'll confirm it manually."
+                } else {
+                  resultText = `Rescheduled${existing.service ? ` ${existing.service}` : ''} for ${existing.customer_name ?? 'the caller'} to ${fmtDate(resolvedSlot.iso, biz.timezone)}.`
+
+                  const phone = existing.customer_phone
+                  if (phone) {
+                    try {
+                      const link = mapsLink(biz)
+                      const smsBody = [
+                        `Hi ${existing.customer_name ?? ''} 👋`,
+                        '',
+                        `Your ${existing.service ?? 'appointment'} with ${biz.name} has been moved to:`,
+                        `📅 ${fmtDate(resolvedSlot.iso, biz.timezone)}`,
+                        `⏱️ ${durationMins} minutes`,
+                        ...(link ? ['', `📍 ${link}`] : []),
+                        '',
+                        'See you then! ✅',
+                      ].join('\n')
+
+                      await sendSms(phone, smsBody, biz.twilio_phone_number)
+                      await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
+                    } catch (smsError) {
+                      console.error('Failed to send reschedule confirmation SMS:', smsError)
+                      // Reschedule already succeeded — don't fail the tool call over a text delivery issue.
+                    }
+                  }
+
+                  if (existing.calendar_event_id) {
+                    try {
+                      const google = await getValidAccessToken(supabase, biz.id)
+                      if (google) {
+                        await updateCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id, { start: requestedStart, end: requestedEnd })
+                        invalidateFreeBusyCache(biz.id)
+                      }
+                    } catch (calErr) {
+                      console.error('Failed to update Google Calendar event — reschedule already saved locally:', calErr)
+                    }
                   }
                 }
               }
@@ -701,16 +831,20 @@ export async function POST(req: Request) {
           .eq('vapi_assistant_id', resolveAssistantId(message))
           .single()
 
+        const resolvedSlot = resolveRequestedSlot(args)
+
         if (!biz) {
           resultText = "I couldn't find this business's account — let the caller know you'll have someone call them back to confirm."
+        } else if (!resolvedSlot) {
+          resultText = "There's no valid time to book — call checkAvailability again and pass the ref it returns to bookAppointment."
         } else {
           const [{ data: services }, resolvedStaff, { data: activeRoster }] = await Promise.all([
-            supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
-            resolveStaffMember(biz.id, args.staffMember as string | undefined),
+            supabase.from('business_services').select('name, duration_minutes, staff_ids').eq('business_id', biz.id),
+            resolvedSlot.staffId ? getStaffById(biz.id, resolvedSlot.staffId) : resolveStaffMember(biz.id, args.staffMember as string | undefined),
             supabase.from('business_staff').select('id, name, hours, sort_order').eq('business_id', biz.id).eq('active', true).order('sort_order'),
           ])
           const durationMins = durationFor(args.service as string | undefined, services ?? [])
-          const requestedStart = new Date(args.dateTime as string)
+          const requestedStart = new Date(resolvedSlot.iso)
           const requestedEnd = new Date(requestedStart.getTime() + durationMins * 60_000)
           const dateKey = dateStrInZone(requestedStart, biz.timezone)
 
@@ -734,15 +868,16 @@ export async function POST(req: Request) {
 
           if (!finalStaff && activeRoster && activeRoster.length > 0) {
             // No staff preference given — assign whichever active team member
-            // is actually free at this exact time (first by sort_order). This
-            // has to match what checkAvailability's "anyone" union already
-            // promised the caller — leaving staff_id null here would let two
-            // different unassigned bookings for the same slot collide on the
-            // unique index even when different staff members are free to take them.
+            // who can actually perform this service is free at this exact
+            // time (first by sort_order). This has to match what
+            // checkAvailability's "anyone" union already promised the caller
+            // — leaving staff_id null here would let two different
+            // unassigned bookings for the same slot collide on the unique
+            // index even when different staff members are free to take them.
             const { data: existingForConflict } = await supabase
               .from('appointments').select('scheduled_at, service, staff_id').eq('business_id', biz.id).neq('status', 'cancelled')
 
-            for (const candidate of activeRoster) {
+            for (const candidate of activeRoster.filter(c => isStaffEligibleForService(c.id, args.service as string | undefined, services ?? []))) {
               const candidateWithinHours = isWithinOpenHours({
                 date: requestedStart, durationMinutes: durationMins, hours: biz.hours as Hours, timeZone: biz.timezone,
                 staffHours: candidate.hours, staffAvailabilityByDate: overrideMapFor(candidate.id),
@@ -754,12 +889,16 @@ export async function POST(req: Request) {
             }
           }
 
-          // `dateTime` is trusted verbatim from the model — nothing upstream
-          // guarantees it actually came from a real checkAvailability result
-          // (the model can misresolve a relative day like "Thursday" and
-          // still pass a well-formed but wrong ISO string). Re-check it
-          // against real hours before writing it, rather than only catching
-          // an exact double-booked slot via the DB's unique index below.
+          // The requested instant came either from a slotRef (ground truth
+          // from a real checkAvailability call) or a raw dateTime fallback
+          // trusted verbatim from the model with no guarantee it's accurate
+          // (the model can misresolve a relative day like "Thursday", or a
+          // slotRef could in principle be stale). Re-check it against real
+          // hours before writing it, rather than only catching an exact
+          // double-booked slot via the DB's unique index below. Also
+          // re-checked here (not just in the auto-assign loop above) because
+          // finalStaff can come straight from an explicit staffMember/slotRef
+          // request naming someone who doesn't actually perform this service.
           const withinHours = isWithinOpenHours({
             date: requestedStart,
             durationMinutes: durationMins,
@@ -767,14 +906,19 @@ export async function POST(req: Request) {
             timeZone: biz.timezone,
             staffHours: finalStaff?.hours,
             staffAvailabilityByDate: finalStaff ? overrideMapFor(finalStaff.id) : undefined,
-          })
+          }) && (!finalStaff || isStaffEligibleForService(finalStaff.id, args.service as string | undefined, services ?? []))
 
           if (!withinHours) {
+            const attempts = await recordSchedulingFailure(callId)
+            if (attempts >= MAX_SCHEDULING_ATTEMPTS) {
+              results.push({ toolCallId: toolCall.id, result: SCHEDULING_ESCALATION_TEXT })
+              continue
+            }
             let recoveryText = "That time isn't actually available — apologise briefly, then call checkAvailability again to offer the caller a real time."
             try {
-              const { slots, resolvedStaffName } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, finalStaff?.id ?? resolvedStaff?.id)
+              const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, finalStaff?.id ?? resolvedStaff?.id)
               if (slots.length) {
-                recoveryText = `That time isn't actually available${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to bookAppointment for whichever they choose.`
+                recoveryText = `That time isn't actually available${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to bookAppointment for whichever they choose.`
               }
             } catch (altErr) {
               console.error('Failed to compute alternative slots after an out-of-hours booking attempt:', altErr)
@@ -789,7 +933,7 @@ export async function POST(req: Request) {
             customer_phone: phone ?? null,
             customer_email: args.customerEmail ?? null,
             service:        args.service       ?? null,
-            scheduled_at:   args.dateTime,
+            scheduled_at:   resolvedSlot.iso,
             status:         'confirmed',
             notes:          args.notes ?? null,
             vapi_call_id:   callId ?? null,
@@ -811,20 +955,25 @@ export async function POST(req: Request) {
           // see the unique index on appointments(business_id, scheduled_at).
           // Recover with fresh alternatives rather than a dead-end error.
           if (insertError?.code === '23505') {
-            resultText = "That time was just booked by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
-            try {
-              const { slots, resolvedStaffName } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, finalStaff?.id)
-              if (slots.length) {
-                resultText = `That time was just taken by another caller. Apologise briefly, then offer these instead${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}: ${fmtSlots(slots, biz.timezone)}. Don't read out the ISO timestamps, and pass the exact ISO value to bookAppointment for whichever they choose.`
+            const attempts = await recordSchedulingFailure(callId)
+            if (attempts >= MAX_SCHEDULING_ATTEMPTS) {
+              resultText = SCHEDULING_ESCALATION_TEXT
+            } else {
+              resultText = "That time was just booked by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
+              try {
+                const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, finalStaff?.id)
+                if (slots.length) {
+                  resultText = `That time was just taken by another caller. Apologise briefly, then offer these instead${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to bookAppointment for whichever they choose.`
+                }
+              } catch (altErr) {
+                console.error('Failed to compute alternative slots after a booking conflict:', altErr)
               }
-            } catch (altErr) {
-              console.error('Failed to compute alternative slots after a booking conflict:', altErr)
             }
           } else if (insertError) {
             console.error('Failed to insert appointment:', insertError)
             resultText = "Something went wrong saving that booking — let the caller know you'll confirm it manually."
           } else {
-            resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'}${finalStaff ? ` with ${finalStaff.name}` : ''} on ${fmtDate(args.dateTime as string, biz.timezone)}.`
+            resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'}${finalStaff ? ` with ${finalStaff.name}` : ''} on ${fmtDate(resolvedSlot.iso, biz.timezone)}.`
 
             if (phone) {
               await rememberCustomerName(supabase, biz.id, phone, args.customerName as string | undefined)
@@ -835,7 +984,7 @@ export async function POST(req: Request) {
                   `Hi ${args.customerName ?? ''} 👋`,
                   '',
                   `Your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for:`,
-                  `📅 ${fmtDate(args.dateTime as string, biz.timezone)}`,
+                  `📅 ${fmtDate(resolvedSlot.iso, biz.timezone)}`,
                   `⏱️ ${durationMins} minutes`,
                   ...(link ? ['', `📍 ${link}`] : []),
                   '',
@@ -853,8 +1002,8 @@ export async function POST(req: Request) {
             try {
               const google = await getValidAccessToken(supabase, biz.id)
               if (google) {
-                const start = new Date(args.dateTime as string)
-                const end = new Date(start.getTime() + durationMins * 60_000)
+                const start = requestedStart
+                const end = requestedEnd
 
                 const event = await createCalendarEvent(google.accessToken, google.calendarId, {
                   summary: `${args.service ?? 'Appointment'} — ${args.customerName ?? 'Customer'}${finalStaff ? ` (with ${finalStaff.name})` : ''}`,

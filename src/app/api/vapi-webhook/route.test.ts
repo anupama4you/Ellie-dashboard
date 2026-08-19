@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { toE164Au } from '@/lib/sms'
 import { dateStrInZone, zonedTimeToUtc } from '@/lib/timezone'
+import { decodeSlotRef } from '@/lib/availability'
 import type { FakeSupabase } from '@/test/fakeSupabase'
 
 /**
@@ -132,6 +133,14 @@ function chatToolCallRequest(assistantId: string, toolName: string, args: Record
   })
 }
 
+/** Pulls every `(ref: xxxx)` out of a checkAvailability result and decodes each back to its instant, for assertions that need the actual date/time a slot represents. */
+function extractSlotIsos(resultText: string): string[] {
+  return [...resultText.matchAll(/\(ref: ([^)]+)\)/g)]
+    .map(m => decodeSlotRef(m[1]))
+    .filter((d): d is { iso: string; staffId: string | null } => d !== null)
+    .map(d => d.iso)
+}
+
 describe('bookAppointment', () => {
   it('books an appointment and sends a confirmation SMS', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-book-1', vapi_assistant_id: 'asst-book-1', ...business({}) }])
@@ -238,6 +247,55 @@ describe('bookAppointment with a staff roster', () => {
   })
 })
 
+describe('bookAppointment with per-service staff restrictions', () => {
+  it('auto-assigns the eligible staff member, skipping one who is free but does not perform the service', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-elig-1', vapi_assistant_id: 'asst-elig-1', ...business({}) }])
+    fakeSupabase.seed('business_staff', [
+      { id: 'staff-alice-e1', business_id: 'biz-elig-1', name: 'Alice', active: true, hours: null, sort_order: 0 },
+      { id: 'staff-bob-e1', business_id: 'biz-elig-1', name: 'Bob', active: true, hours: null, sort_order: 1 },
+    ])
+    // Alice is first by sort_order, but only Bob performs Colour.
+    fakeSupabase.seed('business_services', [
+      { business_id: 'biz-elig-1', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-bob-e1'] },
+    ])
+
+    const dateTime = futureWeekdayIso(12, '14:00')
+    const req = toolCallRequest('asst-elig-1', 'call-elig-1', 'bookAppointment', {
+      customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Colour', dateTime,
+    })
+
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/^Booked Colour for Jane Doe with Bob on/)
+    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-elig-1' && r.status !== 'cancelled')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].staff_id).toBe('staff-bob-e1')
+  })
+
+  it('refuses to book a named staff member who does not perform the requested service', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-elig-2', vapi_assistant_id: 'asst-elig-2', ...business({}) }])
+    fakeSupabase.seed('business_staff', [
+      { id: 'staff-alice-e2', business_id: 'biz-elig-2', name: 'Alice', active: true, hours: null },
+    ])
+    fakeSupabase.seed('business_services', [
+      { business_id: 'biz-elig-2', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-someone-else'] },
+    ])
+
+    const dateTime = futureWeekdayIso(12, '14:00')
+    const req = toolCallRequest('asst-elig-2', 'call-elig-2', 'bookAppointment', {
+      customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Colour', dateTime, staffMember: 'Alice',
+    })
+
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/^That time isn't actually available/)
+    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-elig-2' && r.status !== 'cancelled')
+    expect(rows).toHaveLength(0)
+  })
+})
+
 describe('checkAvailability with a per-date staff availability override', () => {
   it('never offers a date where the staff member has an "unavailable" override, even though business hours are open that day', async () => {
     // Every day open, so the assertion below doesn't depend on which day of the week "tomorrow" happens to be.
@@ -264,11 +322,70 @@ describe('checkAvailability with a per-date staff availability override', () => 
     const json = await res.json()
     const resultText = json.results[0].result as string
 
-    const isoTimestamps = [...resultText.matchAll(/\(([^)]+)\)/g)].map(m => m[1])
-    expect(isoTimestamps.length).toBeGreaterThan(0) // sanity check the tool actually returned slots at all
-    for (const iso of isoTimestamps) {
+    const slotIsos = extractSlotIsos(resultText)
+    expect(slotIsos.length).toBeGreaterThan(0) // sanity check the tool actually returned slots at all
+    for (const iso of slotIsos) {
       expect(dateStrInZone(new Date(iso), tz)).not.toBe(tomorrowKey)
     }
+  })
+})
+
+describe('checkAvailability with per-service staff restrictions', () => {
+  const allOpenHours = {
+    mon: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    tue: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    wed: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    thu: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    fri: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    sat: { open: true, opensAt: '00:00', closesAt: '23:59' },
+    sun: { open: true, opensAt: '00:00', closesAt: '23:59' },
+  }
+  const tz = 'Australia/Sydney'
+
+  it('the "anyone" union only offers a date the eligible staff member is actually free on, ignoring an ineligible-but-free team member', async () => {
+    const tomorrowKey = dateStrInZone(new Date(Date.now() + 24 * 60 * 60_000), tz)
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-elig-3', vapi_assistant_id: 'asst-elig-3', ...business({ hours: allOpenHours, timezone: tz }) }])
+    // Alice is the only one who performs Colour; Bob is wide open all day but ineligible.
+    fakeSupabase.seed('business_staff', [
+      { id: 'staff-alice-e3', business_id: 'biz-elig-3', name: 'Alice', active: true, hours: null, sort_order: 0 },
+      { id: 'staff-bob-e3', business_id: 'biz-elig-3', name: 'Bob', active: true, hours: null, sort_order: 1 },
+    ])
+    fakeSupabase.seed('business_services', [
+      { business_id: 'biz-elig-3', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-alice-e3'] },
+    ])
+    fakeSupabase.seed('business_staff_availability', [
+      { staff_id: 'staff-alice-e3', date: tomorrowKey, is_available: false, opens_at: null, closes_at: null },
+    ])
+
+    const req = toolCallRequest('asst-elig-3', 'call-elig-3', 'checkAvailability', { service: 'Colour' })
+    const res = await POST(req)
+    const json = await res.json()
+    const resultText = json.results[0].result as string
+
+    const slotIsos = extractSlotIsos(resultText)
+    expect(slotIsos.length).toBeGreaterThan(0) // sanity check — Alice is free on other days
+    for (const iso of slotIsos) {
+      expect(dateStrInZone(new Date(iso), tz)).not.toBe(tomorrowKey)
+    }
+  })
+
+  it('reports no slots when the explicitly-named staff member does not perform the requested service', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-elig-4', vapi_assistant_id: 'asst-elig-4', ...business({ hours: allOpenHours, timezone: tz }) }])
+    fakeSupabase.seed('business_staff', [
+      { id: 'staff-bob-e4', business_id: 'biz-elig-4', name: 'Bob', active: true, hours: null },
+    ])
+    fakeSupabase.seed('business_services', [
+      { business_id: 'biz-elig-4', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-someone-else'] },
+    ])
+
+    const req = toolCallRequest('asst-elig-4', 'call-elig-4', 'checkAvailability', { service: 'Colour', staffMember: 'Bob' })
+    const res = await POST(req)
+    const json = await res.json()
+    const resultText = json.results[0].result as string
+
+    expect(extractSlotIsos(resultText)).toHaveLength(0)
+    expect(resultText).toMatch(/No open slots found for Bob/)
   })
 })
 
@@ -294,9 +411,9 @@ describe('checkAvailability with preferredDate', () => {
     const json = await res.json()
     const resultText = json.results[0].result as string
 
-    const isoTimestamps = [...resultText.matchAll(/\(([^)]+)\)/g)].map(m => m[1])
-    expect(isoTimestamps.length).toBeGreaterThan(0)
-    for (const iso of isoTimestamps) {
+    const slotIsos = extractSlotIsos(resultText)
+    expect(slotIsos.length).toBeGreaterThan(0)
+    for (const iso of slotIsos) {
       expect(dateStrInZone(new Date(iso), tz)).toBe(preferredDate)
     }
     expect(resultText).not.toMatch(/nothing was open on the caller's preferred date/i)
@@ -328,9 +445,9 @@ describe('checkAvailability with preferredDate', () => {
     const json = await res.json()
     const resultText = json.results[0].result as string
 
-    const isoTimestamps = [...resultText.matchAll(/\(([^)]+)\)/g)].map(m => m[1])
-    expect(isoTimestamps.length).toBeGreaterThan(0)
-    for (const iso of isoTimestamps) {
+    const slotIsos = extractSlotIsos(resultText)
+    expect(slotIsos.length).toBeGreaterThan(0)
+    for (const iso of slotIsos) {
       expect(dateStrInZone(new Date(iso), tz)).not.toBe(preferredDate) // Friday is closed, so nothing should land on it
     }
     expect(resultText).toMatch(/nothing was open on the caller's preferred date/i)
@@ -391,6 +508,74 @@ describe('checkAvailability from a chat-shaped request (no call object)', () => 
   })
 })
 
+describe('bookAppointment with a slotRef', () => {
+  it('books using the exact ref checkAvailability returned', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-ref-1', vapi_assistant_id: 'asst-ref-1', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-ref-1', name: 'Manicure', duration_minutes: 30 }])
+
+    const checkRes = await POST(toolCallRequest('asst-ref-1', 'call-ref-1', 'checkAvailability', { service: 'Manicure' }))
+    const checkJson = await checkRes.json()
+    const ref = (checkJson.results[0].result as string).match(/\(ref: ([^)]+)\)/)?.[1]
+    expect(ref).toBeTruthy()
+
+    const bookRes = await POST(toolCallRequest('asst-ref-1', 'call-ref-1', 'bookAppointment', {
+      customerName: 'Priya', customerPhone: '0400123123', service: 'Manicure', slotRef: ref,
+    }))
+    const bookJson = await bookRes.json()
+
+    expect(bookJson.results[0].result).toMatch(/^Booked Manicure for Priya on/)
+    expect(fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-ref-1')).toHaveLength(1)
+  })
+
+  it('falls back to dateTime when slotRef fails to decode', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-ref-2', vapi_assistant_id: 'asst-ref-2', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-ref-2', name: 'Manicure', duration_minutes: 30 }])
+
+    const req = toolCallRequest('asst-ref-2', 'call-ref-2', 'bookAppointment', {
+      customerName: 'Priya', customerPhone: '0400123123', service: 'Manicure',
+      slotRef: 'not-a-real-ref', dateTime: futureWeekdayIso(17, '14:00'),
+    })
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/^Booked Manicure for Priya on/)
+  })
+
+  it('responds with a clear message when neither slotRef nor dateTime is usable', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-ref-3', vapi_assistant_id: 'asst-ref-3', ...business({}) }])
+
+    const req = toolCallRequest('asst-ref-3', 'call-ref-3', 'bookAppointment', {
+      customerName: 'Priya', customerPhone: '0400123123', service: 'Manicure',
+    })
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/no valid time to book/i)
+    expect(fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-ref-3')).toHaveLength(0)
+  })
+})
+
+describe('bookAppointment retry cap', () => {
+  it('escalates to transferCall after repeated scheduling failures in the same call, not before', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-cap-1', vapi_assistant_id: 'asst-cap-1', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-cap-1', name: 'Manicure', duration_minutes: 30 }])
+
+    const callId = 'call-cap-1'
+    const badTime = futureWeekdayIso(18, '02:00') // well outside 09:00-17:00 business hours
+    const attempt = () => POST(toolCallRequest('asst-cap-1', callId, 'bookAppointment', {
+      customerName: 'Priya', customerPhone: '0400123123', service: 'Manicure', dateTime: badTime,
+    }))
+
+    const json1 = await (await attempt()).json()
+    expect(json1.results[0].result).not.toMatch(/transferCall/i)
+
+    const json2 = await (await attempt()).json()
+    expect(json2.results[0].result).toMatch(/call the transferCall tool right now/i)
+
+    expect(fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-cap-1')).toHaveLength(0)
+  })
+})
+
 describe('rescheduleAppointment', () => {
   it('moves the appointment and sends an updated confirmation SMS', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-resch-1', vapi_assistant_id: 'asst-resch-1', ...business({}) }])
@@ -415,6 +600,30 @@ describe('rescheduleAppointment', () => {
 
     const row = fakeSupabase.rows('appointments').find(r => r.id === 'apt-resch-1')
     expect(row).toMatchObject({ status: 'rescheduled', scheduled_at: newTime })
+  })
+
+  it('does not silently move an appointment to a time outside business hours', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-resch-2', vapi_assistant_id: 'asst-resch-2', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-resch-2', name: 'Pedicure', duration_minutes: 60 }])
+    const originalTime = futureWeekdayIso(19, '14:00')
+    fakeSupabase.seed('appointments', [{
+      id: 'apt-resch-2', business_id: 'biz-resch-2', service: 'Pedicure',
+      customer_name: 'Jamie', customer_phone: '0400999888',
+      scheduled_at: originalTime, status: 'confirmed', calendar_event_id: null,
+    }])
+
+    const badTime = futureWeekdayIso(20, '02:00') // well outside 09:00-17:00 business hours
+    const req = toolCallRequest('asst-resch-2', 'call-resch-2', 'rescheduleAppointment', {
+      appointmentId: 'apt-resch-2',
+      newDateTime: badTime,
+    })
+
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).not.toMatch(/^Rescheduled/)
+    const row = fakeSupabase.rows('appointments').find(r => r.id === 'apt-resch-2')
+    expect(row).toMatchObject({ status: 'confirmed', scheduled_at: originalTime }) // untouched — must not have silently written the bad time
   })
 })
 

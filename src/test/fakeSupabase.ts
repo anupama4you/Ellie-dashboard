@@ -132,6 +132,22 @@ export class FakeSupabase {
     return this.table(tableName).rows
   }
 
+  /** Mimics the one Postgres RPC function this webhook calls — the atomic per-call scheduling-failure counter. */
+  async rpc(fnName: string, params: Record<string, unknown>): Promise<{ data: unknown; error: unknown }> {
+    if (fnName === 'increment_call_scheduling_failures') {
+      const callId = params.p_call_id as string
+      const table = this.table('call_scheduling_failures')
+      let row = table.rows.find(r => r.call_id === callId)
+      if (!row) {
+        row = { call_id: callId, attempts: 0 }
+        table.rows.push(row)
+      }
+      row.attempts = (row.attempts as number) + 1
+      return { data: row.attempts, error: null }
+    }
+    return { data: null, error: { message: `FakeSupabase: unknown RPC function "${fnName}"` } }
+  }
+
   from(tableName: string) {
     return new QueryBuilder(tableName, this.table(tableName))
   }
