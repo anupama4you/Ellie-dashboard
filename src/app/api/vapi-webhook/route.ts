@@ -72,6 +72,24 @@ function toolArgs(toolCall: ToolCall): Record<string, unknown> {
   return toolCall.arguments ?? toolCall.function?.arguments ?? {}
 }
 
+/**
+ * A real phone call's tool-calls message nests the assistant id under
+ * `call.assistantId`. Vapi's browser-based Chat testing tool (Test tab in
+ * the dashboard) still delivers tool-calls to each tool's own server.url —
+ * so this webhook does receive it — but Vapi's docs don't confirm the
+ * assistant id lands in the same place for a chat-originated call, and it
+ * was observed missing there in practice (the businesses lookup came back
+ * empty for an otherwise-valid chat test). Falls through a few plausible
+ * top-level locations before giving up, so a phone call (already working)
+ * is completely unaffected and a chat test has the best chance of resolving.
+ */
+function resolveAssistantId(message: Record<string, unknown>): string | undefined {
+  const call = message.call as { assistantId?: string } | undefined
+  return call?.assistantId
+    ?? (message.assistantId as string | undefined)
+    ?? ((message.chat as { assistantId?: string } | undefined)?.assistantId)
+}
+
 function fmtDate(iso: string, timeZone: string) {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
@@ -275,7 +293,7 @@ export async function POST(req: Request) {
   // custom tool. Response shape is `{ destination }` or `{ error }`, not the
   // `{ results: [...] }` shape every other tool-calls response uses.
   if (message.type === 'transfer-destination-request') {
-    const assistantId = message.call?.assistantId as string | undefined
+    const assistantId = resolveAssistantId(message)
 
     try {
       const { data: biz } = await supabase
@@ -315,7 +333,7 @@ export async function POST(req: Request) {
           const { data: biz } = await supabase
             .from('businesses')
             .select('id, hours, timezone')
-            .eq('vapi_assistant_id', message.call?.assistantId)
+            .eq('vapi_assistant_id', resolveAssistantId(message))
             .single()
 
           if (!biz) {
@@ -360,7 +378,7 @@ export async function POST(req: Request) {
           const { data: biz } = await supabase
             .from('businesses')
             .select('id, timezone')
-            .eq('vapi_assistant_id', message.call?.assistantId)
+            .eq('vapi_assistant_id', resolveAssistantId(message))
             .single()
 
           if (!biz) {
@@ -403,7 +421,7 @@ export async function POST(req: Request) {
           const { data: biz } = await supabase
             .from('businesses')
             .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
-            .eq('vapi_assistant_id', message.call?.assistantId)
+            .eq('vapi_assistant_id', resolveAssistantId(message))
             .single()
 
           if (!biz) {
@@ -510,7 +528,7 @@ export async function POST(req: Request) {
           const { data: biz } = await supabase
             .from('businesses')
             .select('id, name, twilio_phone_number, timezone')
-            .eq('vapi_assistant_id', message.call?.assistantId)
+            .eq('vapi_assistant_id', resolveAssistantId(message))
             .single()
 
           if (!biz) {
@@ -674,7 +692,7 @@ export async function POST(req: Request) {
         const { data: biz } = await supabase
           .from('businesses')
           .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
-          .eq('vapi_assistant_id', message.call?.assistantId)
+          .eq('vapi_assistant_id', resolveAssistantId(message))
           .single()
 
         if (!biz) {

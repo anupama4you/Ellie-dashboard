@@ -110,6 +110,21 @@ function toolCallRequest(assistantId: string, callId: string, toolName: string, 
   })
 }
 
+/** Shaped like what Vapi's browser-based Chat test tool appears to send: no `call` object at all, assistantId at the top level of `message` instead. */
+function chatToolCallRequest(assistantId: string, toolName: string, args: Record<string, unknown>) {
+  return new Request('http://localhost/api/vapi-webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      message: {
+        type: 'tool-calls',
+        assistantId,
+        toolCallList: [{ id: 'tc-1', name: toolName, arguments: args }],
+      },
+    }),
+  })
+}
+
 describe('bookAppointment', () => {
   it('books an appointment and sends a confirmation SMS', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-book-1', vapi_assistant_id: 'asst-book-1', ...business({}) }])
@@ -353,6 +368,19 @@ describe('checkAvailability caches Google Calendar free/busy', () => {
       freeBusyQuery.mockReset()
       createCalendarEvent.mockReset()
     }
+  })
+})
+
+describe('checkAvailability from a chat-shaped request (no call object)', () => {
+  it('still resolves the business via the top-level assistantId', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-chat-1', vapi_assistant_id: 'asst-chat-1', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-chat-1', name: 'Manicure', duration_minutes: 30 }])
+
+    const req = chatToolCallRequest('asst-chat-1', 'checkAvailability', {})
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).not.toMatch(/couldn't reach the calendar/)
   })
 })
 
