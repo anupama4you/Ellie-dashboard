@@ -337,7 +337,8 @@ export async function POST(req: Request) {
             .single()
 
           if (!biz) {
-            resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
+            // TEMPORARY DIAGNOSTIC — see if the chat-shaped payload fallback in resolveAssistantId() actually matches what Vapi sends. Revert once confirmed.
+            resultText = `I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back. [debug resolveAssistantId=${JSON.stringify(resolveAssistantId(message))} messageKeys=${JSON.stringify(Object.keys(message))} call=${JSON.stringify(message.call)} top-level assistantId=${JSON.stringify((message as Record<string, unknown>).assistantId)}]`
           } else {
             const preferredDate = args.preferredDate as string | undefined
             const { slots, resolvedStaffName } = await computeAvailableSlots(
