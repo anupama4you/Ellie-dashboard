@@ -74,20 +74,25 @@ function toolArgs(toolCall: ToolCall): Record<string, unknown> {
 
 /**
  * A real phone call's tool-calls message nests the assistant id under
- * `call.assistantId`. Vapi's browser-based Chat testing tool (Test tab in
- * the dashboard) still delivers tool-calls to each tool's own server.url —
- * so this webhook does receive it — but Vapi's docs don't confirm the
- * assistant id lands in the same place for a chat-originated call, and it
- * was observed missing there in practice (the businesses lookup came back
- * empty for an otherwise-valid chat test). Falls through a few plausible
- * top-level locations before giving up, so a phone call (already working)
- * is completely unaffected and a chat test has the best chance of resolving.
+ * `call.assistantId`. Vapi's browser-based Chat testing tool delivers
+ * tool-calls to each tool's own server.url too, but confirmed via a live
+ * diagnostic dump that a chat-originated message has a completely different
+ * top-level shape — no `call` key at all (keys are timestamp/type/toolCalls/
+ * toolCallList/toolWithToolCallList/artifact/chat/assistant instead). Tries
+ * `assistant.id` (the Assistant Object Vapi includes for a chat) and a couple
+ * of other plausible spots under `chat` before giving up — a real phone call
+ * is completely unaffected since `call` is checked first and always wins.
  */
 function resolveAssistantId(message: Record<string, unknown>): string | undefined {
   const call = message.call as { assistantId?: string } | undefined
+  const assistant = message.assistant as { id?: string; assistantId?: string } | undefined
+  const chat = message.chat as { assistantId?: string; assistant?: { id?: string } } | undefined
   return call?.assistantId
+    ?? assistant?.id
+    ?? assistant?.assistantId
+    ?? chat?.assistantId
+    ?? chat?.assistant?.id
     ?? (message.assistantId as string | undefined)
-    ?? ((message.chat as { assistantId?: string } | undefined)?.assistantId)
 }
 
 function fmtDate(iso: string, timeZone: string) {
@@ -338,7 +343,7 @@ export async function POST(req: Request) {
 
           if (!biz) {
             // TEMPORARY DIAGNOSTIC — see if the chat-shaped payload fallback in resolveAssistantId() actually matches what Vapi sends. Revert once confirmed.
-            resultText = `I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back. [debug resolveAssistantId=${JSON.stringify(resolveAssistantId(message))} messageKeys=${JSON.stringify(Object.keys(message))} call=${JSON.stringify(message.call)} top-level assistantId=${JSON.stringify((message as Record<string, unknown>).assistantId)}]`
+            resultText = `I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back. [debug resolveAssistantId=${JSON.stringify(resolveAssistantId(message))} assistant=${JSON.stringify(message.assistant)} chat=${JSON.stringify(message.chat)}]`
           } else {
             const preferredDate = args.preferredDate as string | undefined
             const { slots, resolvedStaffName } = await computeAvailableSlots(

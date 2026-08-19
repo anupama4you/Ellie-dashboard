@@ -110,7 +110,13 @@ function toolCallRequest(assistantId: string, callId: string, toolName: string, 
   })
 }
 
-/** Shaped like what Vapi's browser-based Chat test tool appears to send: no `call` object at all, assistantId at the top level of `message` instead. */
+/**
+ * Shaped like a real webhook payload from Vapi's browser-based Chat test
+ * tool — confirmed via a live diagnostic dump, not guessed: no `call` key at
+ * all; the assistant reference lives under a top-level `assistant` object
+ * instead (keys observed: timestamp/type/toolCalls/toolCallList/
+ * toolWithToolCallList/artifact/chat/assistant).
+ */
 function chatToolCallRequest(assistantId: string, toolName: string, args: Record<string, unknown>) {
   return new Request('http://localhost/api/vapi-webhook', {
     method: 'POST',
@@ -118,7 +124,8 @@ function chatToolCallRequest(assistantId: string, toolName: string, args: Record
     body: JSON.stringify({
       message: {
         type: 'tool-calls',
-        assistantId,
+        assistant: { id: assistantId },
+        chat: { id: 'chat-1' },
         toolCallList: [{ id: 'tc-1', name: toolName, arguments: args }],
       },
     }),
