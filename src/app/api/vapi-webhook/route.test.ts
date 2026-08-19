@@ -240,10 +240,21 @@ describe('bookAppointment with a staff roster', () => {
 
     const res = await POST(req)
     const json = await res.json()
+    const resultText = json.results[0].result as string
 
-    expect(json.results[0].result).toMatch(/^That time was just/)
+    expect(resultText).toMatch(/^That time was just/)
     const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-staff-2' && r.status !== 'cancelled')
     expect(rows).toHaveLength(1)
+
+    // The alternatives offered must stay on the day the caller actually
+    // asked about — not silently reset to whatever's soonest from right now,
+    // which could be a completely different (and confusing) day.
+    const carolDayKey = dateStrInZone(new Date(carolTime), 'Australia/Sydney')
+    const slotIsos = extractSlotIsos(resultText)
+    expect(slotIsos.length).toBeGreaterThan(0)
+    for (const iso of slotIsos) {
+      expect(dateStrInZone(new Date(iso), 'Australia/Sydney')).toBe(carolDayKey)
+    }
   })
 })
 

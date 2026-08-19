@@ -243,6 +243,21 @@ function fmtSlots(slots: Date[], timeZone: string, staffId: string | null): stri
   return slots.map(s => `${formatSlot(s, timeZone)} (ref: ${encodeSlotRef(s.toISOString(), staffId)})`).join('; ')
 }
 
+/**
+ * The day/time a failed booking/reschedule attempt was actually FOR, as
+ * preferredDate/preferredTime for a recovery computeAvailableSlots call —
+ * without this, "that time isn't available" alternatives silently reset to
+ * whatever's soonest from right now, which can land on a completely
+ * different day than the one the caller was actually trying to book (e.g.
+ * offering today's slots after a failed attempt to book next Monday).
+ */
+function preferredFromInstant(date: Date, timeZone: string): { preferredDate: string; preferredTime: string } {
+  return {
+    preferredDate: dateStrInZone(date, timeZone),
+    preferredTime: formatInZone(date, timeZone, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }),
+  }
+}
+
 // end-of-call-report field extraction — Vapi has flattened some of these fields
 // directly onto `message` in different API versions, so check both the nested
 // (call/artifact/analysis) and flat shapes rather than trusting one.
@@ -507,7 +522,10 @@ export async function POST(req: Request) {
                 } else {
                   resultText = "That new time isn't actually available — apologise briefly, then call checkAvailability again to offer the caller a real time."
                   try {
-                    const { slots, resolvedStaffId } = await computeAvailableSlots(biz, existing.service ?? undefined, undefined, existing.staff_id)
+                    const { preferredDate, preferredTime } = preferredFromInstant(requestedStart, biz.timezone)
+                    const { slots, resolvedStaffId } = await computeAvailableSlots(
+                      biz, existing.service ?? undefined, undefined, existing.staff_id, preferredDate, preferredTime,
+                    )
                     if (slots.length) {
                       resultText = `That new time isn't actually available. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to rescheduleAppointment for whichever they choose.`
                     }
@@ -532,7 +550,10 @@ export async function POST(req: Request) {
                   } else {
                     resultText = "That new time was just taken by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
                     try {
-                      const { slots, resolvedStaffId } = await computeAvailableSlots(biz, existing.service ?? undefined, undefined, existing.staff_id)
+                      const { preferredDate, preferredTime } = preferredFromInstant(requestedStart, biz.timezone)
+                      const { slots, resolvedStaffId } = await computeAvailableSlots(
+                        biz, existing.service ?? undefined, undefined, existing.staff_id, preferredDate, preferredTime,
+                      )
                       if (slots.length) {
                         resultText = `That new time was just taken by another caller. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to rescheduleAppointment for whichever they choose.`
                       }
@@ -831,7 +852,10 @@ export async function POST(req: Request) {
             }
             let recoveryText = "That time isn't actually available — apologise briefly, then call checkAvailability again to offer the caller a real time."
             try {
-              const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, finalStaff?.id ?? resolvedStaff?.id)
+              const { preferredDate, preferredTime } = preferredFromInstant(requestedStart, biz.timezone)
+              const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(
+                biz, args.service as string | undefined, undefined, finalStaff?.id ?? resolvedStaff?.id, preferredDate, preferredTime,
+              )
               if (slots.length) {
                 recoveryText = `That time isn't actually available${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to bookAppointment for whichever they choose.`
               }
@@ -876,7 +900,10 @@ export async function POST(req: Request) {
             } else {
               resultText = "That time was just booked by someone else — apologise briefly, then call checkAvailability again to offer the caller a different time."
               try {
-                const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(biz, args.service as string | undefined, undefined, finalStaff?.id)
+                const { preferredDate, preferredTime } = preferredFromInstant(requestedStart, biz.timezone)
+                const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(
+                  biz, args.service as string | undefined, undefined, finalStaff?.id, preferredDate, preferredTime,
+                )
                 if (slots.length) {
                   resultText = `That time was just taken by another caller. Apologise briefly, then offer these instead${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to bookAppointment for whichever they choose.`
                 }
