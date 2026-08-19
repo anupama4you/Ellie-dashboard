@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findNextAvailableSlots, encodeSlotRef, decodeSlotRef, isStaffEligibleForService } from './availability'
+import { findNextAvailableSlots, encodeSlotRef, decodeSlotRef } from './availability'
 import { dateStrInZone } from '@/lib/timezone'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -107,43 +107,6 @@ describe('findNextAvailableSlots — staff filtering and hours intersection', ()
     expect(slots.some(s => localDateOf(s.toISOString()) === dayKey(1))).toBe(false)
   })
 
-  it('a per-date "unavailable" override removes that day even though the weekly template and business hours are both open', () => {
-    const overrides = new Map([[dayKey(2), { isAvailable: false, opensAt: null, closesAt: null }]])
-    const slots = findNextAvailableSlots({
-      hours: ALL_OPEN,
-      services: [],
-      existing: [],
-      now: NOW,
-      count: 20,
-      staffAvailabilityByDate: overrides,
-      timeZone: TZ,
-    })
-    expect(slots.some(s => localDateOf(s.toISOString()) === dayKey(2))).toBe(false)
-  })
-
-  it('a per-date override wins over a weekly staffHours template that closes that day, and is itself capped by business hours', () => {
-    // Only Thursday open at the business level, so the assertion below is unambiguous no matter what count is passed.
-    const CLOSED = { open: false, opensAt: '09:00', closesAt: '17:00' }
-    const onlyThursday: Hours = { mon: CLOSED, tue: CLOSED, wed: CLOSED, thu: ALL_OPEN.thu, fri: CLOSED, sat: CLOSED, sun: CLOSED }
-    const staffHours: Hours = { ...ALL_OPEN, thu: { open: false, opensAt: '09:00', closesAt: '17:00' } }
-    // The weekly template has Thursday closed entirely; the override opens it for this specific date — capped at business close (17:00), even though the override itself asks for 20:00.
-    const overrides = new Map([[dayKey(3), { isAvailable: true, opensAt: '16:00', closesAt: '20:00' }]])
-    const slots = findNextAvailableSlots({
-      hours: onlyThursday,
-      services: [],
-      existing: [],
-      now: NOW,
-      count: 2, // exactly this Thursday's 16:00 and 16:30 slots — stops before reaching the following week's Thursday
-      staffHours,
-      staffAvailabilityByDate: overrides,
-      timeZone: TZ,
-    })
-    expect(slots.length).toBeGreaterThan(0)
-    for (const s of slots) {
-      expect(localDateOf(s.toISOString())).toBe(dayKey(3))
-      expect(s.toISOString() >= localInstant(3, '16:00') && s.toISOString() < localInstant(3, '17:00')).toBe(true)
-    }
-  })
 })
 
 describe('findNextAvailableSlots — preferredDate', () => {
@@ -203,41 +166,6 @@ describe('findNextAvailableSlots — preferredDate', () => {
     })
     expect(slots.length).toBe(1)
     expect(localDateOf(slots[0].toISOString())).toBe(dayKey(0))
-  })
-})
-
-describe('isStaffEligibleForService', () => {
-  const services = [
-    { name: 'Colour', duration_minutes: 90, staff_ids: ['staff-sarah', 'staff-jessica'] },
-    { name: 'Haircut', duration_minutes: 30, staff_ids: null },
-    { name: 'Massage', duration_minutes: 60, staff_ids: [] },
-  ]
-
-  it('restricts a service with staff_ids to only those staff', () => {
-    expect(isStaffEligibleForService('staff-sarah', 'Colour', services)).toBe(true)
-    expect(isStaffEligibleForService('staff-brian', 'Colour', services)).toBe(false)
-  })
-
-  it('matches the service name case-insensitively', () => {
-    expect(isStaffEligibleForService('staff-brian', 'COLOUR', services)).toBe(false)
-    expect(isStaffEligibleForService('staff-sarah', 'colour', services)).toBe(true)
-  })
-
-  it('is unrestricted when staff_ids is null (no restriction configured)', () => {
-    expect(isStaffEligibleForService('staff-brian', 'Haircut', services)).toBe(true)
-  })
-
-  it('is unrestricted when staff_ids is an empty array', () => {
-    expect(isStaffEligibleForService('staff-brian', 'Massage', services)).toBe(true)
-  })
-
-  it('is unrestricted when no service name is given', () => {
-    expect(isStaffEligibleForService('staff-brian', undefined, services)).toBe(true)
-    expect(isStaffEligibleForService('staff-brian', null, services)).toBe(true)
-  })
-
-  it('is unrestricted when the named service has no matching row', () => {
-    expect(isStaffEligibleForService('staff-brian', 'Nonexistent Service', services)).toBe(true)
   })
 })
 

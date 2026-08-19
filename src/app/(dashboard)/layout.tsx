@@ -3,6 +3,7 @@ import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
 import { dateStrInZone, addDaysInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
+import { NavigationBlockerProvider } from '@/lib/navigationBlocker'
 import Sidebar from '@/components/Sidebar'
 import AccountDisabledScreen from '@/components/AccountDisabledScreen'
 
@@ -66,30 +67,32 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--paper)' }}>
-      <Sidebar
-        businessName={biz?.name ?? 'Your business'}
-        userEmail={user?.email ?? ''}
-        coveragePct={coveragePct}
-        streakDays={streakDays}
-        isAdmin={isAdmin}
-        linePaused={biz?.line_paused ?? false}
-        hasAssistant={!!biz?.vapi_assistant_id}
-        transferPhoneNumber={biz?.transfer_phone_number ?? null}
-        phoneNumber={biz?.twilio_phone_number ?? null}
-        usage={usage ? {
-          used: usage.used,
-          limit: usage.limit,
-          pct: usage.pct,
-          isTrial: usage.isTrial,
-          isUnlimited: usage.isUnlimited,
-          trialDaysLeft: usage.trialDaysLeft,
-          renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
-        } : null}
-      />
-      <div className="flex-1 overflow-hidden pt-14 md:pt-0">
-        {children}
+    <NavigationBlockerProvider>
+      <div className="flex h-screen overflow-hidden" style={{ background: 'var(--paper)' }}>
+        <Sidebar
+          businessName={biz?.name ?? 'Your business'}
+          userEmail={user?.email ?? ''}
+          coveragePct={coveragePct}
+          streakDays={streakDays}
+          isAdmin={isAdmin}
+          linePaused={biz?.line_paused ?? false}
+          hasAssistant={!!biz?.vapi_assistant_id}
+          transferPhoneNumber={biz?.transfer_phone_number ?? null}
+          phoneNumber={biz?.twilio_phone_number ?? null}
+          usage={usage ? {
+            used: usage.used,
+            limit: usage.limit,
+            pct: usage.pct,
+            isTrial: usage.isTrial,
+            isUnlimited: usage.isUnlimited,
+            trialDaysLeft: usage.trialDaysLeft,
+            renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
+          } : null}
+        />
+        <div className="flex-1 overflow-hidden pt-14 md:pt-0">
+          {children}
+        </div>
       </div>
-    </div>
+    </NavigationBlockerProvider>
   )
 }

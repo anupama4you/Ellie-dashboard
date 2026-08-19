@@ -3,6 +3,7 @@ import { getLocalCalls, callSummary, recordingProxyUrl, type LocalCall } from '@
 import { formatInZone, dateStrInZone, addDaysInZone } from '@/lib/timezone'
 import { Mic, Download } from 'lucide-react'
 import RecordingsExplorer, { type RecordingItem } from '@/components/RecordingsExplorer'
+import RefreshButton from '@/components/RefreshButton'
 
 const RANGE_DAYS: Record<string, number | null> = { '7': 7, '30': 30, '90': 90, all: null }
 
@@ -70,15 +71,18 @@ export default async function RecordingsPage({
               Listen back to any call, with the full transcript alongside
             </p>
           </div>
-          <button
-            type="button"
-            disabled
-            title="Coming soon"
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-not-allowed opacity-50"
-            style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}
-          >
-            <Download size={14} /> Download all
-          </button>
+          <div className="flex items-center gap-2">
+            <RefreshButton />
+            <button
+              type="button"
+              disabled
+              title="Coming soon"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-not-allowed opacity-50"
+              style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}
+            >
+              <Download size={14} /> Download all
+            </button>
+          </div>
         </div>
 
         {fetchError ? (

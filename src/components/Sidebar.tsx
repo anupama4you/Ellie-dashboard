@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive } from '@/app/(dashboard)/actions'
+import BlockableLink from '@/components/BlockableLink'
 
 const NAV = [
   { href: '/',             label: 'Dashboard',           icon: LayoutDashboard },
@@ -193,7 +193,7 @@ export default function Sidebar({
         {NAV.map(({ href, label, icon: Icon }) => {
           const active = isActive(href, pathname)
           return (
-            <Link
+            <BlockableLink
               key={href}
               href={href}
               title={collapsed ? label : undefined}
@@ -206,7 +206,7 @@ export default function Sidebar({
             >
               <Icon size={17} style={{ opacity: 0.85, flexShrink: 0 }} />
               <span className={collapsed ? 'md:hidden' : ''}>{label}</span>
-            </Link>
+            </BlockableLink>
           )
         })}
       </nav>
@@ -216,7 +216,7 @@ export default function Sidebar({
           <div className={`text-[10px] tracking-widest uppercase px-2.5 pt-4 pb-1.5 ${collapsed ? 'md:hidden' : ''}`} style={{ color: '#736C90' }}>
             Operator
           </div>
-          <Link
+          <BlockableLink
             href="/admin"
             title={collapsed ? 'Admin panel' : undefined}
             className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[0.92rem] font-medium transition-colors ${collapsed ? 'md:justify-center md:px-0' : ''}`}
@@ -228,7 +228,7 @@ export default function Sidebar({
           >
             <ShieldCheck size={17} style={{ opacity: 0.9, flexShrink: 0 }} />
             <span className={collapsed ? 'md:hidden' : ''}>Admin panel</span>
-          </Link>
+          </BlockableLink>
         </>
       )}
 

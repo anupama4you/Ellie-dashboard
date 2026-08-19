@@ -88,9 +88,6 @@ export default function BriefingReadOnly({ businessName, hasDraft, draft, live, 
             <div key={i} className="flex items-center gap-3 px-5 py-2.5 text-sm" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined, color: 'var(--text)' }}>
               <div className="flex-1 min-w-0">
                 <span className="font-semibold">{svc.name || '—'}</span>
-                {svc.staffNames?.length > 0 && (
-                  <span className="block text-xs mt-0.5" style={{ color: 'var(--t3)' }}>{svc.staffNames.join(', ')} only</span>
-                )}
               </div>
               {svc.durationMinutes != null && <span style={{ color: 'var(--t3)' }}>{svc.durationMinutes} min</span>}
               {fmtCents(svc.priceCents) && <span className="font-mono" style={{ color: 'var(--t2)' }}>{fmtCents(svc.priceCents)}</span>}

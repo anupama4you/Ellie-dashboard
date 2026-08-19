@@ -2,7 +2,7 @@ import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 type ServiceInput = { name: string; durationMinutes: number | null; priceCents: number | null }
 type FaqInput = { question: string; answer: string }
-type StaffInput = { name: string; active: boolean }
+type StaffInput = { name: string; active: boolean; hours: Hours | null }
 
 const DAY_LABEL: Record<keyof Hours, string> = {
   mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
@@ -31,11 +31,21 @@ export function fmtFaqs(faqs: FaqInput[]): string {
   return faqs.map(f => `- Q: ${f.question}\n  A: ${f.answer}`).join('\n')
 }
 
-/** Only active staff are ever surfaced to Ellie — an inactive/removed staff member shouldn't be offered on calls even though the row still exists for historical appointments. */
+/**
+ * Only active staff are ever surfaced to Ellie — an inactive/removed staff
+ * member shouldn't be offered on calls even though the row still exists for
+ * historical appointments. Each staff member's own weekly hours (when they
+ * differ from the business's) are spelled out inline so a caller asking
+ * "when's Amanda working?" can be answered directly, without that turning
+ * into a checkAvailability call.
+ */
 export function fmtStaff(staff: StaffInput[]): string {
   const active = staff.filter(s => s.active)
   if (active.length === 0) return '(No specific team members listed — treat this as a single-provider business and never ask who the caller wants.)'
-  return active.map(s => `- ${s.name}`).join('\n')
+  return active.map(s => {
+    const schedule = s.hours ? fmtHours(s.hours).split('\n').join('; ') : "Works the business's regular hours above"
+    return `- ${s.name} — ${schedule}`
+  }).join('\n')
 }
 
 export function fmtTransferRules(instructions: string): string {

@@ -75,10 +75,7 @@ export async function applyDraftAndPushPrompt(
   // by id) rather than delete-all-then-reinsert — appointments.staff_id is a
   // real FK to business_staff.id, and delete+reinsert generates new ids,
   // which would silently null out every appointment's staff assignment (via
-  // the FK's `on delete set null`) on every single Apply & Push. This runs
-  // before services below so a service's staffNames (draft-time names — a
-  // brand-new staff member added in this same draft has no id yet to
-  // reference) can be resolved against the final, stable staff ids.
+  // the FK's `on delete set null`) on every single Apply & Push.
   const { data: liveStaffRows } = await admin.from('business_staff').select('id').eq('business_id', businessId)
   const liveStaffIds = new Set((liveStaffRows ?? []).map(r => r.id))
   const draftStaffIds = new Set((draft.staff ?? []).filter(s => s.id).map(s => s.id!))
@@ -89,20 +86,16 @@ export async function applyDraftAndPushPrompt(
     if (error) throw new Error(error.message)
   }
 
-  const finalStaffIdByName = new Map<string, string>()
   for (const [i, s] of (draft.staff ?? []).entries()) {
     if (s.id && liveStaffIds.has(s.id)) {
       const { error } = await admin.from('business_staff')
         .update({ name: s.name, active: s.active, hours: s.hours, sort_order: i })
         .eq('id', s.id)
       if (error) throw new Error(error.message)
-      finalStaffIdByName.set(s.name.trim().toLowerCase(), s.id)
     } else {
-      const { data: insertedStaff, error } = await admin.from('business_staff')
+      const { error } = await admin.from('business_staff')
         .insert({ business_id: businessId, name: s.name, active: s.active, hours: s.hours, sort_order: i })
-        .select('id').single()
       if (error) throw new Error(error.message)
-      finalStaffIdByName.set(s.name.trim().toLowerCase(), insertedStaff!.id)
     }
   }
 
@@ -112,7 +105,6 @@ export async function applyDraftAndPushPrompt(
     const { error } = await admin.from('business_services').insert(
       draft.services.map((s, i) => ({
         business_id: businessId, name: s.name, duration_minutes: s.durationMinutes, price_cents: s.priceCents, sort_order: i,
-        staff_ids: (s.staffNames ?? []).map(n => finalStaffIdByName.get(n.trim().toLowerCase())).filter((sid): sid is string => !!sid),
       }))
     )
     if (error) throw new Error(error.message)

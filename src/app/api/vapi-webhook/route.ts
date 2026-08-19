@@ -2,9 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendSms } from '@/lib/twilio'
 import { phoneDigitsKey, toE164Au } from '@/lib/sms'
-import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, hasConflictingAppointment, isStaffEligibleForService, encodeSlotRef, decodeSlotRef, DEFAULT_SLOT_COUNT } from '@/lib/availability'
+import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, hasConflictingAppointment, encodeSlotRef, decodeSlotRef, DEFAULT_SLOT_COUNT } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
-import { getValidAccessToken, freeBusyQuery, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
+import { getValidAccessToken, listEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone, dateStrInZone } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
@@ -19,42 +19,31 @@ const supabase = createClient(
 )
 
 /**
- * Short-lived cache for the one genuinely slow, safely-cacheable step in
- * checkAvailability: the round trip to Google's free/busy API. A call often
- * asks checkAvailability three or four times in quick succession (different
- * staff, different day, "anything later?") — each one otherwise re-paying
- * that external network hop even though the answer can't realistically have
- * changed in the last few seconds. Local data (appointments, staff, services)
- * is deliberately NOT cached here — those reads are already fast (same
- * Supabase project) and freshness matters most for them, since they're what
- * actually prevents a double-booking. Keyed per business, process-local
- * (each warm serverless instance has its own — fine, since consecutive tool
- * calls within one live call almost always land on the same instance; a
- * cold/different instance just pays the round trip again, same as today).
+ * Busy intervals from the business's connected Google Calendar — a single
+ * calendar shared across every staff member, not one per person. Uses the
+ * full events list (not the privacy-preserving freeBusy endpoint) so events
+ * that are actually one of our own tracked appointments can be excluded via
+ * `ownEventIds`: those are already correctly represented, staff-scoped, by
+ * the local `appointments` table (see computeAvailableSlots) — counting them
+ * again here too would double-block, and since this whole calendar is shared,
+ * it would incorrectly mark every OTHER staff member busy at that time as
+ * well (e.g. Amanda's own booking making Sarah look unavailable). What's left
+ * after excluding our own events is genuinely external (e.g. manually added
+ * in Google Calendar directly) — those have no staff attribution available
+ * from the API at all, so they conservatively still block the whole team.
  */
-const FREE_BUSY_CACHE_TTL_MS = 30_000
-const freeBusyCache = new Map<string, { expires: number; data: { start: Date; end: Date }[] }>()
-
-async function getFreeBusy(bizId: string, now: Date, lookout: Date): Promise<{ start: Date; end: Date }[]> {
-  const cached = freeBusyCache.get(bizId)
-  if (cached && cached.expires > Date.now()) return cached.data
-
+async function getExternalBusy(bizId: string, now: Date, lookout: Date, ownEventIds: Set<string>): Promise<{ start: Date; end: Date }[]> {
   try {
     const google = await getValidAccessToken(supabase, bizId)
     if (!google) return []
-    const busy = await freeBusyQuery(google.accessToken, google.calendarId, now, lookout)
-    const data = busy.map(b => ({ start: new Date(b.start), end: new Date(b.end) }))
-    freeBusyCache.set(bizId, { expires: Date.now() + FREE_BUSY_CACHE_TTL_MS, data })
-    return data
+    const events = await listEvents(google.accessToken, google.calendarId, now, lookout)
+    return events
+      .filter(e => e.start?.dateTime && e.end?.dateTime && !ownEventIds.has(e.id))
+      .map(e => ({ start: new Date(e.start!.dateTime!), end: new Date(e.end!.dateTime!) }))
   } catch (calErr) {
-    console.error('Google Calendar free/busy check failed — falling back to local availability only:', calErr)
+    console.error('Google Calendar events check failed — falling back to local availability only:', calErr)
     return []
   }
-}
-
-/** Call right after any successful Google Calendar mutation, so the next checkAvailability in the same call never offers a slot the call itself just filled or freed up. */
-function invalidateFreeBusyCache(bizId: string): void {
-  freeBusyCache.delete(bizId)
 }
 
 /**
@@ -91,10 +80,9 @@ function resolveRequestedSlot(
  * hit. Deliberately NOT the model self-tracking a count across turns (the
  * exact reliability class of problem the slotRef fix above exists to avoid,
  * just applied to a number instead of a timestamp) and deliberately NOT an
- * in-process cache like freeBusyCache above (a cold/different serverless
- * instance mid-call would silently reset an in-memory count, reproducing
- * the very failure this exists to prevent — a DB round trip is the right
- * tradeoff here, unlike the free/busy cache where a miss is harmless).
+ * in-process count (a cold/different serverless instance mid-call would
+ * silently reset an in-memory count, reproducing the very failure this
+ * exists to prevent — a DB round trip is the right tradeoff here).
  */
 const MAX_SCHEDULING_ATTEMPTS = 2
 const SCHEDULING_ESCALATION_TEXT =
@@ -186,10 +174,10 @@ async function computeAvailableSlots(
   preferredDate?: string,
 ): Promise<{ slots: Date[]; resolvedStaffName: string | null; resolvedStaffId: string | null }> {
   const [{ data: services }, resolvedStaff, { data: existing }, { data: activeRoster }] = await Promise.all([
-    supabase.from('business_services').select('name, duration_minutes, staff_ids').eq('business_id', biz.id),
+    supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
     requestedStaffId ? getStaffById(biz.id, requestedStaffId) : resolveStaffMember(biz.id, requestedStaffMember),
     supabase.from('appointments')
-      .select('scheduled_at, service, staff_id')
+      .select('scheduled_at, service, staff_id, calendar_event_id')
       .eq('business_id', biz.id)
       .neq('status', 'cancelled')
       .gte('scheduled_at', new Date().toISOString())
@@ -201,27 +189,8 @@ async function computeAvailableSlots(
   const now = new Date()
   const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
 
-  const externalBusy = await getFreeBusy(biz.id, now, lookout)
-
-  const fetchOverridesByStaff = async (staffIds: string[]) => {
-    const { data: overrides } = await supabase
-      .from('business_staff_availability')
-      .select('staff_id, date, is_available, opens_at, closes_at')
-      .in('staff_id', staffIds)
-      .gte('date', dateStrInZone(now, biz.timezone))
-      .lte('date', dateStrInZone(lookout, biz.timezone))
-
-    const byStaff = new Map<string, Map<string, { isAvailable: boolean; opensAt: string | null; closesAt: string | null }>>()
-    for (const o of overrides ?? []) {
-      if (!byStaff.has(o.staff_id)) byStaff.set(o.staff_id, new Map())
-      byStaff.get(o.staff_id)!.set(o.date, {
-        isAvailable: o.is_available,
-        opensAt: o.opens_at ? (o.opens_at as string).slice(0, 5) : null,
-        closesAt: o.closes_at ? (o.closes_at as string).slice(0, 5) : null,
-      })
-    }
-    return byStaff
-  }
+  const ownEventIds = new Set((existing ?? []).map(a => a.calendar_event_id).filter((id): id is string => !!id))
+  const externalBusy = await getExternalBusy(biz.id, now, lookout, ownEventIds)
 
   const baseOpts = {
     hours: biz.hours as Hours,
@@ -234,41 +203,28 @@ async function computeAvailableSlots(
   }
 
   if (resolvedStaff) {
-    // A caller can name a staff member who simply doesn't perform the
-    // requested service (e.g. "book Brian for a colour" at a salon where
-    // only Sarah/Jessica do colour) — report no slots for them rather than
-    // silently searching their calendar as if the restriction didn't exist.
-    if (!isStaffEligibleForService(resolvedStaff.id, requestedService, services ?? [])) {
-      return { slots: [], resolvedStaffName: resolvedStaff.name, resolvedStaffId: resolvedStaff.id }
-    }
-    const overridesByStaff = await fetchOverridesByStaff([resolvedStaff.id])
     const slots = findNextAvailableSlots({
       ...baseOpts,
       staffId: resolvedStaff.id,
       staffHours: resolvedStaff.hours,
-      staffAvailabilityByDate: overridesByStaff.get(resolvedStaff.id),
     })
     return { slots, resolvedStaffName: resolvedStaff.name, resolvedStaffId: resolvedStaff.id }
   }
 
   // No staff preference given. A slot is only actually unavailable to the
-  // caller if EVERY active team member who can actually perform this service
-  // is busy then — not if any single one of them happens to be. Union each
-  // eligible staff member's own availability (each already respects their
-  // own hours/day-off overrides) rather than treating one person's
+  // caller if EVERY active team member is busy then — not if any single one
+  // of them happens to be. Union each staff member's own availability (each
+  // already respects their own hours) rather than treating one person's
   // appointment as blocking the whole team, otherwise e.g. a slot Sarah is
   // booked for reads as fully unavailable even when Amanda is completely
   // free at that exact time.
   if (activeRoster && activeRoster.length > 0) {
-    const eligibleRoster = activeRoster.filter(m => isStaffEligibleForService(m.id, requestedService, services ?? []))
-    const overridesByStaff = await fetchOverridesByStaff(eligibleRoster.map(s => s.id))
     const merged = new Map<number, Date>()
-    for (const member of eligibleRoster) {
+    for (const member of activeRoster) {
       const memberSlots = findNextAvailableSlots({
         ...baseOpts,
         staffId: member.id,
         staffHours: member.hours,
-        staffAvailabilityByDate: overridesByStaff.get(member.id),
       })
       for (const s of memberSlots) merged.set(s.getTime(), s)
     }
@@ -526,26 +482,7 @@ export async function POST(req: Request) {
               // (deliberately ignored here; see plan notes — that ref could
               // reflect a different staff member if checkAvailability was
               // called without pinning the existing staff's name).
-              let staffHours: Hours | null | undefined
-              let staffAvailabilityByDate: Map<string, { isAvailable: boolean; opensAt: string | null; closesAt: string | null }> | undefined
-              if (existing.staff_id) {
-                const existingStaff = await getStaffById(biz.id, existing.staff_id)
-                staffHours = existingStaff?.hours
-                const dateKey = dateStrInZone(requestedStart, biz.timezone)
-                const { data: overrideRows } = await supabase
-                  .from('business_staff_availability')
-                  .select('is_available, opens_at, closes_at')
-                  .eq('staff_id', existing.staff_id)
-                  .eq('date', dateKey)
-                const override = overrideRows?.[0]
-                if (override) {
-                  staffAvailabilityByDate = new Map([[dateKey, {
-                    isAvailable: override.is_available,
-                    opensAt: override.opens_at ? (override.opens_at as string).slice(0, 5) : null,
-                    closesAt: override.closes_at ? (override.closes_at as string).slice(0, 5) : null,
-                  }]])
-                }
-              }
+              const staffHours = existing.staff_id ? (await getStaffById(biz.id, existing.staff_id))?.hours : undefined
 
               // `newDateTime`/a decoded slotRef is still re-checked against
               // real hours before writing it — rescheduleAppointment had no
@@ -558,7 +495,6 @@ export async function POST(req: Request) {
                 hours: biz.hours as Hours,
                 timeZone: biz.timezone,
                 staffHours,
-                staffAvailabilityByDate,
               })
 
               if (!withinHours) {
@@ -635,7 +571,6 @@ export async function POST(req: Request) {
                       const google = await getValidAccessToken(supabase, biz.id)
                       if (google) {
                         await updateCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id, { start: requestedStart, end: requestedEnd })
-                        invalidateFreeBusyCache(biz.id)
                       }
                     } catch (calErr) {
                       console.error('Failed to update Google Calendar event — reschedule already saved locally:', calErr)
@@ -716,7 +651,6 @@ export async function POST(req: Request) {
                     const google = await getValidAccessToken(supabase, biz.id)
                     if (google) {
                       await deleteCalendarEvent(google.accessToken, google.calendarId, existing.calendar_event_id)
-                      invalidateFreeBusyCache(biz.id)
                     }
                   } catch (calErr) {
                     console.error('Failed to delete Google Calendar event — cancellation already saved locally:', calErr)
@@ -839,48 +773,30 @@ export async function POST(req: Request) {
           resultText = "There's no valid time to book — call checkAvailability again and pass the ref it returns to bookAppointment."
         } else {
           const [{ data: services }, resolvedStaff, { data: activeRoster }] = await Promise.all([
-            supabase.from('business_services').select('name, duration_minutes, staff_ids').eq('business_id', biz.id),
+            supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
             resolvedSlot.staffId ? getStaffById(biz.id, resolvedSlot.staffId) : resolveStaffMember(biz.id, args.staffMember as string | undefined),
             supabase.from('business_staff').select('id, name, hours, sort_order').eq('business_id', biz.id).eq('active', true).order('sort_order'),
           ])
           const durationMins = durationFor(args.service as string | undefined, services ?? [])
           const requestedStart = new Date(resolvedSlot.iso)
           const requestedEnd = new Date(requestedStart.getTime() + durationMins * 60_000)
-          const dateKey = dateStrInZone(requestedStart, biz.timezone)
-
-          let overrideByStaff = new Map<string, { isAvailable: boolean; opensAt: string | null; closesAt: string | null }>()
-          if (activeRoster && activeRoster.length > 0) {
-            const { data: overridesForDate } = await supabase
-              .from('business_staff_availability')
-              .select('staff_id, is_available, opens_at, closes_at')
-              .in('staff_id', activeRoster.map(s => s.id))
-              .eq('date', dateKey)
-            overrideByStaff = new Map((overridesForDate ?? []).map(o => [o.staff_id, {
-              isAvailable: o.is_available,
-              opensAt: o.opens_at ? (o.opens_at as string).slice(0, 5) : null,
-              closesAt: o.closes_at ? (o.closes_at as string).slice(0, 5) : null,
-            }]))
-          }
-          const overrideMapFor = (staffId: string) =>
-            overrideByStaff.has(staffId) ? new Map([[dateKey, overrideByStaff.get(staffId)!]]) : undefined
 
           let finalStaff = resolvedStaff
 
           if (!finalStaff && activeRoster && activeRoster.length > 0) {
             // No staff preference given — assign whichever active team member
-            // who can actually perform this service is free at this exact
-            // time (first by sort_order). This has to match what
-            // checkAvailability's "anyone" union already promised the caller
-            // — leaving staff_id null here would let two different
-            // unassigned bookings for the same slot collide on the unique
-            // index even when different staff members are free to take them.
+            // is actually free at this exact time (first by sort_order). This
+            // has to match what checkAvailability's "anyone" union already
+            // promised the caller — leaving staff_id null here would let two
+            // different unassigned bookings for the same slot collide on the
+            // unique index even when different staff members are free to take them.
             const { data: existingForConflict } = await supabase
               .from('appointments').select('scheduled_at, service, staff_id').eq('business_id', biz.id).neq('status', 'cancelled')
 
-            for (const candidate of activeRoster.filter(c => isStaffEligibleForService(c.id, args.service as string | undefined, services ?? []))) {
+            for (const candidate of activeRoster) {
               const candidateWithinHours = isWithinOpenHours({
                 date: requestedStart, durationMinutes: durationMins, hours: biz.hours as Hours, timeZone: biz.timezone,
-                staffHours: candidate.hours, staffAvailabilityByDate: overrideMapFor(candidate.id),
+                staffHours: candidate.hours,
               })
               if (!candidateWithinHours) continue
               if (hasConflictingAppointment(existingForConflict ?? [], candidate.id, services ?? [], requestedStart, requestedEnd)) continue
@@ -895,18 +811,14 @@ export async function POST(req: Request) {
           // (the model can misresolve a relative day like "Thursday", or a
           // slotRef could in principle be stale). Re-check it against real
           // hours before writing it, rather than only catching an exact
-          // double-booked slot via the DB's unique index below. Also
-          // re-checked here (not just in the auto-assign loop above) because
-          // finalStaff can come straight from an explicit staffMember/slotRef
-          // request naming someone who doesn't actually perform this service.
+          // double-booked slot via the DB's unique index below.
           const withinHours = isWithinOpenHours({
             date: requestedStart,
             durationMinutes: durationMins,
             hours: biz.hours as Hours,
             timeZone: biz.timezone,
             staffHours: finalStaff?.hours,
-            staffAvailabilityByDate: finalStaff ? overrideMapFor(finalStaff.id) : undefined,
-          }) && (!finalStaff || isStaffEligibleForService(finalStaff.id, args.service as string | undefined, services ?? []))
+          })
 
           if (!withinHours) {
             const attempts = await recordSchedulingFailure(callId)
@@ -1016,7 +928,6 @@ export async function POST(req: Request) {
                 await supabase.from('appointments')
                   .update({ calendar_event_id: event.id, calendar_event_link: event.htmlLink ?? null })
                   .eq('id', inserted!.id)
-                invalidateFreeBusyCache(biz.id)
               }
             } catch (calErr) {
               console.error('Failed to create Google Calendar event — booking already saved locally:', calErr)

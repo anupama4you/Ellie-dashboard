@@ -9,28 +9,13 @@ const MIN_LEAD_MINUTES = 30
 const MAX_DAYS_AHEAD = 14
 export const DEFAULT_SLOT_COUNT = 3
 
-type ServiceRow = { name: string; duration_minutes: number | null; staff_ids?: string[] | null }
+type ServiceRow = { name: string; duration_minutes: number | null }
 type ExistingAppointment = { scheduled_at: string; service: string | null; staff_id?: string | null }
-type StaffDateOverride = { isAvailable: boolean; opensAt: string | null; closesAt: string | null }
 
 export function durationFor(serviceName: string | null | undefined, services: ServiceRow[]): number {
   if (!serviceName) return DEFAULT_DURATION_MINUTES
   const match = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
   return match?.duration_minutes ?? DEFAULT_DURATION_MINUTES
-}
-
-/**
- * Whether `staffId` is allowed to perform `serviceName`, per that service's
- * configured roster restriction. An unmatched service name, or a service
- * with no `staff_ids` configured (the default for every existing service,
- * and any new one until a client opts in on the Briefing page), imposes no
- * restriction — matches today's "any active staff member" behavior.
- */
-export function isStaffEligibleForService(staffId: string, serviceName: string | null | undefined, services: ServiceRow[]): boolean {
-  if (!serviceName) return true
-  const match = services.find(s => s.name.toLowerCase() === serviceName.toLowerCase())
-  if (!match?.staff_ids?.length) return true
-  return match.staff_ids.includes(staffId)
 }
 
 /** Narrower of two windows on the same day — later open, earlier close; closed if either side is closed. */
@@ -45,28 +30,17 @@ function intersectDayHours(a: Hours[keyof Hours], b: Hours[keyof Hours]): Hours[
 
 /**
  * Effective open/close window for one calendar day: business hours narrowed
- * by the staff member's own weekly template (if any), then overridden
- * entirely by a per-date staff exception (if one exists for that date) —
- * shared by the slot-search walk and the single-instant check below so the
- * two can never disagree about what "open" means for a given day.
+ * by the staff member's own weekly template (if any) — shared by the
+ * slot-search walk and the single-instant check below so the two can never
+ * disagree about what "open" means for a given day.
  */
 function resolveDayHours(
   dow: number,
-  dateKey: string,
   hours: Hours,
   staffHours?: Hours | null,
-  staffAvailabilityByDate?: Map<string, StaffDateOverride>,
 ): Hours[keyof Hours] {
   let dayHours = hours[DAY_KEYS[dow]]
   if (staffHours) dayHours = intersectDayHours(dayHours, staffHours[DAY_KEYS[dow]])
-
-  const override = staffAvailabilityByDate?.get(dateKey)
-  if (override) {
-    dayHours = override.isAvailable && override.opensAt && override.closesAt
-      ? intersectDayHours(hours[DAY_KEYS[dow]], { open: true, opensAt: override.opensAt, closesAt: override.closesAt })
-      : { open: false, opensAt: dayHours.opensAt, closesAt: dayHours.closesAt }
-  }
-
   return dayHours
 }
 
@@ -92,8 +66,6 @@ export function findNextAvailableSlots(opts: {
   staffId?: string | null
   /** A resolved staff member's own weekly template, intersected with `hours` each day. null/omitted = same as business hours. */
   staffHours?: Hours | null
-  /** Per-date overrides (keyed `YYYY-MM-DD` in `timeZone`) — takes precedence over `staffHours` and `hours` for that date. */
-  staffAvailabilityByDate?: Map<string, StaffDateOverride>
   /**
    * A specific calendar date (`YYYY-MM-DD`, in `timeZone`) the caller asked
    * about — e.g. "do you have anything Thursday?". When given, the walk
@@ -150,8 +122,7 @@ export function findNextAvailableSlots(opts: {
     const mo = dayCalendar.getUTCMonth() + 1
     const d = dayCalendar.getUTCDate()
     const dow = dayCalendar.getUTCDay()
-    const dateKey = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    const dayHours = resolveDayHours(dow, dateKey, opts.hours, opts.staffHours, opts.staffAvailabilityByDate)
+    const dayHours = resolveDayHours(dow, opts.hours, opts.staffHours)
 
     if (!dayHours.open) continue
 
@@ -195,7 +166,6 @@ export function isWithinOpenHours(opts: {
   hours: Hours
   timeZone: string
   staffHours?: Hours | null
-  staffAvailabilityByDate?: Map<string, StaffDateOverride>
   now?: Date
 }): boolean {
   if (isNaN(opts.date.getTime())) return false
@@ -205,7 +175,7 @@ export function isWithinOpenHours(opts: {
 
   const dateKey = dateStrInZone(opts.date, opts.timeZone)
   const dow = dayOfWeekInZone(opts.date, opts.timeZone)
-  const dayHours = resolveDayHours(dow, dateKey, opts.hours, opts.staffHours, opts.staffAvailabilityByDate)
+  const dayHours = resolveDayHours(dow, opts.hours, opts.staffHours)
   if (!dayHours.open) return false
 
   const [y, mo, d] = dateKey.split('-').map(Number)

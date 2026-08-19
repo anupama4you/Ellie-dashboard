@@ -3,9 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { dateStrInZone, zonedTimeToUtc, shiftDateStr, formatInZone } from '@/lib/timezone'
 import { isAfterHours } from '@/lib/availability'
-import { getValidAccessToken, listEvents } from '@/lib/googleCalendar'
+import { getValidAccessToken, listEvents, type GoogleCalendarEvent } from '@/lib/googleCalendar'
 import type { Hours } from '../briefing/actions'
 import CopyButton from '@/components/CopyButton'
+import RefreshButton from '@/components/RefreshButton'
 import AddAppointmentModal from '@/components/AddAppointmentModal'
 import AppointmentActions from '@/components/AppointmentActions'
 import MonthGrid, { type MonthChip } from '@/components/MonthGrid'
@@ -108,6 +109,23 @@ export default async function AppointmentsPage({
   const prevMonthDateStr = shiftMonthStr(selectedDate, -1)
   const nextMonthDateStr = shiftMonthStr(selectedDate, 1)
 
+  // Kicked off alongside the DB queries below rather than after them — it's
+  // a live round-trip to Google's API (token refresh included, whenever the
+  // stored token is close to expiry) that doesn't actually depend on their
+  // results, so waiting for it serially was adding its full latency on top
+  // of the DB fetch instead of overlapping with it.
+  const googleEventsPromise: Promise<GoogleCalendarEvent[]> = biz
+    ? (async () => {
+        try {
+          const google = await getValidAccessToken(supabase, biz.id)
+          return google ? await listEvents(google.accessToken, google.calendarId, rangeStart, rangeEnd) : []
+        } catch (err) {
+          console.error('Failed to load Google Calendar events:', err)
+          return []
+        }
+      })()
+    : Promise.resolve([])
+
   const [{ data: appointments }, { data: servicesRaw }, { data: staffRaw }] = await Promise.all([
     supabase
       .from('appointments')
@@ -146,23 +164,12 @@ export default async function AppointmentsPage({
 
   // Merge in the connected Google Calendar (if any) so staff see everything —
   // Ellie's bookings alongside anything booked directly in their own calendar.
+  // Bookings we made ourselves already created this exact event — don't show it twice.
   type GoogleEvent = { id: string; title: string; start: Date; htmlLink?: string }
-  let rangeGoogleEvents: GoogleEvent[] = []
-  if (biz) {
-    try {
-      const google = await getValidAccessToken(supabase, biz.id)
-      if (google) {
-        // Bookings we made ourselves already created this exact event — don't show it twice.
-        const ownEventIds = new Set(rangeAppts.map(a => a.calendar_event_id).filter(Boolean))
-        const events = await listEvents(google.accessToken, google.calendarId, rangeStart, rangeEnd)
-        rangeGoogleEvents = events
-          .filter(e => e.start?.dateTime && !ownEventIds.has(e.id))
-          .map(e => ({ id: e.id, title: e.summary ?? 'Untitled event', start: new Date(e.start!.dateTime!), htmlLink: e.htmlLink }))
-      }
-    } catch (err) {
-      console.error('Failed to load Google Calendar events:', err)
-    }
-  }
+  const ownEventIds = new Set(rangeAppts.map(a => a.calendar_event_id).filter(Boolean))
+  const rangeGoogleEvents: GoogleEvent[] = (await googleEventsPromise)
+    .filter(e => e.start?.dateTime && !ownEventIds.has(e.id))
+    .map(e => ({ id: e.id, title: e.summary ?? 'Untitled event', start: new Date(e.start!.dateTime!), htmlLink: e.htmlLink }))
 
   // One pass builds both the month grid's per-day chips and the week strip's
   // per-day counts (a chip list's length), sorted earliest-first.
@@ -218,6 +225,7 @@ export default async function AppointmentsPage({
               <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Everything Ellie has booked into your calendar</p>
             </div>
             <div className="flex items-center gap-2">
+              <RefreshButton />
               {biz && (
                 <AddAppointmentModal
                   defaultDate={selectedDate}

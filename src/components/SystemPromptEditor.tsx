@@ -55,7 +55,7 @@ export default function SystemPromptEditor({
         customInstructions: briefing.customInstructions,
         hours: briefing.hours,
         services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
-        staff: briefing.staff.map(s => ({ name: s.name, active: s.active })),
+        staff: briefing.staff.map(s => ({ name: s.name, active: s.active, hours: s.hours })),
         faqs: briefing.faqs,
         transferRules: briefing.transferRules,
         companyInfo: briefing.companyInfo,
@@ -73,7 +73,7 @@ export default function SystemPromptEditor({
     const { patched, appliedSections, missingSections } = patchPromptSections(systemPrompt, {
       hours: briefing.hours,
       services: briefing.services.map(s => ({ name: s.name, durationMinutes: s.durationMinutes, priceCents: s.priceCents })),
-      staff: briefing.staff.map(s => ({ name: s.name, active: s.active })),
+      staff: briefing.staff.map(s => ({ name: s.name, active: s.active, hours: s.hours })),
       faqs: briefing.faqs,
       transferRules: briefing.transferRules,
       companyInfo: briefing.companyInfo,

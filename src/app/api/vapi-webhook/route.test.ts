@@ -23,7 +23,7 @@ vi.mock('@/lib/twilio', () => ({
 
 vi.mock('@/lib/googleCalendar', () => ({
   getValidAccessToken: vi.fn().mockResolvedValue(null),
-  freeBusyQuery: vi.fn(),
+  listEvents: vi.fn(),
   createCalendarEvent: vi.fn(),
   updateCalendarEvent: vi.fn(),
   deleteCalendarEvent: vi.fn(),
@@ -247,145 +247,87 @@ describe('bookAppointment with a staff roster', () => {
   })
 })
 
-describe('bookAppointment with per-service staff restrictions', () => {
-  it('auto-assigns the eligible staff member, skipping one who is free but does not perform the service', async () => {
-    fakeSupabase.seed('businesses', [{ id: 'biz-elig-1', vapi_assistant_id: 'asst-elig-1', ...business({}) }])
+describe('checkAvailability with a shared Google Calendar and multiple staff', () => {
+  it("does not let one staff member's own synced booking block a different staff member", async () => {
+    const googleModule = await import('@/lib/googleCalendar')
+    const getValidAccessToken = googleModule.getValidAccessToken as unknown as ReturnType<typeof vi.fn>
+    const listEvents = googleModule.listEvents as unknown as ReturnType<typeof vi.fn>
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-cal-1', vapi_assistant_id: 'asst-cal-1', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-cal-1', name: 'Cut', duration_minutes: 30 }])
     fakeSupabase.seed('business_staff', [
-      { id: 'staff-alice-e1', business_id: 'biz-elig-1', name: 'Alice', active: true, hours: null, sort_order: 0 },
-      { id: 'staff-bob-e1', business_id: 'biz-elig-1', name: 'Bob', active: true, hours: null, sort_order: 1 },
-    ])
-    // Alice is first by sort_order, but only Bob performs Colour.
-    fakeSupabase.seed('business_services', [
-      { business_id: 'biz-elig-1', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-bob-e1'] },
+      { id: 'staff-amanda-c', business_id: 'biz-cal-1', name: 'Amanda', active: true, hours: null, sort_order: 0 },
+      { id: 'staff-sarah-c', business_id: 'biz-cal-1', name: 'Sarah', active: true, hours: null, sort_order: 1 },
     ])
 
-    const dateTime = futureWeekdayIso(12, '14:00')
-    const req = toolCallRequest('asst-elig-1', 'call-elig-1', 'bookAppointment', {
-      customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Colour', dateTime,
-    })
+    const openingTime = futureWeekdayIso(10, '09:00') // the business's very first slot of the day
+    const openingDateKey = dateStrInZone(new Date(openingTime), 'Australia/Sydney')
 
-    const res = await POST(req)
-    const json = await res.json()
+    // Amanda has a real local booking at opening time, already synced to the
+    // shared Google Calendar as evt-amanda-1 — the exact scenario that used
+    // to make Sarah look busy too, since the calendar has no per-staff split.
+    fakeSupabase.seed('appointments', [{
+      id: 'apt-amanda-c', business_id: 'biz-cal-1', service: 'Cut', staff_id: 'staff-amanda-c',
+      customer_name: 'Existing Customer', customer_phone: '0499888777',
+      scheduled_at: openingTime, status: 'confirmed', calendar_event_id: 'evt-amanda-1',
+    }])
 
-    expect(json.results[0].result).toMatch(/^Booked Colour for Jane Doe with Bob on/)
-    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-elig-1' && r.status !== 'cancelled')
-    expect(rows).toHaveLength(1)
-    expect(rows[0].staff_id).toBe('staff-bob-e1')
-  })
-
-  it('refuses to book a named staff member who does not perform the requested service', async () => {
-    fakeSupabase.seed('businesses', [{ id: 'biz-elig-2', vapi_assistant_id: 'asst-elig-2', ...business({}) }])
-    fakeSupabase.seed('business_staff', [
-      { id: 'staff-alice-e2', business_id: 'biz-elig-2', name: 'Alice', active: true, hours: null },
-    ])
-    fakeSupabase.seed('business_services', [
-      { business_id: 'biz-elig-2', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-someone-else'] },
+    getValidAccessToken.mockResolvedValue({ accessToken: 'test-token', calendarId: 'primary' })
+    listEvents.mockResolvedValue([
+      { id: 'evt-amanda-1', start: { dateTime: openingTime }, end: { dateTime: new Date(new Date(openingTime).getTime() + 30 * 60_000).toISOString() } },
     ])
 
-    const dateTime = futureWeekdayIso(12, '14:00')
-    const req = toolCallRequest('asst-elig-2', 'call-elig-2', 'bookAppointment', {
-      customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Colour', dateTime, staffMember: 'Alice',
-    })
+    try {
+      const req = toolCallRequest('asst-cal-1', 'call-cal-1', 'checkAvailability', { service: 'Cut', preferredDate: openingDateKey })
+      const res = await POST(req)
+      const json = await res.json()
+      const resultText = json.results[0].result as string
 
-    const res = await POST(req)
-    const json = await res.json()
-
-    expect(json.results[0].result).toMatch(/^That time isn't actually available/)
-    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-elig-2' && r.status !== 'cancelled')
-    expect(rows).toHaveLength(0)
-  })
-})
-
-describe('checkAvailability with a per-date staff availability override', () => {
-  it('never offers a date where the staff member has an "unavailable" override, even though business hours are open that day', async () => {
-    // Every day open, so the assertion below doesn't depend on which day of the week "tomorrow" happens to be.
-    const allOpenHours = {
-      mon: { open: true, opensAt: '00:00', closesAt: '23:59' },
-      tue: { open: true, opensAt: '00:00', closesAt: '23:59' },
-      wed: { open: true, opensAt: '00:00', closesAt: '23:59' },
-      thu: { open: true, opensAt: '00:00', closesAt: '23:59' },
-      fri: { open: true, opensAt: '00:00', closesAt: '23:59' },
-      sat: { open: true, opensAt: '00:00', closesAt: '23:59' },
-      sun: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    }
-    const tz = 'Australia/Sydney'
-    const tomorrowKey = dateStrInZone(new Date(Date.now() + 24 * 60 * 60_000), tz)
-
-    fakeSupabase.seed('businesses', [{ id: 'biz-avail-1', vapi_assistant_id: 'asst-avail-1', ...business({ hours: allOpenHours, timezone: tz }) }])
-    fakeSupabase.seed('business_staff', [{ id: 'staff-dana', business_id: 'biz-avail-1', name: 'Dana', active: true, hours: null }])
-    fakeSupabase.seed('business_staff_availability', [
-      { staff_id: 'staff-dana', date: tomorrowKey, is_available: false, opens_at: null, closes_at: null },
-    ])
-
-    const req = toolCallRequest('asst-avail-1', 'call-avail-1', 'checkAvailability', { staffMember: 'Dana' })
-    const res = await POST(req)
-    const json = await res.json()
-    const resultText = json.results[0].result as string
-
-    const slotIsos = extractSlotIsos(resultText)
-    expect(slotIsos.length).toBeGreaterThan(0) // sanity check the tool actually returned slots at all
-    for (const iso of slotIsos) {
-      expect(dateStrInZone(new Date(iso), tz)).not.toBe(tomorrowKey)
-    }
-  })
-})
-
-describe('checkAvailability with per-service staff restrictions', () => {
-  const allOpenHours = {
-    mon: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    tue: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    wed: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    thu: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    fri: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    sat: { open: true, opensAt: '00:00', closesAt: '23:59' },
-    sun: { open: true, opensAt: '00:00', closesAt: '23:59' },
-  }
-  const tz = 'Australia/Sydney'
-
-  it('the "anyone" union only offers a date the eligible staff member is actually free on, ignoring an ineligible-but-free team member', async () => {
-    const tomorrowKey = dateStrInZone(new Date(Date.now() + 24 * 60 * 60_000), tz)
-
-    fakeSupabase.seed('businesses', [{ id: 'biz-elig-3', vapi_assistant_id: 'asst-elig-3', ...business({ hours: allOpenHours, timezone: tz }) }])
-    // Alice is the only one who performs Colour; Bob is wide open all day but ineligible.
-    fakeSupabase.seed('business_staff', [
-      { id: 'staff-alice-e3', business_id: 'biz-elig-3', name: 'Alice', active: true, hours: null, sort_order: 0 },
-      { id: 'staff-bob-e3', business_id: 'biz-elig-3', name: 'Bob', active: true, hours: null, sort_order: 1 },
-    ])
-    fakeSupabase.seed('business_services', [
-      { business_id: 'biz-elig-3', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-alice-e3'] },
-    ])
-    fakeSupabase.seed('business_staff_availability', [
-      { staff_id: 'staff-alice-e3', date: tomorrowKey, is_available: false, opens_at: null, closes_at: null },
-    ])
-
-    const req = toolCallRequest('asst-elig-3', 'call-elig-3', 'checkAvailability', { service: 'Colour' })
-    const res = await POST(req)
-    const json = await res.json()
-    const resultText = json.results[0].result as string
-
-    const slotIsos = extractSlotIsos(resultText)
-    expect(slotIsos.length).toBeGreaterThan(0) // sanity check — Alice is free on other days
-    for (const iso of slotIsos) {
-      expect(dateStrInZone(new Date(iso), tz)).not.toBe(tomorrowKey)
+      // Amanda's booking is correctly excluded (it's her own tracked event),
+      // so Sarah — who has nothing booked — is still free at opening time.
+      const slotIsos = extractSlotIsos(resultText)
+      expect(slotIsos).toContain(new Date(openingTime).toISOString().replace(/\.\d{3}Z$/, 'Z'))
+    } finally {
+      getValidAccessToken.mockResolvedValue(null)
+      listEvents.mockReset()
     }
   })
 
-  it('reports no slots when the explicitly-named staff member does not perform the requested service', async () => {
-    fakeSupabase.seed('businesses', [{ id: 'biz-elig-4', vapi_assistant_id: 'asst-elig-4', ...business({ hours: allOpenHours, timezone: tz }) }])
+  it('still blocks the whole team for a genuinely external calendar event with no matching local appointment', async () => {
+    const googleModule = await import('@/lib/googleCalendar')
+    const getValidAccessToken = googleModule.getValidAccessToken as unknown as ReturnType<typeof vi.fn>
+    const listEvents = googleModule.listEvents as unknown as ReturnType<typeof vi.fn>
+
+    fakeSupabase.seed('businesses', [{ id: 'biz-cal-2', vapi_assistant_id: 'asst-cal-2', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-cal-2', name: 'Cut', duration_minutes: 30 }])
     fakeSupabase.seed('business_staff', [
-      { id: 'staff-bob-e4', business_id: 'biz-elig-4', name: 'Bob', active: true, hours: null },
-    ])
-    fakeSupabase.seed('business_services', [
-      { business_id: 'biz-elig-4', name: 'Colour', duration_minutes: 60, staff_ids: ['staff-someone-else'] },
+      { id: 'staff-amanda-c2', business_id: 'biz-cal-2', name: 'Amanda', active: true, hours: null, sort_order: 0 },
+      { id: 'staff-sarah-c2', business_id: 'biz-cal-2', name: 'Sarah', active: true, hours: null, sort_order: 1 },
     ])
 
-    const req = toolCallRequest('asst-elig-4', 'call-elig-4', 'checkAvailability', { service: 'Colour', staffMember: 'Bob' })
-    const res = await POST(req)
-    const json = await res.json()
-    const resultText = json.results[0].result as string
+    const openingTime = futureWeekdayIso(10, '09:00')
+    const openingDateKey = dateStrInZone(new Date(openingTime), 'Australia/Sydney')
 
-    expect(extractSlotIsos(resultText)).toHaveLength(0)
-    expect(resultText).toMatch(/No open slots found for Bob/)
+    // No local appointment at all — this event was added directly in Google
+    // Calendar (e.g. the owner blocking out the whole salon), so there's no
+    // calendar_event_id to match it against and exclude.
+    getValidAccessToken.mockResolvedValue({ accessToken: 'test-token', calendarId: 'primary' })
+    listEvents.mockResolvedValue([
+      { id: 'evt-external-1', start: { dateTime: openingTime }, end: { dateTime: new Date(new Date(openingTime).getTime() + 30 * 60_000).toISOString() } },
+    ])
+
+    try {
+      const req = toolCallRequest('asst-cal-2', 'call-cal-2', 'checkAvailability', { service: 'Cut', preferredDate: openingDateKey })
+      const res = await POST(req)
+      const json = await res.json()
+      const resultText = json.results[0].result as string
+
+      const slotIsos = extractSlotIsos(resultText)
+      expect(slotIsos).not.toContain(new Date(openingTime).toISOString())
+    } finally {
+      getValidAccessToken.mockResolvedValue(null)
+      listEvents.mockReset()
+    }
   })
 })
 
@@ -451,47 +393,6 @@ describe('checkAvailability with preferredDate', () => {
       expect(dateStrInZone(new Date(iso), tz)).not.toBe(preferredDate) // Friday is closed, so nothing should land on it
     }
     expect(resultText).toMatch(/nothing was open on the caller's preferred date/i)
-  })
-})
-
-describe('checkAvailability caches Google Calendar free/busy', () => {
-  it('reuses the free/busy result across consecutive calls, and refetches once a booking invalidates it', async () => {
-    const googleModule = await import('@/lib/googleCalendar')
-    const getValidAccessToken = googleModule.getValidAccessToken as unknown as ReturnType<typeof vi.fn>
-    const freeBusyQuery = googleModule.freeBusyQuery as unknown as ReturnType<typeof vi.fn>
-    const createCalendarEvent = googleModule.createCalendarEvent as unknown as ReturnType<typeof vi.fn>
-
-    getValidAccessToken.mockResolvedValue({ accessToken: 'test-token', calendarId: 'cal-cache-1' })
-    freeBusyQuery.mockResolvedValue([])
-    createCalendarEvent.mockResolvedValue({ id: 'evt-cache-1', htmlLink: 'https://calendar.google.com/evt-cache-1' })
-
-    fakeSupabase.seed('businesses', [{ id: 'biz-cache-1', vapi_assistant_id: 'asst-cache-1', ...business({}) }])
-    fakeSupabase.seed('business_services', [{ business_id: 'biz-cache-1', name: 'Manicure', duration_minutes: 30 }])
-
-    const check = () => POST(toolCallRequest('asst-cache-1', 'call-cache-1', 'checkAvailability', {}))
-
-    try {
-      await check()
-      expect(freeBusyQuery).toHaveBeenCalledTimes(1)
-
-      await check()
-      expect(freeBusyQuery).toHaveBeenCalledTimes(1) // cache hit — no second network call
-
-      const bookRes = await POST(toolCallRequest('asst-cache-1', 'call-cache-1b', 'bookAppointment', {
-        customerName: 'Jane Doe', customerPhone: '0400111222', service: 'Manicure',
-        dateTime: futureWeekdayIso(20, '14:00'),
-      }))
-      const bookJson = await bookRes.json()
-      expect(bookJson.results[0].result).toMatch(/^Booked Manicure for Jane Doe on/)
-
-      await check()
-      expect(freeBusyQuery).toHaveBeenCalledTimes(2) // the booking's calendar mutation invalidated the cache
-    } finally {
-      // Restore the file's shared mocks to their original defaults so later tests aren't affected.
-      getValidAccessToken.mockResolvedValue(null)
-      freeBusyQuery.mockReset()
-      createCalendarEvent.mockReset()
-    }
   })
 })
 

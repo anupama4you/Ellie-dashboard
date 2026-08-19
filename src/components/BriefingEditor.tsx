@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { saveBriefing, type Hours, type ServiceDraft, type StaffDraft, type FaqDraft, type CompanyInfo } from '@/app/(dashboard)/briefing/actions'
-import { setStaffDateOverride, clearStaffDateOverride } from '@/app/(dashboard)/briefing/rosterActions'
 import { defaultGreeting } from '@/lib/assistantPrompt'
+import { useNavigationBlocker } from '@/lib/navigationBlocker'
 
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT']
 
@@ -17,15 +17,15 @@ const DAY_LABELS: { key: keyof Hours; label: string }[] = [
 // so the input can be typed freely — round-tripping every keystroke through
 // cents and reformatting to a fixed "x.00" shape (the old approach) fights
 // the cursor and makes it impossible to type more than one digit.
-type ServiceRow = { id?: string; name: string; durationMinutes: number | null; price: string; staffNames: string[] }
+type ServiceRow = { id?: string; name: string; durationMinutes: number | null; price: string }
 
 function toServiceRow(s: ServiceDraft): ServiceRow {
-  return { id: s.id, name: s.name, durationMinutes: s.durationMinutes, price: s.priceCents != null ? (s.priceCents / 100).toFixed(2) : '', staffNames: s.staffNames ?? [] }
+  return { id: s.id, name: s.name, durationMinutes: s.durationMinutes, price: s.priceCents != null ? (s.priceCents / 100).toFixed(2) : '' }
 }
 
 function toServiceDraft(r: ServiceRow): ServiceDraft {
   const n = parseFloat(r.price)
-  return { id: r.id, name: r.name, durationMinutes: r.durationMinutes, priceCents: isNaN(n) ? null : Math.round(n * 100), staffNames: r.staffNames }
+  return { id: r.id, name: r.name, durationMinutes: r.durationMinutes, priceCents: isNaN(n) ? null : Math.round(n * 100) }
 }
 
 /** Only ever lets a valid partial decimal (whole dollars, or up to 2 decimal places) through. */
@@ -68,109 +68,6 @@ function HoursGrid({ hours, onChange }: { hours: Hours; onChange: (next: Hours) 
   )
 }
 
-const BLANK_HOURS: Hours = {
-  mon: { open: true, opensAt: '09:00', closesAt: '17:00' },
-  tue: { open: true, opensAt: '09:00', closesAt: '17:00' },
-  wed: { open: true, opensAt: '09:00', closesAt: '17:00' },
-  thu: { open: true, opensAt: '09:00', closesAt: '17:00' },
-  fri: { open: true, opensAt: '09:00', closesAt: '17:00' },
-  sat: { open: true, opensAt: '09:00', closesAt: '17:00' },
-  sun: { open: true, opensAt: '09:00', closesAt: '17:00' },
-}
-
-export type StaffAvailabilityRow = { id: string; staff_id: string; date: string; is_available: boolean; opens_at: string | null; closes_at: string | null }
-
-/**
- * A staff member's upcoming per-date exceptions to their normal hours —
- * lives outside the surrounding form entirely (no unsaved-changes state,
- * calls the live roster actions directly on every add/remove) since it
- * writes straight through, unlike everything else on this page.
- */
-function StaffExceptions({ staffId, initialOverrides }: { staffId: string; initialOverrides: StaffAvailabilityRow[] }) {
-  const [overrides, setOverrides] = useState(() => [...initialOverrides].sort((a, b) => a.date.localeCompare(b.date)))
-  const [date, setDate] = useState('')
-  const [isAvailable, setIsAvailable] = useState(false)
-  const [opensAt, setOpensAt] = useState('09:00')
-  const [closesAt, setClosesAt] = useState('17:00')
-  const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState('')
-
-  const todayStr = new Date().toISOString().slice(0, 10)
-
-  function add() {
-    if (!date) return
-    setError('')
-    startTransition(async () => {
-      try {
-        await setStaffDateOverride(staffId, date, { isAvailable, opensAt: isAvailable ? opensAt : null, closesAt: isAvailable ? closesAt : null })
-        setOverrides(prev => [
-          ...prev.filter(o => o.date !== date),
-          { id: date, staff_id: staffId, date, is_available: isAvailable, opens_at: isAvailable ? opensAt : null, closes_at: isAvailable ? closesAt : null },
-        ].sort((a, b) => a.date.localeCompare(b.date)))
-        setDate('')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to save')
-      }
-    })
-  }
-
-  function remove(overrideDate: string) {
-    setError('')
-    startTransition(async () => {
-      try {
-        await clearStaffDateOverride(staffId, overrideDate)
-        setOverrides(prev => prev.filter(o => o.date !== overrideDate))
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to remove')
-      }
-    })
-  }
-
-  return (
-    <div className="rounded-xl p-3 mt-1 flex flex-col gap-2" style={{ background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-      <span className="text-xs font-semibold" style={{ color: 'var(--t3)' }}>Upcoming exceptions — saved instantly, no review needed</span>
-      {overrides.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {overrides.map(o => (
-            <li key={o.date} className="flex items-center justify-between text-xs" style={{ color: 'var(--t2)' }}>
-              <span>
-                {new Date(`${o.date}T00:00:00`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}
-                {' — '}
-                {o.is_available ? `${o.opens_at?.slice(0, 5)}–${o.closes_at?.slice(0, 5)}` : 'Not working'}
-              </span>
-              <button onClick={() => remove(o.date)} disabled={isPending} style={{ color: 'var(--coral)' }}><Trash2 size={12} /></button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <div className="flex flex-wrap items-center gap-1.5">
-        <input type="date" value={date} min={todayStr} onChange={e => setDate(e.target.value)}
-          className="text-xs rounded-lg px-2 py-1" style={{ border: '1px solid var(--border)', color: 'var(--text)' }} />
-        <select value={isAvailable ? 'custom' : 'off'} onChange={e => setIsAvailable(e.target.value === 'custom')}
-          className="text-xs rounded-lg px-2 py-1" style={{ border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--bg3)' }}>
-          <option value="off">Not working</option>
-          <option value="custom">Working (custom hours)</option>
-        </select>
-        {isAvailable && (
-          <>
-            <input type="time" value={opensAt} onChange={e => setOpensAt(e.target.value)}
-              className="text-xs rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
-            <span style={{ color: 'var(--t3)' }}>–</span>
-            <input type="time" value={closesAt} onChange={e => setClosesAt(e.target.value)}
-              className="text-xs rounded-lg px-1.5 py-1" style={{ border: '1px solid var(--border)' }} />
-          </>
-        )}
-        <button onClick={add} disabled={!date || isPending}
-          className="flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-lg disabled:opacity-60"
-          style={{ border: '1px solid var(--border)', color: 'var(--text)' }}>
-          <Plus size={11} /> Add
-        </button>
-      </div>
-      {error && <span className="text-xs" style={{ color: 'var(--coral)' }}>{error}</span>}
-    </div>
-  )
-}
-
 type Props = {
   businessId: string
   businessName: string
@@ -181,7 +78,6 @@ type Props = {
   initialTransferPhoneNumber: string
   initialServices: ServiceDraft[]
   initialStaff: StaffDraft[]
-  initialStaffAvailability: StaffAvailabilityRow[]
   initialFaqs: FaqDraft[]
   initialCompanyInfo: CompanyInfo
   isPendingReview?: boolean
@@ -195,7 +91,7 @@ const TRANSFER_INSTRUCTIONS_PLACEHOLDER =
 
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
-  initialHours, initialTransferRules, initialTransferPhoneNumber, initialServices, initialStaff, initialStaffAvailability, initialFaqs, initialCompanyInfo,
+  initialHours, initialTransferRules, initialTransferPhoneNumber, initialServices, initialStaff, initialFaqs, initialCompanyInfo,
   isPendingReview,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
@@ -211,10 +107,39 @@ export default function BriefingEditor({
   const [isPending, startTransition]                = useTransition()
   const [status, setStatus]                         = useState<'idle' | 'saved' | 'error'>('idle')
 
+  const currentSnapshot = JSON.stringify({ greeting, customInstructions, hours, transferRules, transferPhoneNumber, services, staff, faqs, companyInfo })
+  const [savedSnapshot, setSavedSnapshot]           = useState(currentSnapshot)
+  const isDirty = currentSnapshot !== savedSnapshot
+
+  // Flags unsaved changes for the sidebar's nav links (see BlockableLink) —
+  // and, since a route change unmounts this component before the effect's
+  // cleanup could otherwise run, resets the flag on unmount so navigating
+  // away (confirmed or not blocked in the first place) doesn't leave some
+  // later page permanently blocked.
+  const { setIsBlocked } = useNavigationBlocker()
+  useEffect(() => {
+    setIsBlocked(isDirty)
+  }, [isDirty, setIsBlocked])
+  useEffect(() => () => setIsBlocked(false), [setIsBlocked])
+
+  // Covers the cases BlockableLink can't: a full page reload, closing the
+  // tab, or typing a new URL — the browser's own native prompt is the only
+  // option available for those.
+  useEffect(() => {
+    if (!isDirty) return
+    function handler(e: BeforeUnloadEvent) {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
   function save() {
     startTransition(async () => {
       try {
         await saveBriefing(businessId, { greetingScript: greeting, customInstructions, hours, transferRules, transferPhoneNumber, services: services.map(toServiceDraft), staff, faqs, companyInfo })
+        setSavedSnapshot(currentSnapshot)
         setStatus('saved')
         setTimeout(() => setStatus('idle'), 2500)
       } catch {
@@ -384,7 +309,7 @@ export default function BriefingEditor({
                 <p className="text-xs mt-0.5" style={{ color: 'var(--t3)' }}>Ellie quotes these when callers ask</p>
               </div>
               <button
-                onClick={() => setServices(s => [...s, { name: '', durationMinutes: 30, price: '', staffNames: [] }])}
+                onClick={() => setServices(s => [...s, { name: '', durationMinutes: 30, price: '' }])}
                 className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg"
                 style={{ border: '1px solid var(--border)', color: 'var(--text)' }}
               >
@@ -400,9 +325,7 @@ export default function BriefingEditor({
                 <span className="w-3.5 shrink-0" aria-hidden />
               </div>
             )}
-            {services.map((svc, i) => {
-              const namedStaff = staff.filter(m => m.name.trim())
-              return (
+            {services.map((svc, i) => (
               <div key={i} className="px-5 py-2.5" style={{ borderTop: i > 0 ? '1px solid var(--border)' : undefined }}>
                 <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <div className="flex items-center gap-2 sm:flex-1 sm:min-w-0">
@@ -452,27 +375,8 @@ export default function BriefingEditor({
                     </button>
                   </div>
                 </div>
-                {namedStaff.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
-                    <span className="text-xs shrink-0" style={{ color: 'var(--t3)' }}>Who does this (none checked = anyone on the team):</span>
-                    {namedStaff.map(m => (
-                      <label key={m.name} className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--t3)' }}>
-                        <input
-                          type="checkbox"
-                          checked={svc.staffNames.includes(m.name)}
-                          onChange={e => setServices(s => s.map((x, j) => j === i ? {
-                            ...x,
-                            staffNames: e.target.checked ? [...x.staffNames, m.name] : x.staffNames.filter(n => n !== m.name),
-                          } : x))}
-                        />
-                        {m.name}
-                      </label>
-                    ))}
-                  </div>
-                )}
               </div>
-              )
-            })}
+            ))}
           </section>
 
           {/* Custom instructions — catch-all for anything the structured fields don't cover */}
@@ -551,7 +455,7 @@ export default function BriefingEditor({
                   <input
                     type="checkbox"
                     checked={member.hours != null}
-                    onChange={e => setStaff(s => s.map((x, j) => j === i ? { ...x, hours: e.target.checked ? BLANK_HOURS : null } : x))}
+                    onChange={e => setStaff(s => s.map((x, j) => j === i ? { ...x, hours: e.target.checked ? hours : null } : x))}
                   />
                   Custom hours (unchecked = works the business&apos;s hours above)
                 </label>
@@ -559,10 +463,6 @@ export default function BriefingEditor({
                   <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
                     <HoursGrid hours={member.hours} onChange={next => setStaff(s => s.map((x, j) => j === i ? { ...x, hours: next } : x))} />
                   </div>
-                )}
-
-                {member.id && (
-                  <StaffExceptions staffId={member.id} initialOverrides={initialStaffAvailability.filter(o => o.staff_id === member.id)} />
                 )}
               </div>
             ))}
