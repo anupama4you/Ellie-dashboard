@@ -169,6 +169,100 @@ describe('findNextAvailableSlots — preferredDate', () => {
   })
 })
 
+describe('findNextAvailableSlots — preferredTime', () => {
+  it('starts the search near the preferred time on the preferred day, not that day\'s opening', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(3),
+      preferredTime: '14:00',
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(3, '14:00'))
+  })
+
+  it('applies to today when no preferredDate is given', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW, // 10:00 local — well before 14:00
+      count: 1,
+      preferredTime: '14:00',
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(0, '14:00'))
+  })
+
+  it('falls through to the next day (starting from opening, not carrying the preferred time forward) when the preferred time is after closing', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(3),
+      preferredTime: '18:00', // business closes at 17:00
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(4, '09:00'))
+  })
+
+  it('is ignored (falls back to opening) when the preferred time is before opening', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(3),
+      preferredTime: '07:00', // business opens at 09:00
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(3, '09:00'))
+  })
+
+  it('does not carry forward to a later day when the preferred day itself is closed', () => {
+    // Preferred day (Thursday) is closed, so the walk falls through to Friday
+    // — the preferred time should NOT apply there, only to the day actually named.
+    const closedThursday: Hours = { ...ALL_OPEN, thu: { open: false, opensAt: '09:00', closesAt: '17:00' } }
+    const slots = findNextAvailableSlots({
+      hours: closedThursday,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(3),
+      preferredTime: '14:00',
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(4, '09:00'))
+  })
+
+  it('ignores a malformed preferred time rather than erroring', () => {
+    const slots = findNextAvailableSlots({
+      hours: ALL_OPEN,
+      services: [],
+      existing: [],
+      now: NOW,
+      count: 1,
+      preferredDate: dayKey(3),
+      preferredTime: '2pm',
+      timeZone: TZ,
+    })
+    expect(slots.length).toBe(1)
+    expect(slots[0].toISOString()).toBe(localInstant(3, '09:00'))
+  })
+})
+
 describe('encodeSlotRef / decodeSlotRef', () => {
   it('round-trips an instant with a staff id', () => {
     const ref = encodeSlotRef('2026-08-27T02:30:00.000Z', 'staff-sarah')

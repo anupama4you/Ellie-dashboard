@@ -172,6 +172,7 @@ async function computeAvailableSlots(
   requestedStaffMember?: string,
   requestedStaffId?: string | null,
   preferredDate?: string,
+  preferredTime?: string,
 ): Promise<{ slots: Date[]; resolvedStaffName: string | null; resolvedStaffId: string | null }> {
   const [{ data: services }, resolvedStaff, { data: existing }, { data: activeRoster }] = await Promise.all([
     supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
@@ -200,6 +201,7 @@ async function computeAvailableSlots(
     externalBusy,
     timeZone: biz.timezone,
     preferredDate,
+    preferredTime,
   }
 
   if (resolvedStaff) {
@@ -365,8 +367,9 @@ export async function POST(req: Request) {
             resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
           } else {
             const preferredDate = args.preferredDate as string | undefined
+            const preferredTime = args.preferredTime as string | undefined
             const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(
-              biz, args.service as string | undefined, args.staffMember as string | undefined, undefined, preferredDate,
+              biz, args.service as string | undefined, args.staffMember as string | undefined, undefined, preferredDate, preferredTime,
             )
             const forWhom = resolvedStaffName ? ` for ${resolvedStaffName}` : ''
             const firstSlotDate = slots[0] ? dateStrInZone(slots[0], biz.timezone) : null

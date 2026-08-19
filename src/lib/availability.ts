@@ -76,6 +76,20 @@ export function findNextAvailableSlots(opts: {
    * beyond the search window — never an error, just no preference applied.
    */
   preferredDate?: string | null
+  /**
+   * A specific time of day (`HH:MM`, 24-hour, in `timeZone`) the caller asked
+   * about — e.g. "anything around 2pm?". Only shifts the starting point on
+   * the walk's first day considered (`preferredDate`'s day, or today if no
+   * preferredDate was given) — later days in the walk always start from
+   * opening, since "prefer 2pm" doesn't mean "prefer 2pm every day from here
+   * on." Without this, the walk always starts from that day's opening time
+   * regardless of what time the caller actually asked about, so a caller
+   * asking about the afternoon could be told the day's only availability is
+   * the first couple of morning slots — technically true of what got
+   * returned, but not of the day as a whole. Silently ignored (same as
+   * preferredDate) if missing, malformed, or before opening.
+   */
+  preferredTime?: string | null
 }): Date[] {
   const now = opts.now ?? new Date()
   const duration = durationFor(opts.requestedService, opts.services)
@@ -130,6 +144,20 @@ export function findNextAvailableSlots(opts: {
     const [closeH, closeM] = dayHours.closesAt.split(':').map(Number)
     const close = zonedTimeToUtc(opts.timeZone, y, mo, d, closeH, closeM)
     const candidate = zonedTimeToUtc(opts.timeZone, y, mo, d, openH, openM)
+
+    if (dayOffset === startOffset) {
+      const timeMatch = opts.preferredTime?.match(/^(\d{2}):(\d{2})$/)
+      if (timeMatch) {
+        const preferredInstant = zonedTimeToUtc(opts.timeZone, y, mo, d, Number(timeMatch[1]), Number(timeMatch[2]))
+        if (preferredInstant > candidate) {
+          // Advance by whole SLOT_STEP_MINUTES steps so the walk stays on the
+          // same :00/:30 grid it would've used from opening — not just
+          // snapped straight to the (possibly off-grid) preferred instant.
+          const stepsAhead = Math.floor((preferredInstant.getTime() - candidate.getTime()) / (SLOT_STEP_MINUTES * 60_000))
+          candidate.setTime(candidate.getTime() + stepsAhead * SLOT_STEP_MINUTES * 60_000)
+        }
+      }
+    }
 
     while (candidate.getTime() + duration * 60_000 <= close.getTime()) {
       if (candidate >= earliestStart) {
