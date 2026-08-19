@@ -164,6 +164,35 @@ describe('bookAppointment', () => {
     expect(rows[0]).toMatchObject({ status: 'confirmed', customer_name: 'Jane Doe', service: 'Manicure' })
   })
 
+  it('interprets a timezone-naive dateTime in the business\'s own timezone, not UTC', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-book-naive', vapi_assistant_id: 'asst-book-naive', ...business({}) }])
+    fakeSupabase.seed('business_services', [{ business_id: 'biz-book-naive', name: 'Manicure', duration_minutes: 45 }])
+
+    // The correct instant for "2pm Sydney time" on this future weekday, and
+    // the same wall-clock date/time written WITHOUT a UTC offset — the shape
+    // a model composes when it doesn't include one, which `new Date()` would
+    // otherwise silently read as UTC (2pm Sydney becomes UTC 2pm = midnight
+    // Sydney the next day — outside business hours, wrongly rejected).
+    const correctIso = futureWeekdayIso(10, '14:00')
+    const localDateStr = dateStrInZone(new Date(correctIso), 'Australia/Sydney')
+    const naiveDateTime = `${localDateStr}T14:00:00`
+
+    const req = toolCallRequest('asst-book-naive', 'call-naive', 'bookAppointment', {
+      customerName: 'Jane Doe',
+      customerPhone: '0400111222',
+      service: 'Manicure',
+      dateTime: naiveDateTime,
+    })
+
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/^Booked Manicure for Jane Doe on/)
+    const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-book-naive')
+    expect(rows).toHaveLength(1)
+    expect(new Date(rows[0].scheduled_at as string).toISOString()).toBe(correctIso)
+  })
+
   it('recovers with an apology instead of a dead-end when the slot was just taken', async () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-book-2', vapi_assistant_id: 'asst-book-2', ...business({}) }])
     fakeSupabase.seed('business_services', [{ business_id: 'biz-book-2', name: 'Manicure', duration_minutes: 45 }])

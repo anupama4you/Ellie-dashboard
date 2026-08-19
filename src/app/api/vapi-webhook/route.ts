@@ -5,7 +5,7 @@ import { phoneDigitsKey, toE164Au } from '@/lib/sms'
 import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, hasConflictingAppointment, encodeSlotRef, decodeSlotRef, DEFAULT_SLOT_COUNT } from '@/lib/availability'
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, listEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
-import { formatInZone, dateStrInZone } from '@/lib/timezone'
+import { formatInZone, dateStrInZone, zonedTimeToUtc } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
 import { getPhoneNumber } from '@/lib/vapi'
@@ -59,6 +59,7 @@ async function getExternalBusy(bizId: string, now: Date, lookout: Date, ownEvent
  */
 function resolveRequestedSlot(
   args: Record<string, unknown>,
+  timeZone: string | undefined,
   rawField: 'dateTime' | 'newDateTime' = 'dateTime',
 ): { iso: string; staffId: string | null } | null {
   if (typeof args.slotRef === 'string' && args.slotRef.trim()) {
@@ -67,7 +68,24 @@ function resolveRequestedSlot(
     console.error(`resolveRequestedSlot: slotRef failed to decode, falling back to ${rawField}`, args.slotRef)
   }
   const raw = args[rawField]
-  if (typeof raw === 'string' && !isNaN(new Date(raw).getTime())) {
+  if (typeof raw !== 'string') return null
+
+  // The tool description asks for this "in the business's local timezone,"
+  // but a model composing it free-hand often omits the UTC offset/Z suffix
+  // entirely — and a bare "2026-08-24T09:00:00" is NOT the same as
+  // Adelaide's 9am to `new Date()`; it's silently read as UTC, shifting the
+  // real instant by the timezone's full offset (Adelaide 9am becomes UTC
+  // 9am, i.e. Adelaide 6:30pm) and making a perfectly valid slot look like
+  // it's outside business hours. Only kicks in when there's genuinely no
+  // offset/Z on the string — one that already has one is trusted as-is.
+  const naive = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/)
+  if (naive && timeZone) {
+    const [, y, mo, d, h, mi] = naive
+    const instant = zonedTimeToUtc(timeZone, Number(y), Number(mo), Number(d), Number(h), Number(mi))
+    return { iso: instant.toISOString(), staffId: null }
+  }
+
+  if (!isNaN(new Date(raw).getTime())) {
     return { iso: raw, staffId: null }
   }
   return null
@@ -467,7 +485,7 @@ export async function POST(req: Request) {
             .eq('vapi_assistant_id', resolveAssistantId(message))
             .single()
 
-          const resolvedSlot = resolveRequestedSlot(args, 'newDateTime')
+          const resolvedSlot = resolveRequestedSlot(args, biz?.timezone, 'newDateTime')
 
           if (!biz) {
             resultText = "I couldn't find this business's account — let the caller know you'll confirm the change manually."
@@ -789,7 +807,7 @@ export async function POST(req: Request) {
           .eq('vapi_assistant_id', resolveAssistantId(message))
           .single()
 
-        const resolvedSlot = resolveRequestedSlot(args)
+        const resolvedSlot = resolveRequestedSlot(args, biz?.timezone)
 
         if (!biz) {
           resultText = "I couldn't find this business's account — let the caller know you'll have someone call them back to confirm."
