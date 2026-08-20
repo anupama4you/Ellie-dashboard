@@ -4,7 +4,12 @@ import { encrypt, decrypt } from '@/lib/crypto'
 const OAUTH_BASE = 'https://oauth2.googleapis.com'
 const AUTH_BASE = 'https://accounts.google.com/o/oauth2/v2/auth'
 const CALENDAR_BASE = 'https://www.googleapis.com/calendar/v3'
-const SCOPE = 'https://www.googleapis.com/auth/calendar'
+// Events-only, not the full `calendar` scope — every call this app makes
+// (list/insert/patch/delete) operates on the events sub-resource of one
+// fixed calendar; it never touches calendar metadata, sharing/ACLs, or the
+// calendar list itself, so the broader scope was unnecessary surface area
+// for Google OAuth verification.
+const SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
 function redirectUri(): string {
   return `${process.env.APP_URL!.replace(/\/$/, '')}/api/google-calendar/callback`
@@ -59,15 +64,6 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResponse> 
 /** Best-effort — revokes Google's grant so disconnecting locally also actually revokes access on Google's side. */
 export async function revokeToken(token: string): Promise<void> {
   await fetch(`${OAUTH_BASE}/revoke?token=${encodeURIComponent(token)}`, { method: 'POST' }).catch(() => {})
-}
-
-export async function getUserEmail(accessToken: string): Promise<string | undefined> {
-  const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
-  if (!res.ok) return undefined
-  const data = await res.json()
-  return data.email
 }
 
 export type CalendarConnection = {
@@ -132,28 +128,6 @@ export async function getValidAccessToken(
     await supabase.from('calendar_connections').update({ status: 'error' }).eq('business_id', businessId)
     return null
   }
-}
-
-export type FreeBusyInterval = { start: string; end: string }
-
-export async function freeBusyQuery(
-  accessToken: string,
-  calendarId: string,
-  timeMin: Date,
-  timeMax: Date,
-): Promise<FreeBusyInterval[]> {
-  const res = await fetch(`${CALENDAR_BASE}/freeBusy`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      timeMin: timeMin.toISOString(),
-      timeMax: timeMax.toISOString(),
-      items: [{ id: calendarId }],
-    }),
-  })
-  if (!res.ok) throw new Error(`Google freeBusy failed: ${res.status} ${await res.text()}`)
-  const data = await res.json()
-  return data.calendars?.[calendarId]?.busy ?? []
 }
 
 export async function createCalendarEvent(

@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { exchangeCodeForTokens, getUserEmail } from '@/lib/googleCalendar'
+import { exchangeCodeForTokens } from '@/lib/googleCalendar'
 import { encrypt } from '@/lib/crypto'
 
 const NONCE_COOKIE = 'gcal_oauth_state'
@@ -36,14 +36,17 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/integrations?calendar=reconsent', base))
     }
 
-    const email = await getUserEmail(tokens.access_token)
     const tokenExpiry = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
     const { error } = await supabase.from('calendar_connections').upsert({
       business_id: biz.id,
       provider: 'google',
       calendar_id: 'primary',
-      google_email: email ?? null,
+      // Not fetched anymore — that required a userinfo.email/openid scope
+      // this app deliberately doesn't request (see googleCalendar.ts SCOPE).
+      // Column stays nullable; GoogleCalendarCard already falls back to
+      // "your Google account" when this is null.
+      google_email: null,
       access_token_encrypted: encrypt(tokens.access_token),
       refresh_token_encrypted: encrypt(tokens.refresh_token),
       token_expiry: tokenExpiry,
