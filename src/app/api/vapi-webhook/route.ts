@@ -381,6 +381,30 @@ export async function POST(req: Request) {
 
   if (message.type === 'tool-calls') {
     const results: { toolCallId: string; result: string }[] = []
+    const assistantId = resolveAssistantId(message)
+
+    // Every handler below needs the business row — Vapi can (and does) batch
+    // several tool calls into a single request, so without this each one
+    // would independently re-query `businesses` for data that can't have
+    // changed mid-request. Memoized per-request rather than per-instance
+    // (unlike the free-busy cache above) since staleness across separate
+    // requests would actually be wrong here. Column list is the union of
+    // every handler's needs below.
+    let bizPromise: PromiseLike<{
+      id: string; name: string; hours: unknown; twilio_phone_number: string | null; timezone: string
+      address: string | null; city: string | null; state: string | null; postcode: string | null; google_maps_url: string | null
+    } | null> | null = null
+    function getBiz() {
+      if (!bizPromise) {
+        bizPromise = supabase
+          .from('businesses')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
+          .eq('vapi_assistant_id', assistantId)
+          .single()
+          .then(({ data }) => data)
+      }
+      return bizPromise
+    }
 
     for (const toolCall of (message.toolCallList ?? []) as ToolCall[]) {
       const name = toolName(toolCall)
@@ -390,11 +414,7 @@ export async function POST(req: Request) {
         let resultText: string
 
         try {
-          const { data: biz } = await supabase
-            .from('businesses')
-            .select('id, hours, timezone')
-            .eq('vapi_assistant_id', resolveAssistantId(message))
-            .single()
+          const biz = await getBiz()
 
           if (!biz) {
             resultText = "I couldn't reach the calendar right now — let the caller know you'll confirm a time and call them back."
@@ -436,11 +456,7 @@ export async function POST(req: Request) {
         let resultText: string
 
         try {
-          const { data: biz } = await supabase
-            .from('businesses')
-            .select('id, timezone')
-            .eq('vapi_assistant_id', resolveAssistantId(message))
-            .single()
+          const biz = await getBiz()
 
           if (!biz) {
             resultText = "I couldn't reach this business's account — let the caller know you'll have someone call them back."
@@ -479,12 +495,7 @@ export async function POST(req: Request) {
         let resultText: string
 
         try {
-          const { data: biz } = await supabase
-            .from('businesses')
-            .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
-            .eq('vapi_assistant_id', resolveAssistantId(message))
-            .single()
-
+          const biz = await getBiz()
           const resolvedSlot = resolveRequestedSlot(args, biz?.timezone, 'newDateTime')
 
           if (!biz) {
@@ -494,20 +505,27 @@ export async function POST(req: Request) {
           } else if (!resolvedSlot) {
             resultText = "There's no valid new time to move it to — call checkAvailability again and pass the ref it returns to rescheduleAppointment."
           } else {
-            const { data: existing } = await supabase
-              .from('appointments')
-              .select('id, service, customer_name, customer_phone, calendar_event_id, staff_id')
-              .eq('id', appointmentId)
-              .eq('business_id', biz.id)
-              .single()
+            // `existing` and `services` are independent — both only need
+            // biz.id — so they run in parallel instead of one after another;
+            // costs one now-unneeded services query on the rare "stale
+            // appointmentId" path in exchange for one fewer round trip on
+            // the common path.
+            const [{ data: existing }, { data: services }] = await Promise.all([
+              supabase
+                .from('appointments')
+                .select('id, service, customer_name, customer_phone, calendar_event_id, staff_id')
+                .eq('id', appointmentId)
+                .eq('business_id', biz.id)
+                .single(),
+              supabase
+                .from('business_services')
+                .select('name, duration_minutes')
+                .eq('business_id', biz.id),
+            ])
 
             if (!existing) {
               resultText = "I couldn't find that appointment — let the caller know you'll confirm the change manually."
             } else {
-              const { data: services } = await supabase
-                .from('business_services')
-                .select('name, duration_minutes')
-                .eq('business_id', biz.id)
               const durationMins = durationFor(existing.service, services ?? [])
               const requestedStart = new Date(resolvedSlot.iso)
               const requestedEnd = new Date(requestedStart.getTime() + durationMins * 60_000)
@@ -638,11 +656,7 @@ export async function POST(req: Request) {
         let resultText: string
 
         try {
-          const { data: biz } = await supabase
-            .from('businesses')
-            .select('id, name, twilio_phone_number, timezone')
-            .eq('vapi_assistant_id', resolveAssistantId(message))
-            .single()
+          const biz = await getBiz()
 
           if (!biz) {
             resultText = "I couldn't find this business's account — let the caller know you'll confirm the cancellation manually."
@@ -801,12 +815,7 @@ export async function POST(req: Request) {
       let resultText: string
 
       try {
-        const { data: biz } = await supabase
-          .from('businesses')
-          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
-          .eq('vapi_assistant_id', resolveAssistantId(message))
-          .single()
-
+        const biz = await getBiz()
         const resolvedSlot = resolveRequestedSlot(args, biz?.timezone)
 
         if (!biz) {
@@ -832,8 +841,13 @@ export async function POST(req: Request) {
             // promised the caller — leaving staff_id null here would let two
             // different unassigned bookings for the same slot collide on the
             // unique index even when different staff members are free to take them.
+            // Future-only + capped, matching computeAvailableSlots's equivalent
+            // query — an unfiltered/unbounded fetch here would re-pull a
+            // business's entire appointment history (including irrelevant past
+            // appointments) on every single "anyone's fine" booking.
             const { data: existingForConflict } = await supabase
               .from('appointments').select('scheduled_at, service, staff_id').eq('business_id', biz.id).neq('status', 'cancelled')
+              .gte('scheduled_at', new Date().toISOString()).limit(100)
 
             for (const candidate of activeRoster) {
               const candidateWithinHours = isWithinOpenHours({
