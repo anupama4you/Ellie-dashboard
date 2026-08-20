@@ -807,6 +807,38 @@ export async function POST(req: Request) {
         continue
       }
 
+      if (name === 'getCurrentDateTime') {
+        let resultText: string
+
+        try {
+          const biz = await getBiz()
+
+          if (!biz) {
+            resultText = "I couldn't reach the current date and time right now — apologise briefly and continue without it."
+          } else {
+            // The one thing this tool exists to avoid: the model converting
+            // {{now}} (always UTC) to the business's own timezone itself.
+            // That conversion is deceptively easy to get wrong — not just the
+            // day (a caller-facing incident already traced to exactly this),
+            // but the date can roll over to the next day entirely depending
+            // on the time of day, and minute-level arithmetic on top of that
+            // compounds the risk further. Computed here with the same
+            // formatInZone helper already proven correct everywhere else in
+            // this file, so there's nothing left for the model to calculate.
+            const label = formatInZone(new Date(), biz.timezone, {
+              weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit',
+            })
+            resultText = `It is currently ${label} in ${biz.timezone}. This is the accurate current date and time — use it directly and never calculate or estimate it yourself from {{now}}.`
+          }
+        } catch (err) {
+          captureError(err, { handler: 'getCurrentDateTime' })
+          resultText = "Something went wrong getting the current date and time — apologise briefly and continue without it."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
       if (name !== 'bookAppointment') continue
 
       const args   = toolArgs(toolCall)

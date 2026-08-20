@@ -592,6 +592,36 @@ describe('cancelAppointment', () => {
   })
 })
 
+describe('getCurrentDateTime', () => {
+  it('returns the current date and time already converted to the business\'s own timezone', async () => {
+    fakeSupabase.seed('businesses', [{ id: 'biz-now-1', vapi_assistant_id: 'asst-now-1', ...business({ timezone: 'Australia/Sydney' }) }])
+
+    const req = toolCallRequest('asst-now-1', 'call-now-1', 'getCurrentDateTime', {})
+    const res = await POST(req)
+    const json = await res.json()
+    const resultText = json.results[0].result as string
+
+    expect(resultText).toMatch(/^It is currently .+ in Australia\/Sydney\. This is the accurate current date and time/)
+
+    // No arithmetic left for the model to get wrong — cross-check the exact
+    // wall-clock text against what the same formatting helper produces
+    // independently, rather than just asserting the string shape.
+    const { formatInZone } = await import('@/lib/timezone')
+    const expectedLabel = formatInZone(new Date(), 'Australia/Sydney', {
+      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit',
+    })
+    expect(resultText).toContain(expectedLabel)
+  })
+
+  it("falls back gracefully when the business can't be found", async () => {
+    const req = toolCallRequest('asst-now-missing', 'call-now-2', 'getCurrentDateTime', {})
+    const res = await POST(req)
+    const json = await res.json()
+
+    expect(json.results[0].result).toMatch(/couldn't reach the current date and time/)
+  })
+})
+
 describe('transfer-destination-request', () => {
   function transferRequest(assistantId: string) {
     return new Request('http://localhost/api/vapi-webhook', {
