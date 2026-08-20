@@ -52,6 +52,10 @@ export function fmtTransferRules(instructions: string): string {
   return instructions.trim() || '(No transfer instructions — handle every call yourself.)'
 }
 
+export function fmtCustomInstructions(instructions: string): string {
+  return instructions.trim() || '(No additional instructions from the business owner.)'
+}
+
 type CompanyInfoInput = {
   description?: string
   website?: string
@@ -86,9 +90,9 @@ export function defaultGreeting(businessName: string): string {
  * in a given prompt — e.g. description as its own paragraph, location inline
  * after a "Location:" label the admin writes themselves.
  */
-export type BriefingSectionKey = 'description' | 'location' | 'website' | 'hours' | 'services' | 'staff' | 'faqs' | 'transferRules'
+export type BriefingSectionKey = 'description' | 'location' | 'website' | 'hours' | 'services' | 'staff' | 'faqs' | 'transferRules' | 'customInstructions'
 
-const SECTION_KEYS: BriefingSectionKey[] = ['description', 'location', 'website', 'hours', 'services', 'staff', 'faqs', 'transferRules']
+const SECTION_KEYS: BriefingSectionKey[] = ['description', 'location', 'website', 'hours', 'services', 'staff', 'faqs', 'transferRules', 'customInstructions']
 
 /** Sections meant to sit inline within hand-written text (e.g. after a "Location:" label) — patched without surrounding newlines. Everything else is a standalone block. */
 const INLINE_SECTIONS = new Set<BriefingSectionKey>(['location', 'website'])
@@ -103,6 +107,7 @@ export type BriefingSectionData = {
   staff: StaffInput[]
   faqs: FaqInput[]
   transferRules: string
+  customInstructions: string
   companyInfo?: CompanyInfoInput
 }
 
@@ -116,6 +121,7 @@ function sectionContent(key: BriefingSectionKey, data: BriefingSectionData): str
     case 'staff':              return fmtStaff(data.staff)
     case 'faqs':               return fmtFaqs(data.faqs)
     case 'transferRules':     return fmtTransferRules(data.transferRules)
+    case 'customInstructions': return fmtCustomInstructions(data.customInstructions)
   }
 }
 
@@ -165,10 +171,6 @@ export function buildAssistantConfig(input: {
   /** IANA timezone the business operates in, e.g. "Australia/Adelaide" — anchors {{now}} so the model can resolve relative days ("Thursday", "tomorrow") against a real clock instead of guessing. */
   timezone: string
 }): { firstMessage: string; systemPrompt: string } {
-  const customSection = input.customInstructions?.trim()
-    ? `\nAdditional instructions from the business owner — follow these closely, they override general guidance above if they conflict:\n${input.customInstructions.trim()}\n`
-    : ''
-
   const m = {
     description: sectionMarkers('description'),
     location: sectionMarkers('location'),
@@ -178,6 +180,7 @@ export function buildAssistantConfig(input: {
     staff: sectionMarkers('staff'),
     faqs: sectionMarkers('faqs'),
     transferRules: sectionMarkers('transferRules'),
+    customInstructions: sectionMarkers('customInstructions'),
   }
 
   const activeStaffCount = input.staff.filter(s => s.active).length
@@ -232,7 +235,12 @@ ${m.transferRules.open}
 ${fmtTransferRules(input.transferRules)}
 ${m.transferRules.close}
 Also call the transferCall tool — the same as for the situations above — if the caller asks for "the team," a specific person by name, or any human, if you've made a genuine attempt to understand or help them and the conversation still isn't going anywhere, or if any tool call fails (checkAvailability, bookAppointment, or anything else). Call the tool to actually connect them — don't just say you'll transfer them without calling it. If the tool comes back unable to transfer, apologise briefly and take a message instead (first name, brief reason, and the number they're on unless they'd rather be reached elsewhere), and reassure them someone will call back.
-${customSection}
+
+Additional instructions from the business owner — follow these closely, they override general guidance above if they conflict:
+${m.customInstructions.open}
+${fmtCustomInstructions(input.customInstructions ?? '')}
+${m.customInstructions.close}
+
 How to handle every call:
 - Greet callers warmly and get straight to helping them.
 - For bookings, go one step at a time — never ask for several things in the same breath:

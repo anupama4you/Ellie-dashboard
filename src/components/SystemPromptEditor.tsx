@@ -29,6 +29,7 @@ type Props = {
 const SECTION_LABEL: Record<string, string> = {
   description: 'description', location: 'location', website: 'website',
   hours: 'hours', services: 'services', staff: 'team', faqs: 'FAQs', transferRules: 'transfer rules',
+  customInstructions: 'custom instructions',
 }
 
 export default function SystemPromptEditor({
@@ -76,6 +77,7 @@ export default function SystemPromptEditor({
       staff: briefing.staff.map(s => ({ name: s.name, active: s.active, hours: s.hours })),
       faqs: briefing.faqs,
       transferRules: briefing.transferRules,
+      customInstructions: briefing.customInstructions,
       companyInfo: briefing.companyInfo,
     })
     setSystemPrompt(patched)
