@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { AudioWaveform, FileText, Clock3 } from 'lucide-react'
 import { initials, avatarColor } from '@/lib/avatar'
 
-export type RecentCallCategory = 'booked' | 'rebooked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+export type RecentCallCategory = 'booked' | 'rebooked' | 'linked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
 
 export type RecentCallItem = {
   id: string
@@ -27,6 +27,7 @@ const FILTERS: { key: 'all' | RecentCallCategory; label: string }[] = [
   { key: 'all',         label: 'All'         },
   { key: 'booked',      label: 'Booked'      },
   { key: 'rebooked',    label: 'Rebooked'    },
+  { key: 'linked',      label: 'Link sent'   },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },
@@ -44,7 +45,7 @@ export default function RecentCallsCard({ calls }: { calls: RecentCallItem[] }) 
 
   const counts: Record<'all' | RecentCallCategory, number> = {
     all: calls.length,
-    booked: 0, rebooked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
+    booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
   }
   for (const c of calls) {
     counts[c.category]++

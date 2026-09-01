@@ -56,7 +56,7 @@ export default async function CallsPage({
   // Only the fields needed for the list row — summary, transcript and the
   // recording are fetched lazily per-call by CallDetailPane once selected.
   const calls: CallItem[] = rawCalls.map(call => {
-    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined, call.outcome === 'booked' || call.outcome === 'rebooked', call.outcome === 'rebooked')
+    const { category, label, color, bg } = classifyCall(call.ended_reason ?? undefined, call.outcome === 'booked' || call.outcome === 'rebooked', call.outcome === 'rebooked', call.outcome === 'linked')
     const dt = call.started_at ? fmtTime(call.started_at, timeZone) : null
     return {
       id: call.id,

@@ -16,6 +16,7 @@ import {
 const OUTCOME_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   booked:      { label: 'Booked',      color: 'var(--signal)', bg: 'var(--signal-soft)' },
   rebooked:    { label: 'Rebooked',    color: 'var(--violet)', bg: 'var(--violet-soft)' },
+  linked:      { label: 'Link sent',   color: 'var(--signal)', bg: 'var(--signal-soft)' },
   enquiry:     { label: 'Enquiry',     color: 'var(--violet)', bg: 'var(--violet-soft)' },
   transferred: { label: 'Transferred', color: 'var(--amber)',  bg: 'var(--amber-soft)'  },
   missed:      { label: 'Missed',      color: 'var(--coral)',  bg: 'var(--coral-soft)'  },

@@ -18,7 +18,7 @@ export type CallRowProps = {
   startedDate?: string
   startedTime?: string
   durationSecs: number
-  category: 'booked' | 'rebooked' | 'transferred' | 'missed' | 'enquiry' | 'errored'
+  category: 'booked' | 'rebooked' | 'linked' | 'transferred' | 'missed' | 'enquiry' | 'errored'
   badgeLabel: string
   badgeColor: string
   badgeBg: string

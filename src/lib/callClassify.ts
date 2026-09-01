@@ -1,4 +1,4 @@
-export type CallCategory = 'booked' | 'rebooked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+export type CallCategory = 'booked' | 'rebooked' | 'linked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
 
 const ERROR_REASONS = new Set([
   'exceeded-max-duration',
@@ -26,8 +26,16 @@ const ERROR_REASONS = new Set([
  * never emitted for our own custom `bookAppointment`/`rescheduleAppointment`
  * tool calls, so `hasBooking`/`hasReschedule` are the real signals.
  * `hasReschedule` takes priority over `hasBooking` (more specific/informative).
+ *
+ * `hasBookingLink` covers clients (e.g. those booking through an external
+ * platform like GetTimely) whose assistant never calls `bookAppointment` at
+ * all — there's no `appointments` row to correlate, so the only signal that
+ * the call went somewhere useful is the `sendSms`-booking-link flag from the
+ * assistant's structured-data analysis. It ranks below every ended-reason
+ * outcome (transferred/missed/errored are more specific about how the call
+ * actually ended) but above the generic 'enquiry' fallback.
  */
-export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
+export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean, hasBookingLink?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
   if (hasReschedule) {
     return { category: 'rebooked', label: 'Rebooked', color: 'var(--violet)', bg: 'var(--violet-soft)' }
   }
@@ -48,6 +56,9 @@ export function classifyCall(endedReason?: string, hasBooking?: boolean, hasResc
   }
   if (endedReason && (ERROR_REASONS.has(endedReason) || endedReason.toLowerCase().includes('error'))) {
     return { category: 'errored', label: 'Error', color: 'var(--coral)', bg: 'var(--coral-soft)' }
+  }
+  if (hasBookingLink) {
+    return { category: 'linked', label: 'Link sent', color: 'var(--signal)', bg: 'var(--signal-soft)' }
   }
   return { category: 'enquiry', label: 'Enquiry', color: 'var(--violet)', bg: 'var(--violet-soft)' }
 }

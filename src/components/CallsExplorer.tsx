@@ -12,6 +12,7 @@ const CHIPS: { key: CallItem['category'] | 'all'; label: string }[] = [
   { key: 'all',         label: 'All'         },
   { key: 'booked',      label: 'Booked'      },
   { key: 'rebooked',    label: 'Rebooked'    },
+  { key: 'linked',      label: 'Link sent'   },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },
@@ -39,7 +40,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
   const [sortField, sortDir] = sort.split('-') as ['startedAt' | 'duration', 'asc' | 'desc']
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: calls.length, booked: 0, rebooked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
+    const c: Record<string, number> = { all: calls.length, booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
     for (const call of calls) c[call.category]++
     return c
   }, [calls])

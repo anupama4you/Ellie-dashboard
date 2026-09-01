@@ -87,11 +87,14 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
             <div>
               <div className="flex items-center gap-1.5">
                 <div className="text-base font-bold leading-tight" style={{ color: 'var(--ink)' }}>
-                  {call.customerNumber ?? call.customerName ?? 'Unknown caller'}
+                  {call.customerName?.trim() || call.customerNumber || 'Unknown caller'}
                 </div>
                 {call.customerNumber && <CopyButton text={call.customerNumber} />}
               </div>
               <div className="flex items-center gap-3 mt-1">
+                {call.customerName?.trim() && call.customerNumber && (
+                  <span className="text-xs" style={{ color: 'var(--ink-3)' }}>{call.customerNumber}</span>
+                )}
                 <CallTypeLabel type={call.type} />
                 {dt && (
                   <span className="text-xs" style={{ color: 'var(--ink-3)' }}>

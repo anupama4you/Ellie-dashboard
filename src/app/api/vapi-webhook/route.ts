@@ -286,7 +286,7 @@ type EndOfCallReport = Record<string, unknown> & {
     phoneNumber?: { number?: string } | string
   }
   artifact?: { transcript?: string; recordingUrl?: string }
-  analysis?: { summary?: string; successEvaluation?: string; structuredData?: { callerName?: string | null } }
+  analysis?: { summary?: string; successEvaluation?: string; structuredData?: { callerName?: string | null; bookingLinkSent?: boolean | null } }
 }
 
 function eocCustomer(message: EndOfCallReport): { number?: string; name?: string } {
@@ -1071,8 +1071,9 @@ export async function POST(req: Request) {
         .select('id, status, customer_name')
         .eq('vapi_call_id', callId)
         .limit(1)
-      const hasBooking    = !!correlated?.length
-      const hasReschedule = correlated?.[0]?.status === 'rescheduled'
+      const hasBooking     = !!correlated?.length
+      const hasReschedule  = correlated?.[0]?.status === 'rescheduled'
+      const hasBookingLink = !!report.analysis?.structuredData?.bookingLinkSent
 
       // Priority: Vapi's own customer metadata (rare for phone calls) > the
       // name confirmed out loud during a booking/reschedule/cancellation on
@@ -1104,7 +1105,7 @@ export async function POST(req: Request) {
         ended_at:           endedAt ?? null,
         duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
         ended_reason:       endedReason ?? null,
-        outcome:            classifyCall(endedReason, hasBooking, hasReschedule).category,
+        outcome:            classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink).category,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
