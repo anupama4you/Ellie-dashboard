@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { MessagesSquare } from 'lucide-react'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
+import { pageWindow } from '@/lib/pagination'
 import SmsThreadRow from './SmsThreadRow'
 import SmsThreadPane from './SmsThreadPane'
 
@@ -25,6 +26,8 @@ export type ThreadListItem = {
   messages: ThreadMessage[]
 }
 
+const PAGE_SIZE = 15
+
 function lastMessageTimeLabel(iso: string | null, timeZone: string): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -36,7 +39,16 @@ function lastMessageTimeLabel(iso: string | null, timeZone: string): string {
 
 export default function SmsInbox({ threads, timeZone }: { threads: ThreadListItem[]; timeZone: string }) {
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
+  const [page, setPage]                   = useState(1)
   const selected = threads.find(t => t.phone === selectedPhone) ?? null
+
+  const totalPages  = Math.max(1, Math.ceil(threads.length / PAGE_SIZE))
+  const currentPage = Math.min(page, totalPages)
+  const paged       = threads.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+
+  function select(phone: string) {
+    setSelectedPhone(phone)
+  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -60,7 +72,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
             style={{ borderRight: '1px solid var(--line)' }}
           >
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {threads.map(t => {
+              {paged.map(t => {
                 const last = t.messages[t.messages.length - 1]
                 return (
                   <SmsThreadRow
@@ -71,8 +83,14 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
                     lastMessageDirection={last.direction}
                     lastMessageStatus={last.status}
                     lastMessageTimeLabel={lastMessageTimeLabel(last.dateSent, timeZone)}
+                    // No persisted read-state exists (nothing local stores
+                    // "staff has seen this") — a conversation whose latest
+                    // message is inbound means the customer's turn, i.e.
+                    // it's awaiting a reply, which is the closest stateless
+                    // proxy for "new" available without adding a read table.
+                    needsReply={last.direction === 'inbound'}
                     active={selectedPhone === t.phone}
-                    onSelect={() => setSelectedPhone(t.phone)}
+                    onSelect={() => select(t.phone)}
                   />
                 )
               })}
@@ -89,6 +107,51 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
                 </div>
               )}
             </div>
+
+            {threads.length > 0 && (
+              <div
+                className="flex items-center justify-between px-3 py-2.5 text-xs flex-wrap gap-2 shrink-0"
+                style={{ borderTop: '1px solid var(--line)', color: 'var(--ink-3)' }}
+              >
+                <span>
+                  {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, threads.length)} of {threads.length}
+                </span>
+                <div className="flex gap-1 items-center">
+                  <button
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="px-2 py-1 rounded-lg font-medium disabled:opacity-40"
+                    style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}
+                  >
+                    Prev
+                  </button>
+                  {pageWindow(currentPage, totalPages).map((p, i) => p === '…' ? (
+                    <span key={`ellipsis-${i}`} className="px-1" style={{ color: 'var(--ink-3)' }}>…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className="w-6 h-6 rounded-lg font-medium"
+                      style={{
+                        background: p === currentPage ? 'var(--ink)' : undefined,
+                        color: p === currentPage ? '#fff' : 'var(--ink)',
+                        border: p === currentPage ? '1px solid var(--ink)' : '1px solid var(--line)',
+                      }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-2 py-1 rounded-lg font-medium disabled:opacity-40"
+                    style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right pane — selected conversation's full thread + reply box. */}

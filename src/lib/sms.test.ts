@@ -50,6 +50,20 @@ describe('groupIntoThreads', () => {
     expect(threads.map(t => t.messages[0].sid)).toEqual(['SM2', 'SM3', 'SM1'])
   })
 
+  it('orders messages chronologically even when Twilio reports dates in RFC 2822 format, not ISO', () => {
+    // Twilio's REST API actually returns date_sent/date_created as RFC 2822
+    // ("Thu, 30 Jul 2026 20:12:31 +0000"), never ISO 8601 — a plain string
+    // comparison sorts these by weekday abbreviation first ('Mon' < 'Wed'
+    // alphabetically), not by the actual date, so these two are picked
+    // specifically to disagree: chronologically 1 Sep < 7 Sep, but
+    // alphabetically 'Mon' < 'Wed' would put the later date first.
+    const threads = groupIntoThreads([
+      msg({ sid: 'SM2', dateSent: 'Mon, 07 Sep 2026 00:00:00 +0000' }), // later date, earlier weekday-letter
+      msg({ sid: 'SM1', dateSent: 'Wed, 01 Sep 2026 00:00:00 +0000' }), // earlier date, later weekday-letter
+    ])
+    expect(threads[0].messages.map(m => m.sid)).toEqual(['SM1', 'SM2'])
+  })
+
   it('uses the outbound "to" as the display phone when the thread has an outbound message', () => {
     const threads = groupIntoThreads([
       msg({ sid: 'SM1', direction: 'outbound', from: '+61280000000', to: '+61432118774' }),

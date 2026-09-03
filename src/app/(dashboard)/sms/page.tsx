@@ -24,9 +24,23 @@ export default async function SmsPage() {
       const messages = await getSmsMessages(biz.twilio_phone_number, 200)
       const grouped = groupIntoThreads(messages)
 
+      // Two name sources, merged: `customers` (built from every call, first
+      // name wins permanently) and `appointments.customer_name` (real
+      // bookings) — a phone known only through a booking, never a call,
+      // still gets its name shown. `customers` takes priority as the
+      // dedicated, deliberately-stable identity store.
       const supabase = await createClient()
-      const { data: customers } = await supabase.from('customers').select('phone, name').eq('business_id', biz.id)
-      const nameByPhone = new Map((customers ?? []).map(c => [c.phone, c.name as string]))
+      const [{ data: customers }, { data: appts }] = await Promise.all([
+        supabase.from('customers').select('phone, name').eq('business_id', biz.id),
+        supabase.from('appointments').select('customer_name, customer_phone').eq('business_id', biz.id).not('customer_phone', 'is', null),
+      ])
+      const nameByPhone = new Map<string, string>()
+      for (const a of appts ?? []) {
+        if (a.customer_phone && a.customer_name) nameByPhone.set(phoneDigitsKey(a.customer_phone), a.customer_name)
+      }
+      for (const c of customers ?? []) {
+        if (c.phone && c.name) nameByPhone.set(c.phone, c.name)
+      }
 
       threads = grouped.map(t => ({
         phone: t.phone,

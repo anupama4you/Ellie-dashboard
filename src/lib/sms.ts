@@ -107,17 +107,28 @@ export function groupIntoThreads(messages: SmsMessage[]): SmsThread[] {
 
   const threads: SmsThread[] = []
   for (const [phone, msgs] of byPhone) {
-    const sorted = [...msgs].sort((a, b) => (a.dateSent ?? '').localeCompare(b.dateSent ?? ''))
+    const sorted = [...msgs].sort((a, b) => dateSentMs(a) - dateSentMs(b))
     const last = sorted[sorted.length - 1]
     const displayPhone = last.direction === 'outbound' ? last.to : last.from
     threads.push({ phone, displayPhone, messages: sorted })
   }
 
   return threads.sort((a, b) => {
-    const aLast = a.messages[a.messages.length - 1].dateSent ?? ''
-    const bLast = b.messages[b.messages.length - 1].dateSent ?? ''
-    return bLast.localeCompare(aLast)
+    const aLast = dateSentMs(a.messages[a.messages.length - 1])
+    const bLast = dateSentMs(b.messages[b.messages.length - 1])
+    return bLast - aLast
   })
+}
+
+/**
+ * Twilio's REST API returns `date_sent`/`date_created` in RFC 2822 format
+ * ("Thu, 30 Jul 2026 20:12:31 +0000"), never ISO 8601 — comparing those
+ * strings directly (e.g. via `localeCompare`) sorts by weekday abbreviation
+ * first, not chronologically. `Date.parse` handles RFC 2822 correctly, so
+ * every sort in this file goes through this instead of a raw string compare.
+ */
+function dateSentMs(m: SmsMessage): number {
+  return m.dateSent ? new Date(m.dateSent).getTime() : 0
 }
 
 /** Last 9 digits, digits-only — enough to match an AU mobile/landline across `+61…`, `0…`, and spaced display formats without a full parsing library. */
