@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
+import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { getLocalCalls, getLocalCallsList, callSummary, recordingProxyUrl, type LocalCall, type LocalCallListItem } from '@/lib/calls'
 import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
@@ -62,6 +63,7 @@ function TrendLabel({ delta, suffix = ' vs last week' }: { delta: number | null;
 
 export default async function TodayPage() {
   const { business: biz } = await getCurrentBusiness()
+  const showAppointments = isFeatureEnabled(biz, 'appointments')
   const supabase = await createClient()
 
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
@@ -88,12 +90,16 @@ export default async function TodayPage() {
     usage,
   ] = await Promise.all([
     // Upcoming, not historical — this is "what's on the calendar next", independent of when it was booked.
-    supabase.from('appointments').select('*')
-      .eq('business_id', biz?.id)
-      .neq('status', 'cancelled')
-      .gte('scheduled_at', now.toISOString())
-      .order('scheduled_at', { ascending: true })
-      .limit(6),
+    // Skipped entirely when the `appointments` feature is off — nothing here
+    // writes data back, so an empty list only affects what's displayed.
+    showAppointments
+      ? supabase.from('appointments').select('*')
+          .eq('business_id', biz?.id)
+          .neq('status', 'cancelled')
+          .gte('scheduled_at', now.toISOString())
+          .order('scheduled_at', { ascending: true })
+          .limit(6)
+      : Promise.resolve({ data: [] as Appointment[] }),
     // "Bookings made" is about booking *activity*, so it's scoped by created_at, not scheduled_at (an appointment booked today for next month still counts as made this week).
     supabase.from('appointments').select('service, created_at')
       .eq('business_id', biz?.id)
@@ -364,6 +370,7 @@ export default async function TodayPage() {
           {/* Right rail */}
           <div className="flex flex-col gap-4">
             {/* Booked by Ellie */}
+            {showAppointments && (
             <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
               <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
                 <h2 className="font-bold text-[1.05rem]" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Booked by Ellie</h2>
@@ -412,6 +419,7 @@ export default async function TodayPage() {
                 </Link>
               </div>
             </section>
+            )}
 
             {/* Last 7 days */}
             <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>

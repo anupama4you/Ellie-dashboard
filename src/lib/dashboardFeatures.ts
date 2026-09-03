@@ -12,6 +12,11 @@ export const FEATURE_REGISTRY: { key: FeatureKey; label: string; description: st
  * enabled — only an explicit `false` disables a section. This keeps every
  * existing business's dashboard unchanged on rollout and lets future
  * toggles ship with no backfill.
+ *
+ * Presentation-layer/UI-visibility only: this must not be used to gate
+ * anything security- or billing-sensitive without first reviewing the
+ * `businesses` table's RLS update policy, since `dashboard_features` is
+ * client-writable.
  */
 export function isFeatureEnabled(
   business: { dashboard_features?: DashboardFeatures | null } | null | undefined,
