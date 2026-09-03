@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { MessagesSquare } from 'lucide-react'
+import { MessagesSquare, SquarePen } from 'lucide-react'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
 import { pageWindow } from '@/lib/pagination'
 import SmsThreadRow from './SmsThreadRow'
@@ -39,7 +39,15 @@ function lastMessageTimeLabel(iso: string | null, timeZone: string): string {
 
 export default function SmsInbox({ threads, timeZone }: { threads: ThreadListItem[]; timeZone: string }) {
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
+  const [composingNew, setComposingNew]   = useState(false)
   const [page, setPage]                   = useState(1)
+  // Per-viewer, this-session-only — there's no persisted "read" state in
+  // this app. Opening a conversation is the closest available signal that
+  // staff have seen it, which is what actually clears the reply-needed dot;
+  // it doesn't survive a page reload or apply to a different staff member's
+  // session, unlike a real read-receipt table would.
+  const [seenPhones, setSeenPhones] = useState<Set<string>>(new Set())
+
   const selected = threads.find(t => t.phone === selectedPhone) ?? null
 
   const totalPages  = Math.max(1, Math.ceil(threads.length / PAGE_SIZE))
@@ -48,17 +56,41 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
 
   function select(phone: string) {
     setSelectedPhone(phone)
+    setComposingNew(false)
+    setSeenPhones(prev => prev.has(phone) ? prev : new Set(prev).add(phone))
   }
+
+  function startNewMessage() {
+    setSelectedPhone(null)
+    setComposingNew(true)
+  }
+
+  function handleSent(phoneKey: string) {
+    setComposingNew(false)
+    select(phoneKey)
+  }
+
+  const somethingOpen = !!selectedPhone || composingNew
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="px-6 pt-6 pb-4 max-w-[1220px] w-full mx-auto shrink-0">
-        <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
-          Messages
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>
-          Every text between Ellie and your customers, both ways
-        </p>
+      <div className="px-6 pt-6 pb-4 max-w-[1220px] w-full mx-auto shrink-0 flex items-center justify-between gap-3">
+        <div>
+          <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
+            Messages
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>
+            Every text between Ellie and your customers, both ways
+          </p>
+        </div>
+        <button
+          onClick={startNewMessage}
+          className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90"
+          style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}
+        >
+          <SquarePen size={14} />
+          <span className="hidden sm:inline">New message</span>
+        </button>
       </div>
 
       <div className="flex-1 min-h-0 px-6 pb-6 max-w-[1220px] w-full mx-auto">
@@ -68,7 +100,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
         >
           {/* Left pane — one row per conversation, most recently active first. */}
           <div
-            className={`w-full lg:w-[360px] shrink-0 h-full flex-col ${selectedPhone ? 'hidden lg:flex' : 'flex'}`}
+            className={`w-full lg:w-[360px] shrink-0 h-full flex-col ${somethingOpen ? 'hidden lg:flex' : 'flex'}`}
             style={{ borderRight: '1px solid var(--line)' }}
           >
             <div className="flex-1 min-h-0 overflow-y-auto">
@@ -83,12 +115,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
                     lastMessageDirection={last.direction}
                     lastMessageStatus={last.status}
                     lastMessageTimeLabel={lastMessageTimeLabel(last.dateSent, timeZone)}
-                    // No persisted read-state exists (nothing local stores
-                    // "staff has seen this") — a conversation whose latest
-                    // message is inbound means the customer's turn, i.e.
-                    // it's awaiting a reply, which is the closest stateless
-                    // proxy for "new" available without adding a read table.
-                    needsReply={last.direction === 'inbound'}
+                    needsReply={last.direction === 'inbound' && !seenPhones.has(t.phone)}
                     active={selectedPhone === t.phone}
                     onSelect={() => select(t.phone)}
                   />
@@ -154,12 +181,22 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
             )}
           </div>
 
-          {/* Right pane — selected conversation's full thread + reply box. */}
+          {/* Right pane — selected conversation's full thread + reply box, or the new-message composer. */}
           <div
-            className={`flex-1 h-full min-w-0 ${selectedPhone ? 'flex' : 'hidden lg:flex'}`}
+            className={`flex-1 h-full min-w-0 ${somethingOpen ? 'flex' : 'hidden lg:flex'}`}
             style={{ background: 'var(--paper)' }}
           >
-            <SmsThreadPane selected={selected} timeZone={timeZone} onClose={() => setSelectedPhone(null)} />
+            <SmsThreadPane
+              // Remounts on every mode/target change so the compose box's
+              // local draft/to/error state resets cleanly (see the note in
+              // SmsThreadPane) rather than needing an effect to clear it.
+              key={composingNew ? 'compose' : selectedPhone ?? 'empty'}
+              selected={selected}
+              composingNew={composingNew}
+              timeZone={timeZone}
+              onClose={() => { setSelectedPhone(null); setComposingNew(false) }}
+              onSent={handleSent}
+            />
           </div>
         </div>
       </div>

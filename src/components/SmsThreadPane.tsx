@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { ArrowLeft, MessagesSquare, Send, AlertTriangle } from 'lucide-react'
 import { initials, avatarColor } from '@/lib/avatar'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
+import { toE164Au, phoneDigitsKey } from '@/lib/sms'
 import { sendSmsReplyAction } from '@/app/(dashboard)/sms/actions'
 import type { ThreadListItem } from './SmsInbox'
 
@@ -18,12 +19,17 @@ function bubbleTimeLabel(iso: string | null, timeZone: string): string {
 }
 
 export default function SmsThreadPane({
-  selected, timeZone, onClose,
+  selected, composingNew, timeZone, onClose, onSent,
 }: {
   selected: ThreadListItem | null
+  /** True when there's no existing thread yet and the user is starting a brand-new conversation. */
+  composingNew: boolean
   timeZone: string
   onClose: () => void
+  /** Called after a successful send while composing new, with the recipient's thread key, so the parent can select it once it appears in `threads`. */
+  onSent: (phoneKey: string) => void
 }) {
+  const [to, setTo]           = useState('')
   const [draft, setDraft]     = useState('')
   const [error, setError]     = useState('')
   const [isPending, startTransition] = useTransition()
@@ -32,11 +38,15 @@ export default function SmsThreadPane({
   // Jump to the latest message whenever the open thread changes or grows
   // (switching conversations, or a reply just sent) — a chat inbox should
   // always open scrolled to "now", not to the oldest message in history.
+  // (Draft/to/error resetting when switching *which* conversation is open
+  // is handled by the parent remounting this component via `key`, not an
+  // effect here — resetting state reactively from a prop change is the
+  // thing React's own set-state-in-effect lint rule flags.)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [selected?.phone, selected?.messages.length])
 
-  if (!selected) {
+  if (!selected && !composingNew) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center gap-2 p-6 text-center">
         <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'var(--card)' }}>
@@ -50,13 +60,31 @@ export default function SmsThreadPane({
     )
   }
 
-  const displayName = selected.name?.trim() || selected.displayPhone
-  const avatar = avatarColor(displayName)
+  const displayName = selected ? (selected.name?.trim() || selected.displayPhone) : null
+  const avatar = displayName ? avatarColor(displayName) : null
 
   function send() {
     const body = draft.trim()
-    if (!body || !selected) return
+    if (!body) return
     setError('')
+
+    if (composingNew) {
+      const trimmedTo = to.trim()
+      if (!trimmedTo) { setError('Enter a phone number to send to.'); return }
+      const e164 = toE164Au(trimmedTo)
+      startTransition(async () => {
+        try {
+          await sendSmsReplyAction(e164, body)
+          setDraft('')
+          onSent(phoneDigitsKey(e164))
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to send message')
+        }
+      })
+      return
+    }
+
+    if (!selected) return
     startTransition(async () => {
       try {
         await sendSmsReplyAction(selected.rawPhone, body)
@@ -77,18 +105,39 @@ export default function SmsThreadPane({
         >
           <ArrowLeft size={16} />
         </button>
-        <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-          style={{ background: avatar.bg, color: avatar.color }}>
-          {initials(displayName)}
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{displayName}</p>
-          {selected.name && <p className="text-xs truncate font-mono" style={{ color: 'var(--ink-3)' }}>{selected.displayPhone}</p>}
-        </div>
+
+        {composingNew ? (
+          <div className="flex-1 flex items-center gap-2 min-w-0">
+            <span className="text-sm shrink-0" style={{ color: 'var(--ink-3)' }}>To:</span>
+            <input
+              value={to}
+              onChange={e => setTo(e.target.value)}
+              placeholder="0432 118 774"
+              className="flex-1 min-w-0 text-sm outline-none bg-transparent font-mono"
+              style={{ color: 'var(--ink)' }}
+              autoFocus
+            />
+          </div>
+        ) : (
+          <>
+            <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+              style={{ background: avatar!.bg, color: avatar!.color }}>
+              {initials(displayName!)}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate" style={{ color: 'var(--ink)' }}>{displayName}</p>
+              {selected!.name && <p className="text-xs truncate font-mono" style={{ color: 'var(--ink-3)' }}>{selected!.displayPhone}</p>}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 px-3 sm:px-5 py-4">
-        {selected.messages.map(m => {
+        {composingNew ? (
+          <div className="flex-1 flex items-center justify-center text-center">
+            <p className="text-xs max-w-[240px]" style={{ color: 'var(--ink-3)' }}>Starting a new conversation — write your message below.</p>
+          </div>
+        ) : selected!.messages.map(m => {
           const outbound = m.direction === 'outbound'
           const failed = m.status === 'failed' || m.status === 'undelivered'
           return (
