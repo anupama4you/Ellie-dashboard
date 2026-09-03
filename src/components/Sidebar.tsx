@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight, Loader2 } from 'lucide-react'
+import type { FeatureKey } from '@/lib/dashboardFeatures'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive } from '@/app/(dashboard)/actions'
 import BlockableLink from '@/components/BlockableLink'
@@ -11,7 +12,7 @@ import BlockableLink from '@/components/BlockableLink'
 const NAV = [
   { href: '/',             label: 'Dashboard',           icon: LayoutDashboard },
   { href: '/calls',        label: 'Calls',               icon: Phone           },
-  { href: '/appointments', label: 'Appointments',        icon: CalendarDays    },
+  { href: '/appointments', label: 'Appointments',        icon: CalendarDays,   feature: 'appointments' as FeatureKey },
   { href: '/recordings',   label: 'Recordings',          icon: Clock           },
   { href: '/sms',          label: 'SMS log',             icon: MessageSquare   },
   { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
@@ -53,11 +54,12 @@ type Props = {
   hasAssistant: boolean
   transferPhoneNumber: string | null
   phoneNumber: string | null
+  features: Record<FeatureKey, boolean>
 }
 
 export default function Sidebar({
   businessName, userEmail, coveragePct, streakDays, isAdmin, usage,
-  linePaused, hasAssistant, transferPhoneNumber, phoneNumber,
+  linePaused, hasAssistant, transferPhoneNumber, phoneNumber, features,
 }: Props) {
   const pathname = usePathname()
   const router   = useRouter()
@@ -190,7 +192,7 @@ export default function Sidebar({
         Workspace
       </div>
       <nav className="flex flex-col gap-0.5">
-        {NAV.map(({ href, label, icon: Icon }) => {
+        {NAV.filter(item => !item.feature || features[item.feature]).map(({ href, label, icon: Icon }) => {
           const active = isActive(href, pathname)
           return (
             <BlockableLink
