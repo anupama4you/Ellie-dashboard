@@ -10,6 +10,7 @@ import CopyLinkButton from '@/components/CopyLinkButton'
 import { generateInviteLinkAction, generatePaymentLinkAction } from './actions'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
+import { FEATURE_REGISTRY, resolveDashboardFeatures } from '@/lib/dashboardFeatures'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -55,6 +56,7 @@ export default async function EditClientPage({
   const bizStripeCustomerId      = biz.stripe_customer_id as string | null
   const bizStripeSubscriptionId  = biz.stripe_subscription_id as string | null
   const bizAccountDisabled       = biz.account_disabled as boolean
+  const dashboardFeatures        = resolveDashboardFeatures(biz)
 
   // Test-mode keys (sk_test_...) and live keys (sk_live_...) each have their
   // own dashboard — get this wrong and the "View in Stripe" link 404s.
@@ -201,6 +203,19 @@ export default async function EditClientPage({
     'use server'
     const admin = createAdminClient()
     await admin.from('businesses').update({ account_disabled: !bizAccountDisabled }).eq('id', bizId)
+    redirect(`/admin/clients/${bizId}?saved=1`)
+  }
+
+  /** Only explicit `false`s are stored — an unchecked box disables that key, a checked one is simply omitted (absent = enabled). */
+  async function updateDashboardFeaturesAction(formData: FormData) {
+    'use server'
+    const admin = createAdminClient()
+    const dashboard_features = Object.fromEntries(
+      FEATURE_REGISTRY
+        .filter(({ key }) => formData.get(key) !== 'on')
+        .map(({ key }) => [key, false]),
+    )
+    await admin.from('businesses').update({ dashboard_features }).eq('id', bizId)
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -453,6 +468,30 @@ export default async function EditClientPage({
                   </AdminSubmitButton>
                 </form>
               </div>
+            </div>
+
+            <div className="rounded-2xl overflow-hidden"
+              style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+              <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Dashboard Features</h2>
+              </div>
+              <form action={updateDashboardFeaturesAction} className="p-5 flex flex-col gap-3">
+                {FEATURE_REGISTRY.map(({ key, label, description }) => (
+                  <label key={key} className="flex items-start gap-2.5 text-sm cursor-pointer">
+                    <input type="checkbox" name={key} defaultChecked={dashboardFeatures[key]} className="mt-0.5" />
+                    <span>
+                      <span className="font-medium block" style={{ color: 'var(--text)' }}>{label}</span>
+                      <span className="text-xs block mt-0.5" style={{ color: 'var(--t3)' }}>{description}</span>
+                    </span>
+                  </label>
+                ))}
+                <AdminSubmitButton
+                  pendingLabel="Saving…"
+                  className="w-full rounded-xl py-2.5 text-sm font-semibold mt-1 transition-all"
+                  style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
+                  Save Features
+                </AdminSubmitButton>
+              </form>
             </div>
 
             {/* Danger zone — native details for confirmation without JS */}
