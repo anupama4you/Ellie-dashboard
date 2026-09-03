@@ -12,35 +12,97 @@ async function twilioGet(accountSid: string, authToken: string, path: string, pa
   return res.json()
 }
 
-export type SmsLogEntry = {
+export type SmsMessage = {
   sid: string
+  from: string
   to: string
   body: string
   status: string
+  direction: 'inbound' | 'outbound'
   dateSent: string | null
 }
 
+export type SmsThread = {
+  /** `phoneDigitsKey` of the other party — stable across formatting differences, used as the thread's id. */
+  phone: string
+  /** The other party's phone in whatever format Twilio reported it, for display and as the `to` when replying. */
+  displayPhone: string
+  /** Chronological, oldest first. */
+  messages: SmsMessage[]
+}
+
+function toSmsMessage(m: Record<string, string | null>, direction: SmsMessage['direction']): SmsMessage {
+  return {
+    sid: (m.sid ?? '') as string,
+    from: (m.from ?? '') as string,
+    to: (m.to ?? '') as string,
+    body: (m.body ?? '') as string,
+    status: (m.status ?? 'unknown') as string,
+    direction,
+    dateSent: (m.date_sent ?? m.date_created) as string | null,
+  }
+}
+
 /**
- * Outbound SMS history for `fromNumber`, read live from Twilio's own message
- * log — same approach as call history being read live from Vapi's API
- * rather than duplicated locally, so delivery status is always current
- * without needing a status-callback webhook to keep a local copy in sync.
+ * Full SMS history — both directions — for `businessNumber`, read live from
+ * Twilio's own message log rather than duplicated locally, same approach as
+ * call history being read live from Vapi's API: delivery status is always
+ * current without needing a status-callback webhook to keep a local copy in
+ * sync. Two separate queries (Twilio has no single "either side" filter),
+ * deduped by `sid` since a message where both parties are this account's
+ * own numbers would otherwise appear in both.
  */
-export async function getSmsLog(fromNumber: string, limit = 100): Promise<SmsLogEntry[]> {
+export async function getSmsMessages(businessNumber: string, limit = 200): Promise<SmsMessage[]> {
   const sid = process.env.TWILIO_ACCOUNT_SID
   const token = process.env.TWILIO_AUTH_TOKEN
   if (!sid || !token) throw new Error('Twilio is not configured — set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN')
 
-  const params = new URLSearchParams({ From: fromNumber, PageSize: String(limit) })
-  const data = await twilioGet(sid, token, '/Messages.json', params)
+  const [outbound, inbound] = await Promise.all([
+    twilioGet(sid, token, '/Messages.json', new URLSearchParams({ From: businessNumber, PageSize: String(limit) })),
+    twilioGet(sid, token, '/Messages.json', new URLSearchParams({ To: businessNumber, PageSize: String(limit) })),
+  ])
 
-  return ((data.messages ?? []) as Record<string, string | null>[]).map(m => ({
-    sid: (m.sid ?? '') as string,
-    to: (m.to ?? '') as string,
-    body: (m.body ?? '') as string,
-    status: (m.status ?? 'unknown') as string,
-    dateSent: (m.date_sent ?? m.date_created) as string | null,
-  }))
+  const seen = new Set<string>()
+  const messages: SmsMessage[] = []
+  for (const m of (outbound.messages ?? []) as Record<string, string | null>[]) {
+    if (m.sid && !seen.has(m.sid)) { seen.add(m.sid); messages.push(toSmsMessage(m, 'outbound')) }
+  }
+  for (const m of (inbound.messages ?? []) as Record<string, string | null>[]) {
+    if (m.sid && !seen.has(m.sid)) { seen.add(m.sid); messages.push(toSmsMessage(m, 'inbound')) }
+  }
+  return messages
+}
+
+/**
+ * Groups messages into per-contact conversations — the "other party" is
+ * `to` for an outbound message and `from` for an inbound one. Threads are
+ * keyed by `phoneDigitsKey` so the same customer texting from `+614…` and
+ * `04…` still lands in one thread, and sorted most-recently-active first;
+ * each thread's own messages are chronological (oldest first), matching a
+ * normal chat reading order.
+ */
+export function groupIntoThreads(messages: SmsMessage[]): SmsThread[] {
+  const byPhone = new Map<string, SmsMessage[]>()
+  for (const m of messages) {
+    const otherRaw = m.direction === 'outbound' ? m.to : m.from
+    const key = phoneDigitsKey(otherRaw)
+    if (!byPhone.has(key)) byPhone.set(key, [])
+    byPhone.get(key)!.push(m)
+  }
+
+  const threads: SmsThread[] = []
+  for (const [phone, msgs] of byPhone) {
+    const sorted = [...msgs].sort((a, b) => (a.dateSent ?? '').localeCompare(b.dateSent ?? ''))
+    const last = sorted[sorted.length - 1]
+    const displayPhone = last.direction === 'outbound' ? last.to : last.from
+    threads.push({ phone, displayPhone, messages: sorted })
+  }
+
+  return threads.sort((a, b) => {
+    const aLast = a.messages[a.messages.length - 1].dateSent ?? ''
+    const bLast = b.messages[b.messages.length - 1].dateSent ?? ''
+    return bLast.localeCompare(aLast)
+  })
 }
 
 /** Last 9 digits, digits-only — enough to match an AU mobile/landline across `+61…`, `0…`, and spaced display formats without a full parsing library. */

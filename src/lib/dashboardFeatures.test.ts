@@ -28,6 +28,7 @@ describe('resolveDashboardFeatures', () => {
     expect(resolveDashboardFeatures({ dashboard_features: { staff: false } })).toEqual({
       appointments: true,
       staff: false,
+      sms: true,
     })
   })
 
@@ -35,6 +36,7 @@ describe('resolveDashboardFeatures', () => {
     expect(resolveDashboardFeatures({})).toEqual({
       appointments: true,
       staff: true,
+      sms: true,
     })
   })
 })
