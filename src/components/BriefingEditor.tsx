@@ -81,6 +81,7 @@ type Props = {
   initialFaqs: FaqDraft[]
   initialCompanyInfo: CompanyInfo
   isPendingReview?: boolean
+  showStaff?: boolean
 }
 
 const CUSTOM_INSTRUCTIONS_PLACEHOLDER =
@@ -92,7 +93,7 @@ const TRANSFER_INSTRUCTIONS_PLACEHOLDER =
 export default function BriefingEditor({
   businessId, businessName, initialGreeting, initialCustomInstructions,
   initialHours, initialTransferRules, initialTransferPhoneNumber, initialServices, initialStaff, initialFaqs, initialCompanyInfo,
-  isPendingReview,
+  isPendingReview, showStaff = true,
 }: Props) {
   const placeholderGreeting                         = defaultGreeting(businessName)
   const [greeting, setGreeting]                     = useState(initialGreeting)
@@ -412,6 +413,7 @@ export default function BriefingEditor({
           </section>
 
           {/* Team */}
+          {showStaff && (
           <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
             <div className="flex items-center justify-between px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--border)' }}>
               <div>
@@ -467,6 +469,7 @@ export default function BriefingEditor({
               </div>
             ))}
           </section>
+          )}
 
           {/* FAQs */}
           <section className="rounded-2xl" style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>

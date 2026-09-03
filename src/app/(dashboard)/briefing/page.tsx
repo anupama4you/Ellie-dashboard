@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { resolveBriefing } from '@/lib/briefing'
+import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import BriefingEditor from '@/components/BriefingEditor'
 
 export default async function BriefingPage() {
@@ -24,6 +25,7 @@ export default async function BriefingPage() {
   ])
 
   const resolved = resolveBriefing(biz, services ?? [], faqs ?? [], staff ?? [])
+  const showStaff = isFeatureEnabled(biz, 'staff')
 
   return (
     <div className="h-full overflow-y-auto">
@@ -41,6 +43,7 @@ export default async function BriefingPage() {
           initialFaqs={resolved.faqs}
           initialCompanyInfo={resolved.companyInfo}
           isPendingReview={resolved.isDraft}
+          showStaff={showStaff}
         />
       </div>
     </div>
