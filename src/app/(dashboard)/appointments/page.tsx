@@ -1,6 +1,8 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
+import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { dateStrInZone, zonedTimeToUtc, shiftDateStr, formatInZone } from '@/lib/timezone'
 import { isAfterHours } from '@/lib/availability'
 import { getValidAccessToken, listEvents, type GoogleCalendarEvent } from '@/lib/googleCalendar'
@@ -80,7 +82,10 @@ export default async function AppointmentsPage({
   const view: 'month' | 'week' = viewParam === 'week' ? 'week' : 'month'
 
   const { business: biz } = await getCurrentBusiness()
+  if (!isFeatureEnabled(biz, 'appointments')) redirect('/')
+
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
+  const showStaff = isFeatureEnabled(biz, 'staff')
   const supabase = await createClient()
   const bizHours = (biz?.hours as Hours | undefined) ?? null
 
@@ -137,7 +142,13 @@ export default async function AppointmentsPage({
       .order('scheduled_at', { ascending: true }),
     supabase.from('business_services').select('name, duration_minutes, price_cents').eq('business_id', biz?.id),
     // All rows, not just active — a past appointment tied to a deactivated staff member should still show their name.
-    supabase.from('business_staff').select('id, name, active').eq('business_id', biz?.id).order('sort_order'),
+    // Skipped entirely when the `staff` feature is off — nothing here writes
+    // staff data back, so an empty list only affects what's displayed
+    // (name pill, picker in AddAppointmentModal/AppointmentActions both
+    // already guard on `staff.length > 0`), not what's stored.
+    showStaff
+      ? supabase.from('business_staff').select('id, name, active').eq('business_id', biz?.id).order('sort_order')
+      : Promise.resolve({ data: [] as { id: string; name: string; active: boolean }[] }),
   ])
 
   const rangeAppts = (appointments ?? []) as Appointment[]

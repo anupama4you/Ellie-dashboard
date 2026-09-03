@@ -3,6 +3,7 @@ import { getCurrentBusiness } from '@/lib/business'
 import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
 import { dateStrInZone, addDaysInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
+import { resolveDashboardFeatures } from '@/lib/dashboardFeatures'
 import { NavigationBlockerProvider } from '@/lib/navigationBlocker'
 import Sidebar from '@/components/Sidebar'
 import AccountDisabledScreen from '@/components/AccountDisabledScreen'
@@ -14,6 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
+  const features = resolveDashboardFeatures(biz)
 
   // The one real access gate in the app — plan_status (trial/active/cancelled)
   // is purely a display label with no enforcement anywhere else. Admins are
@@ -79,6 +81,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           hasAssistant={!!biz?.vapi_assistant_id}
           transferPhoneNumber={biz?.transfer_phone_number ?? null}
           phoneNumber={biz?.twilio_phone_number ?? null}
+          features={features}
           usage={usage ? {
             used: usage.used,
             limit: usage.limit,
