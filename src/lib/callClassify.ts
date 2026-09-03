@@ -33,7 +33,11 @@ const ERROR_REASONS = new Set([
  * the call went somewhere useful is the `sendSms`-booking-link flag from the
  * assistant's structured-data analysis. It ranks below every ended-reason
  * outcome (transferred/missed/errored are more specific about how the call
- * actually ended) but above the generic 'enquiry' fallback.
+ * actually ended) but above the generic 'enquiry' fallback. Displayed as
+ * "Booking requested" (category stays 'linked' in the DB) and counted
+ * alongside 'booked'/'rebooked' in every booking-conversion metric — see
+ * `src/app/(dashboard)/page.tsx` and `AnalyticsCharts.tsx` — since sending
+ * the link is the full extent of what Ellie can do for these businesses.
  */
 export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean, hasBookingLink?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
   if (hasReschedule) {
@@ -58,7 +62,7 @@ export function classifyCall(endedReason?: string, hasBooking?: boolean, hasResc
     return { category: 'errored', label: 'Error', color: 'var(--coral)', bg: 'var(--coral-soft)' }
   }
   if (hasBookingLink) {
-    return { category: 'linked', label: 'Link sent', color: 'var(--signal)', bg: 'var(--signal-soft)' }
+    return { category: 'linked', label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' }
   }
   return { category: 'enquiry', label: 'Enquiry', color: 'var(--violet)', bg: 'var(--violet-soft)' }
 }

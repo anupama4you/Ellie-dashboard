@@ -27,7 +27,7 @@ const FILTERS: { key: 'all' | RecentCallCategory; label: string }[] = [
   { key: 'all',         label: 'All'         },
   { key: 'booked',      label: 'Booked'      },
   { key: 'rebooked',    label: 'Rebooked'    },
-  { key: 'linked',      label: 'Link sent'   },
+  { key: 'linked',      label: 'Requested'   },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },

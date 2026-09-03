@@ -86,16 +86,21 @@ function describeHottestWindow(grid: number[][], max: number): string | null {
 }
 
 const OUTCOME_LEGEND: { key: string; label: string; color: string }[] = [
-  { key: 'booked',      label: 'Booked or rebooked',  color: 'var(--signal)' },
+  { key: 'booked',      label: 'Booked or requested', color: 'var(--signal)' },
   { key: 'enquiry',     label: 'Enquiry answered',    color: 'var(--violet)' },
   { key: 'transferred', label: 'Transferred to you',  color: 'var(--amber)'  },
   { key: 'missed',      label: 'Caller hung up early', color: 'var(--coral)' },
 ]
 
+/** A booking-link call (e.g. clients who book through an external platform like Timely) counts as a booking here — see classifyCall's doc comment. */
+function isBookedOutcome(outcome: string | null): boolean {
+  return outcome === 'booked' || outcome === 'rebooked' || outcome === 'linked'
+}
+
 function getOutcomeBreakdown(calls: LocalCallListItem[]) {
   const counts: Record<string, number> = { booked: 0, enquiry: 0, transferred: 0, missed: 0 }
   calls.forEach(c => {
-    if (c.outcome === 'booked' || c.outcome === 'rebooked') counts.booked++
+    if (isBookedOutcome(c.outcome)) counts.booked++
     else if (c.outcome === 'transferred') counts.transferred++
     else if (c.outcome === 'missed' || c.outcome === 'errored') counts.missed++
     else counts.enquiry++
@@ -160,9 +165,9 @@ export default function AnalyticsCharts({ calls, prevCalls, plan, timeZone, usag
   const totalCalls  = calls.length
   const avgDuration = totalCalls ? Math.round(calls.reduce((s, c) => s + (c.duration_seconds ?? 0), 0) / totalCalls) : 0
 
-  const bookedCount = calls.filter(c => c.outcome === 'booked' || c.outcome === 'rebooked').length
+  const bookedCount = calls.filter(c => isBookedOutcome(c.outcome)).length
   const convRate = totalCalls ? Math.round((bookedCount / totalCalls) * 100) : 0
-  const prevBookedCount = prevCalls.filter(c => c.outcome === 'booked' || c.outcome === 'rebooked').length
+  const prevBookedCount = prevCalls.filter(c => isBookedOutcome(c.outcome)).length
   const prevConvRate = prevCalls.length ? Math.round((prevBookedCount / prevCalls.length) * 100) : 0
   const convDelta = pctDelta(convRate, prevConvRate)
 
