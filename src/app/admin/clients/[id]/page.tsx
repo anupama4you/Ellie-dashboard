@@ -55,6 +55,8 @@ export default async function EditClientPage({
   const bizStripeCustomerId      = biz.stripe_customer_id as string | null
   const bizStripeSubscriptionId  = biz.stripe_subscription_id as string | null
   const bizAccountDisabled       = biz.account_disabled as boolean
+  const bizAvgCustomerValueCents = biz.avg_customer_value_cents as number | null
+  const bizEnquiryConversionRate = biz.enquiry_conversion_rate as number | null
 
   // Test-mode keys (sk_test_...) and live keys (sk_live_...) each have their
   // own dashboard — get this wrong and the "View in Stripe" link 404s.
@@ -73,6 +75,13 @@ export default async function EditClientPage({
 
     const newPlan = formData.get('plan') as string
 
+    // Empty string -> null (not configured), rather than 0 -> a fabricated
+    // $0 estimate would be indistinguishable from a deliberately-set $0.
+    const avgValueStr = (formData.get('avg_customer_value') as string).trim()
+    const avgCustomerValueCents = avgValueStr ? Math.round(parseFloat(avgValueStr) * 100) : null
+    const conversionRateStr = (formData.get('conversion_rate') as string).trim()
+    const enquiryConversionRate = conversionRateStr ? Math.round(parseFloat(conversionRateStr)) : null
+
     await admin.from('businesses').update({
       name:                (formData.get('name') as string).trim(),
       phone:               (formData.get('phone') as string).trim() || null,
@@ -80,6 +89,8 @@ export default async function EditClientPage({
       vapi_assistant_id:   (formData.get('assistant_id') as string).trim() || null,
       twilio_phone_number: (formData.get('twilio_phone_number') as string).trim() || null,
       timezone:            formData.get('timezone') as string,
+      avg_customer_value_cents: avgCustomerValueCents,
+      enquiry_conversion_rate:  enquiryConversionRate,
       // Changing plans here is itself "starting" the new plan — reset the
       // billing-cycle anchor to now, same as a real Stripe conversion would
       // (checkout.session.completed in api/stripe-webhook). Otherwise the
@@ -320,6 +331,28 @@ export default async function EditClientPage({
                   className="admin-input font-mono" />
                 <p className="text-xs" style={{ color: 'var(--t5)' }}>
                   This business&apos;s own number — SMS confirmations are sent from this, not a shared number.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Avg. customer/job value ($)</label>
+                <input type="number" name="avg_customer_value" step="0.01" min="0"
+                  defaultValue={bizAvgCustomerValueCents != null ? (bizAvgCustomerValueCents / 100).toFixed(2) : ''}
+                  placeholder="180.00"
+                  className="admin-input" />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Enquiry conversion rate (%)</label>
+                <input type="number" name="conversion_rate" step="1" min="0" max="100"
+                  defaultValue={bizEnquiryConversionRate ?? ''}
+                  placeholder="40"
+                  className="admin-input" />
+              </div>
+
+              <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
+                <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                  Both admin-only, never client-editable. Used to estimate the &quot;Revenue captured&quot; figure on this client&apos;s dashboard for calls where Ellie sent a booking link (e.g. Timely) instead of booking directly — leave blank to show $0 for that portion until calibrated.
                 </p>
               </div>
 

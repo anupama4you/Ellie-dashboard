@@ -4,6 +4,7 @@ import { getLocalCalls, getLocalCallsList, callSummary, recordingProxyUrl, type 
 import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 import { getPlanUsage } from '@/lib/planUsage'
 import { isAfterHours } from '@/lib/availability'
+import { estimatedLinkedRevenueCents } from '@/lib/revenue'
 import type { Hours } from './briefing/actions'
 import Link from 'next/link'
 import RecentCallsCard, { type RecentCallItem, type RecentCallCategory } from '@/components/RecentCallsCard'
@@ -16,7 +17,7 @@ import {
 const OUTCOME_STYLE: Record<string, { label: string; color: string; bg: string }> = {
   booked:      { label: 'Booked',      color: 'var(--signal)', bg: 'var(--signal-soft)' },
   rebooked:    { label: 'Rebooked',    color: 'var(--violet)', bg: 'var(--violet-soft)' },
-  linked:      { label: 'Link sent',   color: 'var(--signal)', bg: 'var(--signal-soft)' },
+  linked:      { label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' },
   enquiry:     { label: 'Enquiry',     color: 'var(--violet)', bg: 'var(--violet-soft)' },
   transferred: { label: 'Transferred', color: 'var(--amber)',  bg: 'var(--amber-soft)'  },
   missed:      { label: 'Missed',      color: 'var(--coral)',  bg: 'var(--coral-soft)'  },
@@ -141,8 +142,17 @@ export default async function TodayPage() {
   const prevWeekAnswered = prevWeekCalls.filter(c => c.outcome !== 'missed').length
   const weekMissed       = weekCalls.filter(c => c.outcome === 'missed').length
 
+  // "Booking requested" calls (Ellie sent an external booking link, e.g.
+  // Timely, instead of creating an appointments row) count as real bookings
+  // — see classifyCall's doc comment — so "Bookings made" and the weekly
+  // chart both add them to the real appointments count.
+  const weekLinkedCalls     = weekCalls.filter(c => c.outcome === 'linked')
+  const prevWeekLinkedCalls = prevWeekCalls.filter(c => c.outcome === 'linked')
+  const weekBookingsCount     = weekBookings.length + weekLinkedCalls.length
+  const prevWeekBookingsCount = prevWeekBookings.length + prevWeekLinkedCalls.length
+
   const answeredDelta  = pctDelta(weekAnswered, prevWeekAnswered)
-  const bookingsDelta  = pctDelta(weekBookings.length, prevWeekBookings.length)
+  const bookingsDelta  = pctDelta(weekBookingsCount, prevWeekBookingsCount)
 
   // Lowercased keys — appointments' `service` is free text Ellie sent when
   // booking, not guaranteed to match a configured service name's exact case.
@@ -156,18 +166,30 @@ export default async function TodayPage() {
   function revenueCents(appts: { service: string | null }[]): number {
     return appts.reduce((sum, a) => sum + (priceByService.get(a.service?.toLowerCase() ?? '') ?? fallbackPriceCents), 0)
   }
-  const weekRevenueCents     = revenueCents(weekBookings)
+  // Confirmed portion: real appointments, exact (matched service price, or
+  // the fallback average above) — no reason to discount data we actually have.
+  // Estimated portion: "booking requested" calls only, since those never got
+  // a real appointments row and we don't know if the customer followed
+  // through — admin-calibrated conversion rate * average customer value.
+  const avgCustomerValueCents = (biz?.avg_customer_value_cents as number | null | undefined) ?? null
+  const conversionRatePct     = (biz?.enquiry_conversion_rate as number | null | undefined) ?? null
+  const weekRevenueCents = revenueCents(weekBookings)
+    + estimatedLinkedRevenueCents(weekLinkedCalls.length, conversionRatePct, avgCustomerValueCents)
   const prevWeekRevenueCents = revenueCents(prevWeekBookings)
+    + estimatedLinkedRevenueCents(prevWeekLinkedCalls.length, conversionRatePct, avgCustomerValueCents)
   const revenueDelta = pctDelta(weekRevenueCents, prevWeekRevenueCents)
 
-  // Last 7 days chart data (oldest → today) — bookings counted by created_at, matching the "Bookings made" KPI's meaning.
+  // Last 7 days chart data (oldest → today) — bookings counted by created_at
+  // (appointments) / started_at (booking-requested calls), matching the
+  // "Bookings made" KPI's meaning.
   const weekDays: WeekDay[] = Array.from({ length: 7 }, (_, i) => {
     const d = addDaysInZone(dayStart, -(6 - i), timeZone)
     const key = dateStrInZone(d, timeZone)
     const dayCallsCount = weekCalls.filter(c => c.started_at && dateStrInZone(new Date(c.started_at), timeZone) === key).length
-    const dayBookingsCount = weekBookings.filter(a => a.created_at && dateStrInZone(new Date(a.created_at), timeZone) === key).length
+    const dayApptBookingsCount = weekBookings.filter(a => a.created_at && dateStrInZone(new Date(a.created_at), timeZone) === key).length
+    const dayLinkedBookingsCount = weekLinkedCalls.filter(c => c.started_at && dateStrInZone(new Date(c.started_at), timeZone) === key).length
     const dow = dayOfWeekInZone(d, timeZone)
-    return { label: WEEKDAY_LABELS[dow === 0 ? 6 : dow - 1], calls: dayCallsCount, bookings: dayBookingsCount }
+    return { label: WEEKDAY_LABELS[dow === 0 ? 6 : dow - 1], calls: dayCallsCount, bookings: dayApptBookingsCount + dayLinkedBookingsCount }
   })
   const weekTotalCalls    = weekDays.reduce((s, d) => s + d.calls, 0)
   const weekTotalBookings = weekDays.reduce((s, d) => s + d.bookings, 0)
@@ -300,13 +322,14 @@ export default async function TodayPage() {
                 <CalendarDays size={13} style={{ color: 'var(--signal)' }} />
               </span>
             </div>
-            <p className="font-extrabold mt-2" style={{ fontFamily: 'var(--font-display)', fontSize: '1.7rem', color: 'var(--ink)' }}>{weekBookings.length}</p>
+            <p className="font-extrabold mt-2" style={{ fontFamily: 'var(--font-display)', fontSize: '1.7rem', color: 'var(--ink)' }}>{weekBookingsCount}</p>
             <div className="mt-1"><TrendLabel delta={bookingsDelta} /></div>
           </div>
 
-          <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+          <div className="rounded-2xl p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}
+            title="Estimated based on calls and bookings handled by Ellie, your average customer value, and your selected conversion rate. Actual revenue may vary.">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Revenue saved</span>
+              <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Revenue captured (est.)</span>
               <span className="w-6.5 h-6.5 rounded-lg flex items-center justify-center" style={{ background: 'var(--amber-soft)' }}>
                 <DollarSign size={13} style={{ color: 'var(--amber)' }} />
               </span>
