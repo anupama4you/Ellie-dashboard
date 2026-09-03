@@ -31,6 +31,21 @@ export type SmsThread = {
   messages: SmsMessage[]
 }
 
+const SMS_STATUS_STYLE: Record<string, { label: string; color: string; bg: string }> = {
+  delivered:   { label: 'Delivered',   color: 'var(--signal)', bg: 'var(--signal-soft)' },
+  sent:        { label: 'Sent',        color: 'var(--violet)', bg: 'var(--violet-soft)' },
+  received:    { label: 'Received',    color: 'var(--violet)', bg: 'var(--violet-soft)' },
+  queued:      { label: 'Sending…',    color: 'var(--amber)',  bg: 'var(--amber-soft)'  },
+  sending:     { label: 'Sending…',    color: 'var(--amber)',  bg: 'var(--amber-soft)'  },
+  failed:      { label: 'Failed',      color: 'var(--coral)',  bg: 'var(--coral-soft)'  },
+  undelivered: { label: 'Undelivered', color: 'var(--coral)',  bg: 'var(--coral-soft)'  },
+}
+
+/** Twilio's raw `status` string, styled for display — falls back to the raw value (still shown, just uncolored) for any status Twilio adds that isn't in the map above. */
+export function smsStatusStyle(status: string): { label: string; color: string; bg: string } {
+  return SMS_STATUS_STYLE[status] ?? { label: status, color: 'var(--ink-3)', bg: 'var(--paper)' }
+}
+
 function toSmsMessage(m: Record<string, string | null>, direction: SmsMessage['direction']): SmsMessage {
   return {
     sid: (m.sid ?? '') as string,

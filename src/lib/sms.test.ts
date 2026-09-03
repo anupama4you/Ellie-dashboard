@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupIntoThreads, type SmsMessage } from './sms'
+import { groupIntoThreads, smsStatusStyle, type SmsMessage } from './sms'
 
 function msg(overrides: Partial<SmsMessage>): SmsMessage {
   return {
@@ -66,5 +66,16 @@ describe('groupIntoThreads', () => {
 
   it('returns an empty array for no messages', () => {
     expect(groupIntoThreads([])).toEqual([])
+  })
+})
+
+describe('smsStatusStyle', () => {
+  it('labels a known status', () => {
+    expect(smsStatusStyle('delivered').label).toBe('Delivered')
+    expect(smsStatusStyle('failed').label).toBe('Failed')
+  })
+
+  it('falls back to the raw status string for an unrecognized value', () => {
+    expect(smsStatusStyle('read')).toEqual({ label: 'read', color: 'var(--ink-3)', bg: 'var(--paper)' })
   })
 })

@@ -69,6 +69,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
                     name={t.name}
                     lastMessageBody={last.body}
                     lastMessageDirection={last.direction}
+                    lastMessageStatus={last.status}
                     lastMessageTimeLabel={lastMessageTimeLabel(last.dateSent, timeZone)}
                     active={selectedPhone === t.phone}
                     onSelect={() => setSelectedPhone(t.phone)}
