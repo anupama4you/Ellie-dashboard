@@ -4,9 +4,9 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { ArrowLeft, MessagesSquare, Send, AlertTriangle } from 'lucide-react'
 import { initials, avatarColor } from '@/lib/avatar'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
-import { toE164Au, phoneDigitsKey } from '@/lib/sms'
+import { toE164Au, phoneDigitsKey, smsStatusStyle } from '@/lib/sms'
 import { sendSmsReplyAction } from '@/app/(dashboard)/sms/actions'
-import type { ThreadListItem } from './SmsInbox'
+import type { ThreadListItem, ThreadMessage } from './SmsInbox'
 
 function bubbleTimeLabel(iso: string | null, timeZone: string): string {
   if (!iso) return ''
@@ -16,6 +16,17 @@ function bubbleTimeLabel(iso: string | null, timeZone: string): string {
   return isToday
     ? formatInZone(d, timeZone, { hour: 'numeric', minute: '2-digit' })
     : formatInZone(d, timeZone, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+}
+
+/** A locally-made stand-in for a message we just fired off, shown immediately rather than waiting on Twilio's send-then-read round trip (which can lag a beat behind the POST that queued it). */
+function optimisticMessage(body: string): ThreadMessage {
+  return {
+    sid: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    body,
+    status: 'queued',
+    direction: 'outbound',
+    dateSent: new Date().toISOString(),
+  }
 }
 
 export default function SmsThreadPane({
@@ -33,18 +44,27 @@ export default function SmsThreadPane({
   const [draft, setDraft]     = useState('')
   const [error, setError]     = useState('')
   const [isPending, startTransition] = useTransition()
+  // Own sent messages we're showing ahead of the server confirming them —
+  // see optimisticMessage(). Only ever appended to from the send handler
+  // (a user event, not an effect) and reconciled away at render time below
+  // once the real data catches up, so there's no setState-in-effect here.
+  const [pendingSent, setPendingSent] = useState<ThreadMessage[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  const confirmedPending = selected
+    ? pendingSent.filter(p => !selected.messages.some(m =>
+        m.direction === 'outbound' && m.body === p.body &&
+        Math.abs(new Date(m.dateSent ?? p.dateSent!).getTime() - new Date(p.dateSent!).getTime()) < 60_000
+      ))
+    : pendingSent
+  const displayMessages = selected ? [...selected.messages, ...confirmedPending] : []
+
   // Jump to the latest message whenever the open thread changes or grows
-  // (switching conversations, or a reply just sent) — a chat inbox should
-  // always open scrolled to "now", not to the oldest message in history.
-  // (Draft/to/error resetting when switching *which* conversation is open
-  // is handled by the parent remounting this component via `key`, not an
-  // effect here — resetting state reactively from a prop change is the
-  // thing React's own set-state-in-effect lint rule flags.)
+  // (switching conversations, a reply just sent, or one arriving via
+  // polling) — a chat inbox should always sit scrolled to "now".
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [selected?.phone, selected?.messages.length])
+  }, [selected?.phone, displayMessages.length])
 
   if (!selected && !composingNew) {
     return (
@@ -72,25 +92,33 @@ export default function SmsThreadPane({
       const trimmedTo = to.trim()
       if (!trimmedTo) { setError('Enter a phone number to send to.'); return }
       const e164 = toE164Au(trimmedTo)
+      setDraft('')
       startTransition(async () => {
         try {
           await sendSmsReplyAction(e164, body)
-          setDraft('')
           onSent(phoneDigitsKey(e164))
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to send message')
+          setDraft(body)
         }
       })
       return
     }
 
     if (!selected) return
+    const optimistic = optimisticMessage(body)
+    setPendingSent(prev => [...prev, optimistic])
+    setDraft('')
     startTransition(async () => {
       try {
         await sendSmsReplyAction(selected.rawPhone, body)
-        setDraft('')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to send message')
+        // It never actually sent — drop the optimistic bubble rather than
+        // leaving a permanently-"Sending…" message in the thread, and give
+        // the draft back so the typed text isn't lost.
+        setPendingSent(prev => prev.filter(p => p.sid !== optimistic.sid))
+        setDraft(body)
       }
     })
   }
@@ -137,16 +165,18 @@ export default function SmsThreadPane({
           <div className="flex-1 flex items-center justify-center text-center">
             <p className="text-xs max-w-[240px]" style={{ color: 'var(--ink-3)' }}>Starting a new conversation — write your message below.</p>
           </div>
-        ) : selected!.messages.map(m => {
+        ) : displayMessages.map(m => {
           const outbound = m.direction === 'outbound'
           const failed = m.status === 'failed' || m.status === 'undelivered'
+          const sending = m.sid.startsWith('pending-')
+          const status = smsStatusStyle(m.status)
           return (
             <div key={m.sid} className={`flex ${outbound ? 'justify-end' : 'justify-start'}`}>
               <div className="max-w-[75%] flex flex-col" style={{ alignItems: outbound ? 'flex-end' : 'flex-start' }}>
                 <div
                   className="rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words"
                   style={outbound
-                    ? { background: 'var(--violet)', color: '#fff', borderBottomRightRadius: 4 }
+                    ? { background: 'var(--violet)', color: '#fff', borderBottomRightRadius: 4, opacity: sending ? 0.6 : 1 }
                     : { background: 'var(--card)', color: 'var(--ink)', border: '1px solid var(--line)', borderBottomLeftRadius: 4 }}
                 >
                   {m.body}
@@ -154,7 +184,7 @@ export default function SmsThreadPane({
                 <div className="flex items-center gap-1 mt-0.5 px-1">
                   {failed && <AlertTriangle size={10} style={{ color: 'var(--coral)' }} />}
                   <span className="text-[10px] font-mono" style={{ color: failed ? 'var(--coral)' : 'var(--ink-3)' }}>
-                    {failed ? 'Not delivered' : bubbleTimeLabel(m.dateSent, timeZone)}
+                    {failed ? 'Not delivered' : sending ? status.label : bubbleTimeLabel(m.dateSent, timeZone)}
                   </span>
                 </div>
               </div>
