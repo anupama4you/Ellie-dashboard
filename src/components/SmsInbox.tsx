@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessagesSquare, SquarePen } from 'lucide-react'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
 import { pageWindow } from '@/lib/pagination'
+import { toE164Au, phoneDigitsKey, formatAuPhone } from '@/lib/sms'
+import { sendSmsReplyAction } from '@/app/(dashboard)/sms/actions'
 import SmsThreadRow from './SmsThreadRow'
 import SmsThreadPane from './SmsThreadPane'
 
@@ -29,6 +31,12 @@ export type ThreadListItem = {
   messages: ThreadMessage[]
 }
 
+type PendingThread = {
+  displayPhone: string
+  rawPhone: string
+  messages: ThreadMessage[]
+}
+
 const PAGE_SIZE = 15
 
 function lastMessageTimeLabel(iso: string | null, timeZone: string): string {
@@ -38,6 +46,13 @@ function lastMessageTimeLabel(iso: string | null, timeZone: string): string {
   return dateStrInZone(d, timeZone) === dateStrInZone(now, timeZone)
     ? formatInZone(d, timeZone, { hour: 'numeric', minute: '2-digit' })
     : formatInZone(d, timeZone, { day: 'numeric', month: 'short' })
+}
+
+function isConfirmed(real: ThreadListItem | undefined, pending: ThreadMessage): boolean {
+  return !!real?.messages.some(m =>
+    m.direction === 'outbound' && m.body === pending.body &&
+    Math.abs(new Date(m.dateSent ?? pending.dateSent!).getTime() - new Date(pending.dateSent!).getTime()) < 60_000
+  )
 }
 
 export default function SmsInbox({ threads, timeZone }: { threads: ThreadListItem[]; timeZone: string }) {
@@ -54,23 +69,54 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
   // this doesn't survive a page reload or apply to a different staff
   // member's session, unlike a real read-receipt table would.
   const [seenSidByPhone, setSeenSidByPhone] = useState<Map<string, string>>(new Map())
+  // Own sent messages shown ahead of the server confirming them, keyed by
+  // recipient — lives here rather than in SmsThreadPane specifically so a
+  // brand-new conversation's just-sent message survives the mode switch
+  // from "composing" to "viewing that thread" (SmsThreadPane remounts on
+  // that transition via its `key`, which would otherwise wipe local state
+  // at exactly the moment it matters). Reconciled away at render time below
+  // once the real data catches up — never cleared reactively from an
+  // effect, only ever written from the send handler (a user event) or its
+  // own failure path.
+  const [pendingByPhone, setPendingByPhone] = useState<Map<string, PendingThread>>(new Map())
 
-  const selected = threads.find(t => t.phone === selectedPhone) ?? null
+  // Threads with any still-unconfirmed sent messages merged in, plus a
+  // synthetic entry (sorted first, as the most recent activity) for a
+  // brand-new conversation that doesn't exist in `threads` yet.
+  const effectiveThreads = useMemo(() => {
+    const stillPendingPhones = new Set(pendingByPhone.keys())
+    const patched = threads.map(t => {
+      const pending = pendingByPhone.get(t.phone)
+      if (!pending) return t
+      stillPendingPhones.delete(t.phone)
+      const unconfirmed = pending.messages.filter(p => !isConfirmed(t, p))
+      return unconfirmed.length ? { ...t, messages: [...t.messages, ...unconfirmed] } : t
+    })
+    const newOnes: ThreadListItem[] = []
+    for (const phone of stillPendingPhones) {
+      const pending = pendingByPhone.get(phone)!
+      if (pending.messages.length === 0) continue
+      newOnes.push({ phone, displayPhone: pending.displayPhone, rawPhone: pending.rawPhone, name: null, messages: pending.messages })
+    }
+    return [...newOnes, ...patched]
+  }, [threads, pendingByPhone])
 
-  const totalPages  = Math.max(1, Math.ceil(threads.length / PAGE_SIZE))
+  const selected = effectiveThreads.find(t => t.phone === selectedPhone) ?? null
+
+  const totalPages  = Math.max(1, Math.ceil(effectiveThreads.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
-  const paged       = threads.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
+  const paged       = effectiveThreads.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
   function markSeen(phone: string) {
-    const t = threads.find(x => x.phone === phone)
+    const t = effectiveThreads.find(x => x.phone === phone)
     if (!t) return
     const lastSid = t.messages[t.messages.length - 1].sid
     setSeenSidByPhone(prev => prev.get(phone) === lastSid ? prev : new Map(prev).set(phone, lastSid))
   }
 
-  // Closes over the current `threads` prop, so it always snapshots whatever
-  // that thread's latest message was at the moment of the call — including
-  // one that arrived via polling while it happened to be the open thread.
+  // Closes over the current `effectiveThreads`, so it always snapshots
+  // whatever that thread's latest message was at the moment of the call —
+  // including one that arrived via polling while it happened to be open.
   function select(phone: string) {
     if (selectedPhone && selectedPhone !== phone) markSeen(selectedPhone)
     setSelectedPhone(phone)
@@ -89,9 +135,57 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
     setComposingNew(true)
   }
 
-  function handleSent(phoneKey: string) {
-    setComposingNew(false)
-    setSelectedPhone(phoneKey)
+  // Single send path for both a reply to the open thread and a brand-new
+  // conversation. The optimistic message is added immediately either way;
+  // for a new conversation, the view switches to it once the send actually
+  // succeeds (see the note inline below for why not sooner).
+  async function sendMessage(rawTo: string | null, body: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const targetRawPhone = composingNew
+      ? (rawTo?.trim() ? toE164Au(rawTo.trim()) : null)
+      : (selected?.rawPhone ?? null)
+    if (!targetRawPhone) return { ok: false, error: 'Enter a phone number to send to.' }
+
+    const phoneKey = phoneDigitsKey(targetRawPhone)
+    const optimistic: ThreadMessage = {
+      sid: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      body,
+      status: 'queued',
+      direction: 'outbound',
+      dateSent: new Date().toISOString(),
+    }
+
+    setPendingByPhone(prev => {
+      const next = new Map(prev)
+      const existing = next.get(phoneKey)
+      next.set(phoneKey, {
+        displayPhone: existing?.displayPhone ?? formatAuPhone(targetRawPhone),
+        rawPhone: targetRawPhone,
+        messages: [...(existing?.messages ?? []), optimistic],
+      })
+      return next
+    })
+
+    try {
+      await sendSmsReplyAction(targetRawPhone, body)
+      // Switch to viewing the (now real) thread only on success — not
+      // optimistically before this — so a failed send leaves the composer
+      // exactly where it was, with its own error and restored draft, rather
+      // than remounting it away (via the `key` change this triggers) out
+      // from under the very error handling that's about to run for it.
+      if (composingNew) select(phoneKey)
+      return { ok: true }
+    } catch (err) {
+      // It never actually sent — drop the optimistic bubble rather than
+      // leaving a permanently-"Sending…" message in the thread.
+      setPendingByPhone(prev => {
+        const existing = prev.get(phoneKey)
+        if (!existing) return prev
+        const next = new Map(prev)
+        next.set(phoneKey, { ...existing, messages: existing.messages.filter(m => m.sid !== optimistic.sid) })
+        return next
+      })
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to send message' }
+    }
   }
 
   // Poll for new messages while the page is open, same server-refresh path
@@ -158,7 +252,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
                 )
               })}
 
-              {threads.length === 0 && (
+              {effectiveThreads.length === 0 && (
                 <div className="py-16 text-center flex flex-col items-center gap-3 px-4">
                   <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: 'var(--paper)' }}>
                     <MessagesSquare size={20} style={{ color: 'var(--ink-3)' }} />
@@ -171,13 +265,13 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
               )}
             </div>
 
-            {threads.length > 0 && (
+            {effectiveThreads.length > 0 && (
               <div
                 className="flex items-center justify-between px-3 py-2.5 text-xs flex-wrap gap-2 shrink-0"
                 style={{ borderTop: '1px solid var(--line)', color: 'var(--ink-3)' }}
               >
                 <span>
-                  {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, threads.length)} of {threads.length}
+                  {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, effectiveThreads.length)} of {effectiveThreads.length}
                 </span>
                 <div className="flex gap-1 items-center">
                   <button
@@ -226,12 +320,14 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
               // Remounts on every mode/target change so the compose box's
               // local draft/to/error state resets cleanly (see the note in
               // SmsThreadPane) rather than needing an effect to clear it.
+              // Safe now that the optimistic message itself lives up here,
+              // not in the component that's about to remount.
               key={composingNew ? 'compose' : selectedPhone ?? 'empty'}
               selected={selected}
               composingNew={composingNew}
               timeZone={timeZone}
               onClose={closeSelected}
-              onSent={handleSent}
+              onSend={sendMessage}
             />
           </div>
         </div>

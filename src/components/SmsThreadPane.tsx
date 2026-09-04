@@ -4,9 +4,8 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 import { ArrowLeft, MessagesSquare, Send, AlertTriangle } from 'lucide-react'
 import { initials, avatarColor } from '@/lib/avatar'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
-import { toE164Au, phoneDigitsKey, smsStatusStyle } from '@/lib/sms'
-import { sendSmsReplyAction } from '@/app/(dashboard)/sms/actions'
-import type { ThreadListItem, ThreadMessage } from './SmsInbox'
+import { smsStatusStyle } from '@/lib/sms'
+import type { ThreadListItem } from './SmsInbox'
 
 function bubbleTimeLabel(iso: string | null, timeZone: string): string {
   if (!iso) return ''
@@ -18,53 +17,32 @@ function bubbleTimeLabel(iso: string | null, timeZone: string): string {
     : formatInZone(d, timeZone, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
 }
 
-/** A locally-made stand-in for a message we just fired off, shown immediately rather than waiting on Twilio's send-then-read round trip (which can lag a beat behind the POST that queued it). */
-function optimisticMessage(body: string): ThreadMessage {
-  return {
-    sid: `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    body,
-    status: 'queued',
-    direction: 'outbound',
-    dateSent: new Date().toISOString(),
-  }
-}
-
 export default function SmsThreadPane({
-  selected, composingNew, timeZone, onClose, onSent,
+  selected, composingNew, timeZone, onClose, onSend,
 }: {
+  /** Already includes any not-yet-confirmed sent messages — merged in by the parent, see SmsInbox's effectiveThreads. */
   selected: ThreadListItem | null
   /** True when there's no existing thread yet and the user is starting a brand-new conversation. */
   composingNew: boolean
   timeZone: string
   onClose: () => void
-  /** Called after a successful send while composing new, with the recipient's thread key, so the parent can select it once it appears in `threads`. */
-  onSent: (phoneKey: string) => void
+  /** `rawTo` is only meaningful while composingNew; for a reply the parent already knows the recipient. */
+  onSend: (rawTo: string | null, body: string) => Promise<{ ok: true } | { ok: false; error: string }>
 }) {
   const [to, setTo]           = useState('')
   const [draft, setDraft]     = useState('')
   const [error, setError]     = useState('')
   const [isPending, startTransition] = useTransition()
-  // Own sent messages we're showing ahead of the server confirming them —
-  // see optimisticMessage(). Only ever appended to from the send handler
-  // (a user event, not an effect) and reconciled away at render time below
-  // once the real data catches up, so there's no setState-in-effect here.
-  const [pendingSent, setPendingSent] = useState<ThreadMessage[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
-
-  const confirmedPending = selected
-    ? pendingSent.filter(p => !selected.messages.some(m =>
-        m.direction === 'outbound' && m.body === p.body &&
-        Math.abs(new Date(m.dateSent ?? p.dateSent!).getTime() - new Date(p.dateSent!).getTime()) < 60_000
-      ))
-    : pendingSent
-  const displayMessages = selected ? [...selected.messages, ...confirmedPending] : []
 
   // Jump to the latest message whenever the open thread changes or grows
   // (switching conversations, a reply just sent, or one arriving via
-  // polling) — a chat inbox should always sit scrolled to "now".
+  // polling) — a chat inbox should always sit scrolled to "now". (Draft/to/
+  // error resetting when switching *which* conversation is open is handled
+  // by the parent remounting this component via `key`, not an effect here.)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [selected?.phone, displayMessages.length])
+  }, [selected?.phone, selected?.messages.length])
 
   if (!selected && !composingNew) {
     return (
@@ -86,38 +64,13 @@ export default function SmsThreadPane({
   function send() {
     const body = draft.trim()
     if (!body) return
+    if (composingNew && !to.trim()) { setError('Enter a phone number to send to.'); return }
     setError('')
-
-    if (composingNew) {
-      const trimmedTo = to.trim()
-      if (!trimmedTo) { setError('Enter a phone number to send to.'); return }
-      const e164 = toE164Au(trimmedTo)
-      setDraft('')
-      startTransition(async () => {
-        try {
-          await sendSmsReplyAction(e164, body)
-          onSent(phoneDigitsKey(e164))
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Failed to send message')
-          setDraft(body)
-        }
-      })
-      return
-    }
-
-    if (!selected) return
-    const optimistic = optimisticMessage(body)
-    setPendingSent(prev => [...prev, optimistic])
     setDraft('')
     startTransition(async () => {
-      try {
-        await sendSmsReplyAction(selected.rawPhone, body)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to send message')
-        // It never actually sent — drop the optimistic bubble rather than
-        // leaving a permanently-"Sending…" message in the thread, and give
-        // the draft back so the typed text isn't lost.
-        setPendingSent(prev => prev.filter(p => p.sid !== optimistic.sid))
+      const result = await onSend(composingNew ? to : null, body)
+      if (!result.ok) {
+        setError(result.error)
         setDraft(body)
       }
     })
@@ -165,7 +118,7 @@ export default function SmsThreadPane({
           <div className="flex-1 flex items-center justify-center text-center">
             <p className="text-xs max-w-[240px]" style={{ color: 'var(--ink-3)' }}>Starting a new conversation — write your message below.</p>
           </div>
-        ) : displayMessages.map(m => {
+        ) : selected!.messages.map(m => {
           const outbound = m.direction === 'outbound'
           const failed = m.status === 'failed' || m.status === 'undelivered'
           const sending = m.sid.startsWith('pending-')
