@@ -6,13 +6,14 @@ import { dateStrInZone, startOfDayInZone, addDaysInZone, dayOfWeekInZone, hourIn
 import { getPlanUsage } from '@/lib/planUsage'
 import { isAfterHours } from '@/lib/availability'
 import { estimatedLinkedRevenueCents } from '@/lib/revenue'
+import { formatAuPhone } from '@/lib/sms'
 import type { Hours } from './briefing/actions'
 import Link from 'next/link'
 import RecentCallsCard, { type RecentCallItem, type RecentCallCategory } from '@/components/RecentCallsCard'
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
 import {
   CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles, AlertTriangle,
-  Phone, PhoneForwarded, PhoneCall, ArrowUp, ArrowDown,
+  Phone, ArrowRight, ArrowUp, ArrowDown,
 } from 'lucide-react'
 
 const OUTCOME_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -247,20 +248,29 @@ export default async function TodayPage() {
               {dateLabel} · Ellie has handled {todayCalls.length} call{todayCalls.length !== 1 ? 's' : ''} so far today
             </p>
           </div>
-          <div className="hidden sm:flex items-center gap-2">
-            <button type="button" disabled title="Coming soon"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-not-allowed opacity-50"
-              style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--card)' }}>
-              <PhoneForwarded size={14} />
-              Forward my calls
-            </button>
-            <button type="button" disabled title="Coming soon"
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white cursor-not-allowed opacity-50"
-              style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
-              <PhoneCall size={14} />
-              Test call Ellie
-            </button>
-          </div>
+          {(biz?.phone || biz?.twilio_phone_number) && (
+            <div className="hidden sm:flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
+              style={{ border: '1px solid var(--line)', background: 'var(--card)' }}
+              title="Calls to your number are live-forwarded to Ellie's line">
+              {biz?.phone && (
+                <span className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full shrink-0 animate-ellie-pulse"
+                    style={{ background: 'var(--signal)', boxShadow: '0 0 0 3px var(--signal-soft)' }} />
+                  <span className="text-sm font-semibold font-mono" style={{ color: 'var(--ink)' }}>{formatAuPhone(biz.phone)}</span>
+                </span>
+              )}
+              {biz?.phone && biz?.twilio_phone_number && (
+                <ArrowRight size={13} style={{ color: 'var(--ink-3)' }} />
+              )}
+              {biz?.twilio_phone_number && (
+                <span className="flex items-center gap-2">
+                  <span className="text-sm font-semibold font-mono" style={{ color: 'var(--ink)' }}>{formatAuPhone(biz.twilio_phone_number)}</span>
+                  <span className="w-2 h-2 rounded-full shrink-0 animate-ellie-pulse"
+                    style={{ background: 'var(--signal)', boxShadow: '0 0 0 3px var(--signal-soft)' }} />
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Trial status */}
