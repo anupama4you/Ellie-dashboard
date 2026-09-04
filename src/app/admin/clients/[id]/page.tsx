@@ -114,10 +114,18 @@ export default async function EditClientPage({
     // approach as the invite flow, so /auth/callback/route.ts's verifyOtp()
     // can read it directly instead of hitting Supabase's fragment-redirecting
     // /auth/v1/verify endpoint.
+    //
+    // `next` carries its own `intent=reset` query param (not just Supabase's
+    // `type=recovery`) because generateInviteLinkAction below *also* uses
+    // `type: 'recovery'` for an unrelated reason (Copy Invite Link) — if
+    // /auth/set-password keyed its "already has a password" bypass off
+    // `type` alone, a stale copied invite link would bypass it too. This
+    // marker is reset-specific and nothing else sets it.
+    const setPasswordNext = encodeURIComponent('/auth/set-password?intent=reset')
     const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
       type: 'recovery',
       email: clientEmail,
-      options: { redirectTo: `${await siteUrl()}/auth/callback?next=/auth/set-password` },
+      options: { redirectTo: `${await siteUrl()}/auth/callback?next=${setPasswordNext}` },
     })
     const hashedToken = linkData?.properties?.hashed_token
     if (linkErr || !hashedToken) {
@@ -125,7 +133,7 @@ export default async function EditClientPage({
       redirect(`/admin/clients/${bizId}?reset=error`)
     }
 
-    const resetUrl = `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=recovery`
+    const resetUrl = `${await siteUrl()}/auth/callback?next=${setPasswordNext}&token_hash=${hashedToken}&type=recovery`
     try {
       await sendEmail(clientEmail, 'Reset your Ellie dashboard password', `
         <p>Hi,</p>
