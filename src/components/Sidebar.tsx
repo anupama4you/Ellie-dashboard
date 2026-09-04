@@ -53,13 +53,12 @@ type Props = {
   linePaused: boolean
   hasAssistant: boolean
   transferPhoneNumber: string | null
-  phoneNumber: string | null
   features: Record<FeatureKey, boolean>
 }
 
 export default function Sidebar({
   businessName, userEmail, coveragePct, streakDays, isAdmin, usage,
-  linePaused, hasAssistant, transferPhoneNumber, phoneNumber, features,
+  linePaused, hasAssistant, transferPhoneNumber, features,
 }: Props) {
   const pathname = usePathname()
   const router   = useRouter()
@@ -268,7 +267,7 @@ export default function Sidebar({
           <p className="text-[0.72rem] leading-relaxed mt-1.5" style={{ color: '#8B84A6' }}>
             {paused
               ? `Calls forward straight to ${transferPhoneNumber ?? 'your number'} — Ellie isn't answering.`
-              : `Ellie is answering calls${phoneNumber ? ` on ${phoneNumber}` : ''}.`}
+              : 'Ellie is answering calls.'}
           </p>
         </div>
       )}
@@ -391,8 +390,8 @@ export default function Sidebar({
 
           <p className="text-sm" style={{ color: 'var(--ink-2)' }}>
             {confirmTarget === 'pause'
-              ? `Callers${phoneNumber ? ` to ${phoneNumber}` : ''} won't reach Ellie until you turn this back on — they'll be forwarded straight to ${transferPhoneNumber ?? 'your transfer number'} instead.`
-              : `Ellie will start answering calls${phoneNumber ? ` on ${phoneNumber}` : ''} again right away.`}
+              ? `Callers won't reach Ellie until you turn this back on — they'll be forwarded straight to ${transferPhoneNumber ?? 'your transfer number'} instead.`
+              : 'Ellie will start answering calls again right away.'}
           </p>
 
           {toggleError && (

@@ -80,7 +80,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
           linePaused={biz?.line_paused ?? false}
           hasAssistant={!!biz?.vapi_assistant_id}
           transferPhoneNumber={biz?.transfer_phone_number ?? null}
-          phoneNumber={biz?.twilio_phone_number ?? null}
           features={features}
           usage={usage ? {
             used: usage.used,
