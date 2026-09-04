@@ -13,7 +13,7 @@ import RecentCallsCard, { type RecentCallItem, type RecentCallCategory } from '@
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
 import {
   CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles, AlertTriangle,
-  Phone, ArrowRight, ArrowUp, ArrowDown,
+  Phone, ArrowUp, ArrowDown,
 } from 'lucide-react'
 
 const OUTCOME_STYLE: Record<string, { label: string; color: string; bg: string }> = {
@@ -204,6 +204,16 @@ export default async function TodayPage() {
 
   const dateLabel = formatInZone(now, timeZone, { weekday: 'long', day: 'numeric', month: 'long' })
 
+  // Same signal Sidebar's own "Phone number active" / "Line paused" toggle
+  // uses — the Twilio number itself is an implementation detail the client
+  // doesn't need to see; what they care about is whether *their* published
+  // number is actually getting answered right now.
+  const lineHasAssistant = !!biz?.vapi_assistant_id
+  const linePaused       = !!biz?.line_paused
+  const lineConnected    = lineHasAssistant && !linePaused
+  const lineStatusLabel  = !lineHasAssistant ? 'Not connected' : linePaused ? 'Paused' : 'Connected to Ellie'
+  const lineStatusColor  = !lineHasAssistant ? '#736C90' : linePaused ? 'var(--amber)' : 'var(--signal)'
+
   const bizHours = (biz?.hours as Hours | undefined) ?? null
   const recentCallItems: RecentCallItem[] = recentCalls.map(call => {
     const outcome = (call.outcome ?? 'enquiry') as RecentCallCategory
@@ -248,27 +258,19 @@ export default async function TodayPage() {
               {dateLabel} · Ellie has handled {todayCalls.length} call{todayCalls.length !== 1 ? 's' : ''} so far today
             </p>
           </div>
-          {(biz?.phone || biz?.twilio_phone_number) && (
+          {biz?.phone && (
             <div className="hidden sm:flex items-center gap-2.5 px-4 py-2.5 rounded-xl"
-              style={{ border: '1px solid var(--line)', background: 'var(--card)' }}
-              title="Calls to your number are live-forwarded to Ellie's line">
-              {biz?.phone && (
-                <span className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full shrink-0 animate-ellie-pulse"
-                    style={{ background: 'var(--signal)', boxShadow: '0 0 0 3px var(--signal-soft)' }} />
-                  <span className="text-sm font-semibold font-mono" style={{ color: 'var(--ink)' }}>{formatAuPhone(biz.phone)}</span>
+              style={{ border: '1px solid var(--line)', background: 'var(--card)' }}>
+              {lineConnected ? (
+                <span className="relative flex h-2 w-2 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--signal)' }} />
+                  <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--signal)' }} />
                 </span>
+              ) : (
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: lineStatusColor }} />
               )}
-              {biz?.phone && biz?.twilio_phone_number && (
-                <ArrowRight size={13} style={{ color: 'var(--ink-3)' }} />
-              )}
-              {biz?.twilio_phone_number && (
-                <span className="flex items-center gap-2">
-                  <span className="text-sm font-semibold font-mono" style={{ color: 'var(--ink)' }}>{formatAuPhone(biz.twilio_phone_number)}</span>
-                  <span className="w-2 h-2 rounded-full shrink-0 animate-ellie-pulse"
-                    style={{ background: 'var(--signal)', boxShadow: '0 0 0 3px var(--signal-soft)' }} />
-                </span>
-              )}
+              <span className="text-sm font-semibold font-mono" style={{ color: 'var(--ink)' }}>{formatAuPhone(biz.phone)}</span>
+              <span className="text-xs font-semibold" style={{ color: lineStatusColor }}>{lineStatusLabel}</span>
             </div>
           )}
         </div>
