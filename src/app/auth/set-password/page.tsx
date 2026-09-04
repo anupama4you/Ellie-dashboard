@@ -1,14 +1,38 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Lock } from 'lucide-react'
 
 export default function SetPasswordPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--night)' }}>
+        <Loader2 size={20} className="animate-spin" style={{ color: 'var(--t4)' }} />
+      </div>
+    }>
+      <SetPasswordForm />
+    </Suspense>
+  )
+}
+
+function SetPasswordForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Set only by the admin's password-reset link (see the note next to
+  // setPasswordNext in admin/clients/[id]/page.tsx). Deliberately not keyed
+  // off Supabase's own `type=recovery` — generateInviteLinkAction's "Copy
+  // Invite Link" also generates a `type: 'recovery'` link for unrelated
+  // reasons, and keying off `type` alone would let a stale copied invite
+  // link bypass the "already used" gate below too. An invite link (this
+  // param absent) is meant to become unusable after its first use; a
+  // password-reset link legitimately leads to an account that already has
+  // one — that's the point of resetting it — so only this flow may skip
+  // the gate.
+  const isPasswordReset = searchParams.get('intent') === 'reset'
   const [checking, setChecking]     = useState(true)
   const [hasSession, setHasSession] = useState(false)
   const [alreadySet, setAlreadySet] = useState(false)
@@ -21,10 +45,10 @@ export default function SetPasswordPage() {
     const supabase = createClient()
     supabase.auth.getUser().then(({ data: { user } }) => {
       setHasSession(!!user)
-      setAlreadySet(!!user?.user_metadata?.password_set)
+      setAlreadySet(!isPasswordReset && !!user?.user_metadata?.password_set)
       setChecking(false)
     })
-  }, [])
+  }, [isPasswordReset])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -86,9 +110,13 @@ export default function SetPasswordPage() {
               </div>
             ) : !hasSession ? (
               <>
-                <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>Invite link expired</h1>
+                <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>
+                  {isPasswordReset ? 'Reset link expired' : 'Invite link expired'}
+                </h1>
                 <p className="text-sm mb-6" style={{ color: 'var(--t4)' }}>
-                  This link is no longer valid. Ask your account manager to send a new invite, or sign in below if you&apos;ve already set a password.
+                  {isPasswordReset
+                    ? 'This link is no longer valid. Ask your account manager to send a new password reset, or sign in below if you already know your password.'
+                    : 'This link is no longer valid. Ask your account manager to send a new invite, or sign in below if you\'ve already set a password.'}
                 </p>
                 <a href="/login" className="block text-center w-full rounded-xl py-3 text-sm font-bold text-white"
                   style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
@@ -108,8 +136,14 @@ export default function SetPasswordPage() {
               </>
             ) : (
               <>
-                <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>Set your password</h1>
-                <p className="text-sm mb-6" style={{ color: 'var(--t4)' }}>Choose a password for your Ellie dashboard account.</p>
+                <h1 className="text-xl font-bold mb-1" style={{ color: 'var(--text)' }}>
+                  {isPasswordReset ? 'Reset your password' : 'Set your password'}
+                </h1>
+                <p className="text-sm mb-6" style={{ color: 'var(--t4)' }}>
+                  {isPasswordReset
+                    ? 'Choose a new password for your Ellie dashboard account.'
+                    : 'Choose a password for your Ellie dashboard account.'}
+                </p>
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
@@ -156,7 +190,7 @@ export default function SetPasswordPage() {
                       boxShadow: '0 0 24px rgba(109,74,255,0.3)',
                     }}>
                     {loading ? <Loader2 size={15} className="animate-spin" /> : null}
-                    {loading ? 'Saving…' : 'Set password & continue'}
+                    {loading ? 'Saving…' : isPasswordReset ? 'Reset password & continue' : 'Set password & continue'}
                   </button>
                 </form>
               </>
