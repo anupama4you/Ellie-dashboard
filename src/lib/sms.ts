@@ -107,7 +107,7 @@ export function groupIntoThreads(messages: SmsMessage[]): SmsThread[] {
 
   const threads: SmsThread[] = []
   for (const [phone, msgs] of byPhone) {
-    const sorted = [...msgs].sort((a, b) => dateSentMs(a) - dateSentMs(b))
+    const sorted = [...msgs].sort(byDateThenInboundFirst)
     const last = sorted[sorted.length - 1]
     const displayPhone = last.direction === 'outbound' ? last.to : last.from
     threads.push({ phone, displayPhone, messages: sorted })
@@ -129,6 +129,24 @@ export function groupIntoThreads(messages: SmsMessage[]): SmsThread[] {
  */
 function dateSentMs(m: SmsMessage): number {
   return m.dateSent ? new Date(m.dateSent).getTime() : 0
+}
+
+/**
+ * Orders a thread's own messages. Twilio's timestamps are only
+ * second-precision, so an automated reply sent within the same second as
+ * the message that prompted it ties exactly on `dateSentMs` alone — and
+ * `getSmsMessages` builds its input with every outbound message before
+ * every inbound one (two separate queries, concatenated), so a plain
+ * stable sort on that tie would always keep the outbound message first
+ * regardless of which one actually came first. Breaking ties by putting
+ * the inbound message first matches the overwhelmingly common real case:
+ * a customer's text prompting a reply, not the reverse.
+ */
+function byDateThenInboundFirst(a: SmsMessage, b: SmsMessage): number {
+  const diff = dateSentMs(a) - dateSentMs(b)
+  if (diff !== 0) return diff
+  if (a.direction === b.direction) return 0
+  return a.direction === 'inbound' ? -1 : 1
 }
 
 /** Last 9 digits, digits-only — enough to match an AU mobile/landline across `+61…`, `0…`, and spaced display formats without a full parsing library. */

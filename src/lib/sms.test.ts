@@ -64,6 +64,23 @@ describe('groupIntoThreads', () => {
     expect(threads[0].messages.map(m => m.sid)).toEqual(['SM1', 'SM2'])
   })
 
+  it('breaks a same-second tie by putting the inbound message first', () => {
+    // Twilio's timestamps are only second-precision, so an automated reply
+    // sent within the same second as the customer's message that prompted
+    // it ties exactly. getSmsMessages() builds its input with every
+    // outbound message before every inbound one (two separate queries,
+    // concatenated) — a plain stable sort on a tie would then always keep
+    // the outbound message first regardless of which one actually came
+    // first, which is backwards for the overwhelmingly common case: a
+    // customer's text prompting a reply, not the reverse.
+    const tie = '2026-09-01T03:38:00.000Z'
+    const threads = groupIntoThreads([
+      msg({ sid: 'SM-OUT', direction: 'outbound', from: '+61280000000', to: '+61432118774', body: 'Automated reply', dateSent: tie }),
+      msg({ sid: 'SM-IN', direction: 'inbound', from: '+61432118774', to: '+61280000000', body: 'Customer text', dateSent: tie }),
+    ])
+    expect(threads[0].messages.map(m => m.sid)).toEqual(['SM-IN', 'SM-OUT'])
+  })
+
   it('uses the outbound "to" as the display phone when the thread has an outbound message', () => {
     const threads = groupIntoThreads([
       msg({ sid: 'SM1', direction: 'outbound', from: '+61280000000', to: '+61432118774' }),
