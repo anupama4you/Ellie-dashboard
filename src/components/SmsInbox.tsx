@@ -1,11 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState, useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import { MessagesSquare, SquarePen } from 'lucide-react'
 import { dateStrInZone, formatInZone } from '@/lib/timezone'
 import { pageWindow } from '@/lib/pagination'
 import SmsThreadRow from './SmsThreadRow'
 import SmsThreadPane from './SmsThreadPane'
+
+const POLL_INTERVAL_MS = 8000
 
 export type ThreadMessage = {
   sid: string
@@ -38,15 +41,19 @@ function lastMessageTimeLabel(iso: string | null, timeZone: string): string {
 }
 
 export default function SmsInbox({ threads, timeZone }: { threads: ThreadListItem[]; timeZone: string }) {
+  const router = useRouter()
+  const [, startTransition] = useTransition()
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
   const [composingNew, setComposingNew]   = useState(false)
   const [page, setPage]                   = useState(1)
   // Per-viewer, this-session-only — there's no persisted "read" state in
-  // this app. Opening a conversation is the closest available signal that
-  // staff have seen it, which is what actually clears the reply-needed dot;
-  // it doesn't survive a page reload or apply to a different staff member's
-  // session, unlike a real read-receipt table would.
-  const [seenPhones, setSeenPhones] = useState<Set<string>>(new Set())
+  // this app. Maps a thread's phone key to the sid of the last message it
+  // had when staff last looked at it, which is what actually clears the
+  // reply-needed dot. Keyed by sid (not just "have they ever opened this
+  // thread") so a *new* inbound message after that point re-shows the dot —
+  // this doesn't survive a page reload or apply to a different staff
+  // member's session, unlike a real read-receipt table would.
+  const [seenSidByPhone, setSeenSidByPhone] = useState<Map<string, string>>(new Map())
 
   const selected = threads.find(t => t.phone === selectedPhone) ?? null
 
@@ -54,21 +61,50 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
   const currentPage = Math.min(page, totalPages)
   const paged       = threads.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE)
 
+  function markSeen(phone: string) {
+    const t = threads.find(x => x.phone === phone)
+    if (!t) return
+    const lastSid = t.messages[t.messages.length - 1].sid
+    setSeenSidByPhone(prev => prev.get(phone) === lastSid ? prev : new Map(prev).set(phone, lastSid))
+  }
+
+  // Closes over the current `threads` prop, so it always snapshots whatever
+  // that thread's latest message was at the moment of the call — including
+  // one that arrived via polling while it happened to be the open thread.
   function select(phone: string) {
+    if (selectedPhone && selectedPhone !== phone) markSeen(selectedPhone)
     setSelectedPhone(phone)
     setComposingNew(false)
-    setSeenPhones(prev => prev.has(phone) ? prev : new Set(prev).add(phone))
+  }
+
+  function closeSelected() {
+    if (selectedPhone) markSeen(selectedPhone)
+    setSelectedPhone(null)
+    setComposingNew(false)
   }
 
   function startNewMessage() {
+    if (selectedPhone) markSeen(selectedPhone)
     setSelectedPhone(null)
     setComposingNew(true)
   }
 
   function handleSent(phoneKey: string) {
     setComposingNew(false)
-    select(phoneKey)
+    setSelectedPhone(phoneKey)
   }
+
+  // Poll for new messages while the page is open, same server-refresh path
+  // the manual Refresh button elsewhere in this app already uses — this
+  // page reads live from Twilio, not a local table, so there's no realtime
+  // subscription to hook into. Paused while the tab isn't visible so an
+  // inbox left open in a background tab doesn't keep hitting Twilio's API.
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') startTransition(() => router.refresh())
+    }, POLL_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [router])
 
   const somethingOpen = !!selectedPhone || composingNew
 
@@ -115,7 +151,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
                     lastMessageDirection={last.direction}
                     lastMessageStatus={last.status}
                     lastMessageTimeLabel={lastMessageTimeLabel(last.dateSent, timeZone)}
-                    needsReply={last.direction === 'inbound' && !seenPhones.has(t.phone)}
+                    needsReply={last.direction === 'inbound' && t.phone !== selectedPhone && seenSidByPhone.get(t.phone) !== last.sid}
                     active={selectedPhone === t.phone}
                     onSelect={() => select(t.phone)}
                   />
@@ -194,7 +230,7 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
               selected={selected}
               composingNew={composingNew}
               timeZone={timeZone}
-              onClose={() => { setSelectedPhone(null); setComposingNew(false) }}
+              onClose={closeSelected}
               onSent={handleSent}
             />
           </div>
