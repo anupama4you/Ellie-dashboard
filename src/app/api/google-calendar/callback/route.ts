@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { exchangeCodeForTokens } from '@/lib/googleCalendar'
 import { encrypt } from '@/lib/crypto'
+import { getSelectedBusinessId } from '@/lib/business'
 
 const NONCE_COOKIE = 'gcal_oauth_state'
 
@@ -24,8 +25,8 @@ export async function GET(request: Request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.redirect(new URL('/login', base))
 
-  const { data: biz } = await supabase.from('businesses').select('id').eq('user_id', user.id).single()
-  if (!biz) return NextResponse.redirect(new URL('/integrations?calendar=error', base))
+  const businessId = await getSelectedBusinessId(supabase, user.id)
+  if (!businessId) return NextResponse.redirect(new URL('/integrations?calendar=error', base))
 
   try {
     const tokens = await exchangeCodeForTokens(code)
@@ -39,7 +40,7 @@ export async function GET(request: Request) {
     const tokenExpiry = new Date(Date.now() + tokens.expires_in * 1000).toISOString()
 
     const { error } = await supabase.from('calendar_connections').upsert({
-      business_id: biz.id,
+      business_id: businessId,
       provider: 'google',
       calendar_id: 'primary',
       // Not fetched anymore — that required a userinfo.email/openid scope

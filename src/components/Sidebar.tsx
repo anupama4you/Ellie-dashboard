@@ -6,8 +6,9 @@ import { usePathname, useRouter } from 'next/navigation'
 import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight, Loader2 } from 'lucide-react'
 import type { FeatureKey } from '@/lib/dashboardFeatures'
 import { createClient } from '@/lib/supabase/client'
-import { setLineActive } from '@/app/(dashboard)/actions'
+import { setLineActive, selectLocationAction } from '@/app/(dashboard)/actions'
 import BlockableLink from '@/components/BlockableLink'
+import { useNavigationBlocker } from '@/lib/navigationBlocker'
 
 const NAV = [
   { href: '/',             label: 'Dashboard',           icon: LayoutDashboard },
@@ -54,11 +55,14 @@ type Props = {
   hasAssistant: boolean
   transferPhoneNumber: string | null
   features: Record<FeatureKey, boolean>
+  businesses: { id: string; name: string }[]
+  currentBusinessId: string
 }
 
 export default function Sidebar({
   businessName, userEmail, coveragePct, streakDays, isAdmin, usage,
   linePaused, hasAssistant, transferPhoneNumber, features,
+  businesses, currentBusinessId,
 }: Props) {
   const pathname = usePathname()
   const router   = useRouter()
@@ -68,6 +72,26 @@ export default function Sidebar({
   const [toggleError, setToggleError] = useState('')
   const [isToggling, startToggle]     = useTransition()
   const [isSigningOut, setIsSigningOut] = useState(false)
+
+  const [isSwitchingLocation, startLocationSwitch] = useTransition()
+  const { isBlocked } = useNavigationBlocker()
+
+  function handleLocationChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const businessId = e.target.value
+    // Same guard every nav link gets via BlockableLink — switching location is
+    // a full navigation, and the Briefing page is the most edit-heavy screen
+    // in the product. The <select> is controlled by `currentBusinessId`, so
+    // returning without a state change snaps the displayed value back.
+    if (isBlocked && !window.confirm('You have unsaved changes. Leave without saving?')) {
+      return
+    }
+    // Awaited so `isSwitchingLocation` stays true for the real duration of the
+    // action. No try/catch: selectLocationAction ends in redirect(), which
+    // Next implements by throwing an internal error that must propagate.
+    startLocationSwitch(async () => {
+      await selectLocationAction(businessId)
+    })
+  }
 
   // Desktop fold, for this session only. Mobile always opens expanded; it's
   // an off-canvas drawer instead (see `mobileOpen`), not a rail.
@@ -185,6 +209,26 @@ export default function Sidebar({
           {collapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
         </button>
       </div>
+
+      {businesses.length > 1 && (
+        <div className={`px-2.5 pb-3 ${collapsed ? 'md:hidden' : ''}`}>
+          <label htmlFor="location-switcher" className="text-[10px] tracking-widest uppercase block pb-1" style={{ color: '#736C90' }}>
+            Location
+          </label>
+          <select
+            id="location-switcher"
+            value={currentBusinessId}
+            onChange={handleLocationChange}
+            disabled={isSwitchingLocation}
+            className="w-full rounded-lg px-2.5 py-2 text-[0.82rem] font-medium disabled:opacity-60"
+            style={{ background: 'var(--night-2)', color: '#fff', border: '1px solid var(--night-line)' }}
+          >
+            {businesses.map(b => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Nav */}
       <div className={`text-[10px] tracking-widest uppercase px-2.5 pb-1.5 ${collapsed ? 'md:hidden' : ''}`} style={{ color: '#736C90' }}>

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSelectedBusinessId } from '@/lib/business'
 
 // Only what CallDetailPane's toDetailData() actually reads — not raw_payload
 // (a jsonb blob it never touches) or the other bookkeeping columns.
@@ -19,20 +20,15 @@ export async function GET(
 
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!biz) return Response.json({ error: 'Not found' }, { status: 404 })
+  const businessId = await getSelectedBusinessId(supabase, user.id)
+  if (!businessId) return Response.json({ error: 'Not found' }, { status: 404 })
 
   const { callId } = await ctx.params
 
   const { data: call } = await supabase
     .from('calls')
     .select(DETAIL_COLUMNS)
-    .eq('business_id', biz.id)
+    .eq('business_id', businessId)
     .eq('id', callId)
     .single()
 

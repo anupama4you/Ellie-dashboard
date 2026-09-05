@@ -1,7 +1,8 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe } from '@/lib/stripe'
-import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle } from 'lucide-react'
+import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle, Plus } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
@@ -36,10 +37,10 @@ export default async function EditClientPage({
   searchParams,
 }: {
   params:       Promise<{ id: string }>
-  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string }>
+  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string; locationError?: string; deleteError?: string }>
 }) {
   const { id }                       = await params
-  const { reset, saved, paymentLink } = await searchParams
+  const { reset, saved, paymentLink, locationError, deleteError } = await searchParams
 
   const admin = createAdminClient()
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
@@ -59,6 +60,13 @@ export default async function EditClientPage({
   const dashboardFeatures        = resolveDashboardFeatures(biz)
   const bizAvgCustomerValueCents = biz.avg_customer_value_cents as number | null
   const bizEnquiryConversionRate = biz.enquiry_conversion_rate as number | null
+
+  const { data: siblingLocations } = await admin
+    .from('businesses')
+    .select('id, name, plan')
+    .eq('user_id', userId)
+    .neq('id', bizId)
+    .order('created_at', { ascending: true })
 
   // Test-mode keys (sk_test_...) and live keys (sk_live_...) each have their
   // own dashboard — get this wrong and the "View in Stripe" link 404s.
@@ -152,8 +160,35 @@ export default async function EditClientPage({
   async function deleteClient() {
     'use server'
     const admin = createAdminClient()
+
+    // businesses.user_id cascades on auth-user delete, so deleting the login
+    // would take every sibling location (and their appointments/calls/etc)
+    // with it. Only remove the login once this is the last location left —
+    // queried fresh here rather than trusting a page-load-time closure, since
+    // another location could have been added or removed since this page
+    // rendered.
+    //
+    // A failed query returns data: null too, which is indistinguishable from
+    // "no siblings" — proceeding on that would delete the shared login (and
+    // cascade through every sibling location) because of a transient error.
+    // Abort instead: deleting nothing is always recoverable, this isn't.
+    const { data: remainingLocations, error: siblingCheckError } = await admin
+      .from('businesses')
+      .select('id')
+      .eq('user_id', userId)
+      .neq('id', bizId)
+
+    if (siblingCheckError) {
+      console.error('Failed to check for sibling locations before deleting — aborting rather than risk deleting a shared login in error:', siblingCheckError)
+      redirect(`/admin/clients/${bizId}?deleteError=1`)
+    }
+
     await admin.from('businesses').delete().eq('id', bizId)
-    await admin.auth.admin.deleteUser(userId)
+
+    if (remainingLocations.length === 0) {
+      await admin.auth.admin.deleteUser(userId)
+    }
+
     redirect('/admin/clients')
   }
 
@@ -238,6 +273,37 @@ export default async function EditClientPage({
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
+  /**
+   * Adds another location to this same client login (a new businesses row
+   * sharing userId) rather than creating a new auth user/invite — the
+   * location joins the client's existing dashboard account. Mirrors
+   * admin/clients/new/page.tsx's createClientAction's business-row fields.
+   */
+  async function addLocationAction(formData: FormData) {
+    'use server'
+    const admin = createAdminClient()
+
+    const startTrial = formData.get('start_trial') === 'on'
+    const now = new Date().toISOString()
+
+    const { data: newBiz, error } = await admin.from('businesses').insert({
+      user_id:           userId,
+      name:              (formData.get('name') as string).trim(),
+      phone:             (formData.get('phone') as string).trim() || null,
+      plan:              formData.get('plan') as string,
+      vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
+      plan_status:       startTrial ? 'trial' : 'active',
+      trial_started_at:  startTrial ? now : null,
+      plan_started_at:   now,
+    }).select('id').single()
+
+    if (error || !newBiz) {
+      redirect(`/admin/clients/${bizId}?locationError=1`)
+    }
+
+    redirect(`/admin/clients/${newBiz.id}/prompt?created=1&newLocation=1`)
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-4xl mx-auto flex flex-col gap-5">
@@ -285,6 +351,13 @@ export default async function EditClientPage({
             style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
             <AlertTriangle size={15} className="shrink-0" />
             Couldn&apos;t send the payment link — check the server logs, or use &quot;Copy Payment Link&quot; instead.
+          </div>
+        )}
+        {deleteError === '1' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            Couldn&apos;t safely check this client&apos;s other locations before deleting — nothing was deleted. Try again, and check the server logs if it keeps happening.
           </div>
         )}
 
@@ -535,6 +608,75 @@ export default async function EditClientPage({
               </form>
             </div>
 
+            <div className="rounded-2xl overflow-hidden"
+              style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+              <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Locations</h2>
+              </div>
+              <div className="p-5 flex flex-col gap-3">
+                {locationError === '1' && (
+                  <div className="px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(221,81,64,0.07)', color: 'var(--coral)' }}>
+                    Could not add that location. Please try again.
+                  </div>
+                )}
+
+                {(siblingLocations ?? []).length > 0 && (
+                  <div className="flex flex-col gap-1.5">
+                    {(siblingLocations ?? []).map(loc => (
+                      <Link key={loc.id} href={`/admin/clients/${loc.id}`}
+                        className="flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-colors btn-ghost"
+                        style={{ border: '1px solid var(--b4)', color: 'var(--text)' }}>
+                        <span>{loc.name}</span>
+                        <span className="capitalize" style={{ color: 'var(--t5)' }}>{loc.plan}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+
+                <details className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--b4)' }}>
+                  <summary className="px-3.5 py-2.5 cursor-pointer text-xs font-semibold select-none list-none flex items-center gap-1.5"
+                    style={{ color: 'var(--violet)' }}>
+                    <Plus size={12} /> Add another location
+                  </summary>
+                  <form action={addLocationAction} className="p-3.5 pt-3 flex flex-col gap-3" style={{ borderTop: '1px solid var(--b4)' }}>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Location Name *</label>
+                      <input type="text" name="name" required placeholder={`${bizName} — Perth`} className="admin-input" />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Phone</label>
+                      <input type="tel" name="phone" className="admin-input" />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Plan *</label>
+                      <select name="plan" defaultValue="core" className="admin-input admin-select">
+                        {PLANS.map(p => (
+                          <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <label className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer"
+                      style={{ background: 'rgba(109,74,255,0.06)', border: '1px solid rgba(109,74,255,0.18)' }}>
+                      <input type="checkbox" name="start_trial" defaultChecked className="mt-0.5" style={{ accentColor: 'var(--violet)' }} />
+                      <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
+                        Start {TRIAL_DAYS}-day free trial
+                      </span>
+                    </label>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Vapi Assistant ID</label>
+                      <input type="text" name="assistant_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="admin-input" />
+                    </div>
+                    <AdminSubmitButton
+                      pendingLabel="Adding…"
+                      className="w-full rounded-xl py-2.5 text-sm font-bold text-white mt-1 transition-opacity hover:opacity-90"
+                      style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
+                      Add Location
+                    </AdminSubmitButton>
+                  </form>
+                </details>
+              </div>
+            </div>
+
             {/* Danger zone — native details for confirmation without JS */}
             <details className="rounded-2xl overflow-hidden"
               style={{ background: 'var(--bg3)', border: '1px solid rgba(221,81,64,0.18)' }}>
@@ -547,8 +689,19 @@ export default async function EditClientPage({
               <div className="px-5 pb-5 flex flex-col gap-3"
                 style={{ borderTop: '1px solid rgba(221,81,64,0.1)' }}>
                 <p className="text-xs pt-4 leading-relaxed" style={{ color: 'var(--t3)' }}>
-                  Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> and their
-                  login account. All appointments are also removed. This cannot be undone.
+                  {(siblingLocations ?? []).length > 0 ? (
+                    <>
+                      Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> — this
+                      location only. Its appointments are also removed. The client&apos;s login and their other{' '}
+                      {(siblingLocations ?? []).length} location{(siblingLocations ?? []).length !== 1 ? 's' : ''} are unaffected.
+                      This cannot be undone.
+                    </>
+                  ) : (
+                    <>
+                      Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> and their
+                      login account. All appointments are also removed. This cannot be undone.
+                    </>
+                  )}
                 </p>
                 <form action={deleteClient}>
                   <AdminSubmitButton

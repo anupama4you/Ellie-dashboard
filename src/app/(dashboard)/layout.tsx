@@ -11,18 +11,28 @@ import AccountDisabledScreen from '@/components/AccountDisabledScreen'
 const WINDOW_DAYS = 14
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, business: biz } = await getCurrentBusiness()
-  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
-
+  const { user, business: biz, businesses } = await getCurrentBusiness()
   const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
   const features = resolveDashboardFeatures(biz)
 
   // The one real access gate in the app — plan_status (trial/active/cancelled)
   // is purely a display label with no enforcement anywhere else. Admins are
   // exempt so they can never lock themselves out of their own business row.
+  // getCurrentBusiness() already resolves away from a disabled location in
+  // favor of a healthy sibling when one exists (see resolveSelectedBusinessId
+  // in lib/business.ts) — this only ever fires when every one of the user's
+  // locations is disabled, or there's just the one.
   if (biz?.account_disabled && !isAdmin) {
     return <AccountDisabledScreen businessName={biz.name} />
   }
+
+  // Same "prefer non-disabled, unless every one is disabled" rule as
+  // resolveSelectedBusinessId — a disabled location can never be resolved as
+  // current, so offering it in the switcher would just be a dead option that
+  // silently bounces back to a healthy sibling on selection.
+  const selectableBusinesses = businesses.filter(b => !b.account_disabled)
+  const switcherBusinesses = selectableBusinesses.length > 0 ? selectableBusinesses : businesses
 
   const now   = new Date()
   const since = addDaysInZone(now, -WINDOW_DAYS, timeZone)
@@ -81,6 +91,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           hasAssistant={!!biz?.vapi_assistant_id}
           transferPhoneNumber={biz?.transfer_phone_number ?? null}
           features={features}
+          businesses={switcherBusinesses.map(b => ({ id: b.id, name: b.name }))}
+          currentBusinessId={biz?.id ?? ''}
           usage={usage ? {
             used: usage.used,
             limit: usage.limit,

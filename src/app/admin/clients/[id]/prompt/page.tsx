@@ -12,10 +12,10 @@ export default async function AdminSystemPromptPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ created?: string; emailWarning?: string }>
+  searchParams: Promise<{ created?: string; emailWarning?: string; newLocation?: string }>
 }) {
   const { id } = await params
-  const { created, emailWarning } = await searchParams
+  const { created, emailWarning, newLocation } = await searchParams
   const admin = createAdminClient()
 
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
@@ -72,7 +72,17 @@ export default async function AdminSystemPromptPage({
           active="prompt"
         />
 
-        {created === '1' && emailWarning === '1' && (
+        {created === '1' && newLocation === '1' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
+            <CheckCircle2 size={15} className="shrink-0" />
+            <span>
+              <b>{biz.name}</b> was added as a new location. Hit &quot;Regenerate from Briefing&quot; below for a starting
+              point, then save to push it live.
+            </span>
+          </div>
+        )}
+        {created === '1' && newLocation !== '1' && emailWarning === '1' && (
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
             style={{ background: 'rgba(217,138,11,0.08)', border: '1px solid rgba(217,138,11,0.25)', color: 'var(--amber)' }}>
             <AlertTriangle size={15} className="shrink-0" />
@@ -82,7 +92,7 @@ export default async function AdminSystemPromptPage({
             </span>
           </div>
         )}
-        {created === '1' && emailWarning !== '1' && (
+        {created === '1' && newLocation !== '1' && emailWarning !== '1' && (
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
             style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
             <CheckCircle2 size={15} className="shrink-0" />
