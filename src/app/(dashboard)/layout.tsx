@@ -11,7 +11,7 @@ import AccountDisabledScreen from '@/components/AccountDisabledScreen'
 const WINDOW_DAYS = 14
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, business: biz } = await getCurrentBusiness()
+  const { user, business: biz, businesses } = await getCurrentBusiness()
   const timeZone = biz?.timezone ?? 'Australia/Adelaide'
 
   const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
@@ -81,6 +81,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
           hasAssistant={!!biz?.vapi_assistant_id}
           transferPhoneNumber={biz?.transfer_phone_number ?? null}
           features={features}
+          businesses={businesses.map(b => ({ id: b.id, name: b.name }))}
+          currentBusinessId={biz?.id ?? ''}
           usage={usage ? {
             used: usage.used,
             limit: usage.limit,
