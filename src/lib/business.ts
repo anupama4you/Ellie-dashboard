@@ -4,6 +4,25 @@ import { createClient } from '@/lib/supabase/server'
 
 type AppUser = { id: string; email: string | undefined }
 
+export const SELECTED_BUSINESS_COOKIE = 'selected_business_id'
+
+/**
+ * Picks which of a user's business rows (locations) is "current." A cookie
+ * value that matches one of their own rows wins; otherwise (no cookie, a
+ * stale cookie from a deleted location, or one belonging to someone else)
+ * falls back to the oldest row — the same single business a one-location
+ * client has always seen. Pure and DB-free so it's unit-testable without
+ * mocking Supabase or Next's cookie jar.
+ */
+export function resolveSelectedBusinessId<T extends { id: string }>(
+  businesses: T[],
+  cookieBusinessId: string | undefined,
+): string | null {
+  if (businesses.length === 0) return null
+  if (cookieBusinessId && businesses.some(b => b.id === cookieBusinessId)) return cookieBusinessId
+  return businesses[0].id
+}
+
 /**
  * The dashboard layout and every page under it each need the current user's
  * business row. `cache()` dedupes this to a single auth check + query per
