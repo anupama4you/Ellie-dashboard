@@ -29,6 +29,7 @@ describe('resolveDashboardFeatures', () => {
       appointments: true,
       staff: false,
       sms: true,
+      campaigns: true,
     })
   })
 
@@ -37,6 +38,7 @@ describe('resolveDashboardFeatures', () => {
       appointments: true,
       staff: true,
       sms: true,
+      campaigns: true,
     })
   })
 })
