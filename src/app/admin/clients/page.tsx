@@ -11,7 +11,16 @@ const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> 
   unlimited:    { color: 'var(--signal)', bg: 'rgba(15,163,122,0.1)',  border: 'rgba(15,163,122,0.2)'   },
 }
 
-function ClientRow({ biz, usage, email, isLast }: { biz: any; usage: PlanUsage; email: string; isLast: boolean }) {
+type ClientBusinessRow = {
+  id: string
+  name: string
+  plan: string
+  account_disabled: boolean
+  briefing_needs_review: boolean
+  vapi_assistant_id: string | null
+}
+
+function ClientRow({ biz, usage, email, isLast }: { biz: ClientBusinessRow; usage: PlanUsage; email: string; isLast: boolean }) {
   const s = PLAN_STYLE[biz.plan] ?? PLAN_STYLE.core
   const hasAssistant = !!biz.vapi_assistant_id
   return (
