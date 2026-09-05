@@ -1092,6 +1092,8 @@ export async function POST(req: Request) {
       }
       callerName = callerName ?? report.analysis?.structuredData?.callerName ?? null
 
+      const outcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink).category
+
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,
         vapi_call_id:       callId,
@@ -1105,7 +1107,7 @@ export async function POST(req: Request) {
         ended_at:           endedAt ?? null,
         duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
         ended_reason:       endedReason ?? null,
-        outcome:            classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink).category,
+        outcome,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
@@ -1115,6 +1117,34 @@ export async function POST(req: Request) {
       }, { onConflict: 'vapi_call_id' })
 
       if (error) console.error('Failed to save call record:', error)
+
+      // This call may have been placed by an outbound campaign batch (see
+      // src/app/(dashboard)/campaigns/actions.ts) — if so, flip that contact
+      // to done with the same outcome, and complete the campaign once every
+      // contact has one. A no-op for any ordinary inbound/webCall.
+      const { data: campaignContact } = await supabase
+        .from('outbound_campaign_contacts')
+        .select('id, campaign_id')
+        .eq('vapi_call_id', callId)
+        .single()
+
+      if (campaignContact) {
+        await supabase.from('outbound_campaign_contacts')
+          .update({ status: 'done', outcome })
+          .eq('id', campaignContact.id)
+
+        const { count: remaining } = await supabase
+          .from('outbound_campaign_contacts')
+          .select('id', { count: 'exact', head: true })
+          .eq('campaign_id', campaignContact.campaign_id)
+          .neq('status', 'done')
+
+        if (remaining === 0) {
+          await supabase.from('outbound_campaigns')
+            .update({ status: 'completed' })
+            .eq('id', campaignContact.campaign_id)
+        }
+      }
     } catch (err) {
       captureError(err, { handler: 'end-of-call-report', callId })
     }
