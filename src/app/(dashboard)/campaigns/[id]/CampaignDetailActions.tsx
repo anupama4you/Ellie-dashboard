@@ -8,9 +8,10 @@ type Props = {
   campaignId: string
   status: string
   pendingCount: number
+  withinWindow: boolean
 }
 
-export default function CampaignDetailActions({ campaignId, status, pendingCount }: Props) {
+export default function CampaignDetailActions({ campaignId, status, pendingCount, withinWindow }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
@@ -60,10 +61,16 @@ export default function CampaignDetailActions({ campaignId, status, pendingCount
 
   return (
     <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-      <button onClick={callBatch} disabled={isPending || pendingCount === 0}
+      <button onClick={callBatch} disabled={isPending || pendingCount === 0 || !withinWindow}
         className="w-fit rounded-xl px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
         style={{ background: 'var(--violet)' }}>
-        {isPending ? 'Calling…' : pendingCount === 0 ? 'All contacts called' : `Call next batch (${Math.min(5, pendingCount)} of ${pendingCount} pending)`}
+        {isPending
+          ? 'Calling…'
+          : pendingCount === 0
+            ? 'All contacts called'
+            : !withinWindow
+              ? 'Outbound calls only 9am–8pm'
+              : `Call next batch (${Math.min(5, pendingCount)} of ${pendingCount} pending)`}
       </button>
       {message && <p className="text-xs" style={{ color: 'var(--ink-3)' }}>{message}</p>}
     </div>

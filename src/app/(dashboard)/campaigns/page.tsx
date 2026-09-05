@@ -6,7 +6,20 @@ import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { createCampaignAction } from './actions'
 import { Megaphone, Plus } from 'lucide-react'
 
-export default async function CampaignsPage() {
+const ERROR_MESSAGES: Record<string, string> = {
+  nobusiness: 'No business profile found.',
+  disabled: 'Campaigns are not enabled for this location.',
+  nofile: 'Choose a CSV file to upload.',
+  novalid: 'No valid contacts found in that file — check it has name and phone columns.',
+  create: 'Failed to create the campaign. Please try again.',
+}
+
+export default async function CampaignsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>
+}) {
+  const { error } = await searchParams
   const { business: biz } = await getCurrentBusiness()
   if (!isFeatureEnabled(biz, 'campaigns')) redirect('/')
   if (!biz) redirect('/')
@@ -34,6 +47,12 @@ export default async function CampaignsPage() {
           <h1 className="font-extrabold text-xl" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Campaigns</h1>
         </div>
 
+        {error && (
+          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'var(--coral-soft)', color: 'var(--coral)' }}>
+            {ERROR_MESSAGES[error] ?? 'Something went wrong. Please try again.'}
+          </div>
+        )}
+
         <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
           <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
             <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>New campaign</h2>
@@ -47,8 +66,8 @@ export default async function CampaignsPage() {
               <input type="text" name="name" required placeholder="Spring re-engagement" className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
-              <input type="file" name="csv" accept=".csv" required className="text-sm" />
+              <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
+              <input id="campaign-csv" type="file" name="csv" accept=".csv" required className="text-sm" />
             </div>
             <button type="submit" className="w-fit rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
               style={{ background: 'var(--violet)' }}>

@@ -38,4 +38,24 @@ describe('parseContactsCsv', () => {
     const result = parseContactsCsv(csv)
     expect(result.valid).toEqual([{ name: 'Jane Doe', phone: '+61412345678', note: null }])
   })
+
+  it('skips an international phone number that toE164Au could otherwise mangle into a different real AU number', () => {
+    const csv = 'name,phone\nJane Doe,+1 212 555 1234'
+    const result = parseContactsCsv(csv)
+    expect(result.valid).toHaveLength(0)
+    expect(result.skipped).toBe(1)
+  })
+
+  it('skips a phone number with an extension', () => {
+    const csv = 'name,phone\nJane Doe,0412 345 678 x12'
+    const result = parseContactsCsv(csv)
+    expect(result.valid).toHaveLength(0)
+    expect(result.skipped).toBe(1)
+  })
+
+  it('accepts a plausible AU number without the + prefix', () => {
+    const csv = 'name,phone\nJane Doe,61412345678'
+    const result = parseContactsCsv(csv)
+    expect(result.valid).toEqual([{ name: 'Jane Doe', phone: '+61412345678', note: null }])
+  })
 })

@@ -1121,28 +1121,32 @@ export async function POST(req: Request) {
       // This call may have been placed by an outbound campaign batch (see
       // src/app/(dashboard)/campaigns/actions.ts) — if so, flip that contact
       // to done with the same outcome, and complete the campaign once every
-      // contact has one. A no-op for any ordinary inbound/webCall.
+      // contact has one. A no-op for any ordinary inbound/webCall (the
+      // overwhelming majority of calls this handler sees).
       const { data: campaignContact } = await supabase
         .from('outbound_campaign_contacts')
         .select('id, campaign_id')
         .eq('vapi_call_id', callId)
-        .single()
+        .maybeSingle()
 
       if (campaignContact) {
-        await supabase.from('outbound_campaign_contacts')
+        const { error: contactUpdateError } = await supabase.from('outbound_campaign_contacts')
           .update({ status: 'done', outcome })
           .eq('id', campaignContact.id)
+        if (contactUpdateError) console.error('Failed to mark campaign contact done:', contactUpdateError)
 
-        const { count: remaining } = await supabase
+        const { count: remaining, error: remainingError } = await supabase
           .from('outbound_campaign_contacts')
           .select('id', { count: 'exact', head: true })
           .eq('campaign_id', campaignContact.campaign_id)
           .neq('status', 'done')
+        if (remainingError) console.error('Failed to count remaining campaign contacts:', remainingError)
 
         if (remaining === 0) {
-          await supabase.from('outbound_campaigns')
+          const { error: completeError } = await supabase.from('outbound_campaigns')
             .update({ status: 'completed' })
             .eq('id', campaignContact.campaign_id)
+          if (completeError) console.error('Failed to mark campaign completed:', completeError)
         }
       }
     } catch (err) {

@@ -1,7 +1,8 @@
 /**
  * Minimal in-memory stand-in for the Supabase JS client, covering only the
  * query patterns the webhook route actually uses (select/insert/update with
- * eq/neq/gte/order/limit/single). Not a general-purpose Supabase mock — just
+ * eq/neq/gte/order/limit/single/maybeSingle). Not a general-purpose Supabase
+ * mock — just
  * enough to smoke-test book/reschedule/cancel/transfer without hitting a
  * real database. Also replicates the one production constraint that matters
  * for these tests: the partial unique index on
@@ -29,6 +30,7 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
   private insertRows: Row[] = []
   private updatePatch: Row = {}
   private wantsSingle = false
+  private tolerateNoRows = false
   private orderKey?: string
   private limitN?: number
 
@@ -48,6 +50,8 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
   order(k: string) { this.orderKey = k; return this }
   limit(n: number) { this.limitN = n; return this }
   single() { this.wantsSingle = true; return this }
+  /** Like `.single()` but a zero-row result is `{ data: null, error: null }` rather than a PGRST116 error. */
+  maybeSingle() { this.wantsSingle = true; this.tolerateNoRows = true; return this }
 
   private matches(row: Row): boolean {
     return this.filters.every(([k, op, v]) => {
@@ -102,6 +106,7 @@ class QueryBuilder implements PromiseLike<{ data: unknown; error: unknown }> {
     if (this.limitN != null) rows = rows.slice(0, this.limitN)
     if (this.wantsSingle) {
       if (rows.length === 1) return { data: rows[0], error: null }
+      if (rows.length === 0 && this.tolerateNoRows) return { data: null, error: null }
       return { data: null, error: { code: rows.length === 0 ? 'PGRST116' : 'multiple', message: 'no/multiple rows' } }
     }
     return { data: rows, error: null }

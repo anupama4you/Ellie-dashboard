@@ -7,20 +7,24 @@ import { getCurrentBusiness } from '@/lib/business'
 import { parseContactsCsv } from '@/lib/outboundCsv'
 import { listPhoneNumbers, resolveOutboundPhoneNumberId, createOutboundCall } from '@/lib/vapi'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
+import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 
 const BATCH_SIZE = 5
 
 export async function createCampaignAction(formData: FormData): Promise<void> {
   const { business: biz } = await getCurrentBusiness()
-  if (!biz) throw new Error('No business profile found.')
+  if (!biz) redirect('/campaigns?error=nobusiness')
+  if (!isFeatureEnabled(biz, 'campaigns')) redirect('/campaigns?error=disabled')
 
-  const name = (formData.get('name') as string).trim()
-  const file = formData.get('csv') as File
-  if (!file || file.size === 0) throw new Error('Choose a CSV file to upload.')
+  const nameField = formData.get('name')
+  const name = typeof nameField === 'string' ? nameField.trim() : ''
+
+  const file = formData.get('csv')
+  if (!(file instanceof File) || file.size === 0) redirect('/campaigns?error=nofile')
 
   const csvText = await file.text()
   const { valid, skipped } = parseContactsCsv(csvText)
-  if (valid.length === 0) throw new Error('No valid contacts found in that file — check it has name and phone columns.')
+  if (valid.length === 0) redirect('/campaigns?error=novalid')
 
   const supabase = await createClient()
   const { data: campaign, error: campaignError } = await supabase
@@ -28,14 +32,15 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
     .insert({ business_id: biz.id, name: name || 'Untitled campaign' })
     .select('id')
     .single()
-  if (campaignError || !campaign) throw new Error(campaignError?.message ?? 'Failed to create campaign.')
+  if (campaignError || !campaign) redirect('/campaigns?error=create')
 
   const { error: contactsError } = await supabase.from('outbound_campaign_contacts').insert(
     valid.map(c => ({ campaign_id: campaign.id, name: c.name, phone: c.phone, note: c.note })),
   )
   if (contactsError) {
-    await supabase.from('outbound_campaigns').delete().eq('id', campaign.id)
-    throw new Error(contactsError.message)
+    const { error: cleanupError } = await supabase.from('outbound_campaigns').delete().eq('id', campaign.id)
+    if (cleanupError) console.error(`Failed to clean up orphaned campaign ${campaign.id} after a contacts-insert failure:`, cleanupError)
+    redirect('/campaigns?error=create')
   }
 
   revalidatePath('/campaigns')
@@ -45,6 +50,7 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
 export async function confirmConsentAction(campaignId: string): Promise<void> {
   const { business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
 
   const supabase = await createClient()
   const { error } = await supabase
@@ -60,6 +66,7 @@ export async function confirmConsentAction(campaignId: string): Promise<void> {
 export async function callNextBatchAction(campaignId: string): Promise<{ placed: number; failed: number }> {
   const { business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
   if (!biz.vapi_assistant_id) throw new Error('This location has no Vapi assistant configured.')
   if (!biz.twilio_phone_number) throw new Error('This location has no phone number configured.')
 

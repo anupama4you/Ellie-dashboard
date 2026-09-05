@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
+import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import CampaignDetailActions from './CampaignDetailActions'
 
 export default async function CampaignDetailPage({
@@ -33,6 +34,7 @@ export default async function CampaignDetailPage({
     .order('created_at', { ascending: true })
 
   const pendingCount = (contacts ?? []).filter(c => c.status === 'pending').length
+  const withinWindow = isWithinOutboundCallingWindow(new Date(), biz.timezone)
 
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
@@ -48,7 +50,7 @@ export default async function CampaignDetailPage({
           </div>
         )}
 
-        <CampaignDetailActions campaignId={campaign.id} status={campaign.status} pendingCount={pendingCount} />
+        <CampaignDetailActions campaignId={campaign.id} status={campaign.status} pendingCount={pendingCount} withinWindow={withinWindow} />
 
         <section className="rounded-2xl overflow-hidden" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
           <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
