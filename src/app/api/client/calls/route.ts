@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSelectedBusinessId } from '@/lib/business'
 import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -7,13 +8,8 @@ export async function GET(request: NextRequest) {
 
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: biz } = await supabase
-    .from('businesses')
-    .select('id')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!biz) return Response.json({ error: 'No business found' }, { status: 404 })
+  const businessId = await getSelectedBusinessId(supabase, user.id)
+  if (!businessId) return Response.json({ error: 'No business found' }, { status: 404 })
 
   const sp        = new URL(request.url).searchParams
   const page      = Math.max(1, parseInt(sp.get('page')  ?? '1'))
@@ -24,7 +20,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from('calls')
     .select('*', { count: 'exact' })
-    .eq('business_id', biz.id)
+    .eq('business_id', businessId)
     .order('started_at', { ascending })
     .range((page - 1) * limit, page * limit - 1)
 
