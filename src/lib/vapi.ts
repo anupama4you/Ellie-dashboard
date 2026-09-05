@@ -198,6 +198,37 @@ export async function getPhoneNumber(id: string): Promise<VapiPhoneNumber> {
 }
 
 /**
+ * Matches a business's Twilio number (E.164, as stored in
+ * businesses.twilio_phone_number) against Vapi's list of imported phone
+ * number resources, to find the id an outbound call needs — Vapi's /call
+ * endpoint takes a phoneNumberId, not a raw phone number string. Pure so it's
+ * unit-testable without hitting Vapi's API.
+ */
+export function resolveOutboundPhoneNumberId(
+  phoneNumbers: VapiPhoneNumber[],
+  twilioNumber: string,
+): string | null {
+  return phoneNumbers.find(p => p.number === twilioNumber)?.id ?? null
+}
+
+export async function createOutboundCall(opts: {
+  assistantId: string
+  phoneNumberId: string
+  customerNumber: string
+  variableValues?: Record<string, string>
+}): Promise<{ id: string }> {
+  return vapiRequest('/call', {
+    method: 'POST',
+    body: JSON.stringify({
+      assistantId: opts.assistantId,
+      phoneNumberId: opts.phoneNumberId,
+      customer: { number: opts.customerNumber },
+      ...(opts.variableValues ? { assistantOverrides: { variableValues: opts.variableValues } } : {}),
+    }),
+  })
+}
+
+/**
  * Fetch-then-patch so we only ever replace firstMessage and the system
  * message — nothing else on the assistant. PATCH isn't guaranteed to
  * deep-merge nested objects, so `model` is spread from the current value
