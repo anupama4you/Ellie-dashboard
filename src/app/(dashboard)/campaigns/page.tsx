@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { createCampaignAction } from './actions'
+import CsvDropzone from './CsvDropzone'
+import CampaignPolling from './CampaignPolling'
 import { Megaphone, Plus } from 'lucide-react'
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -67,7 +69,7 @@ export default async function CampaignsPage({
             </div>
             <div className="flex flex-col gap-1.5">
               <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
-              <input id="campaign-csv" type="file" name="csv" accept=".csv" required className="text-sm" />
+              <CsvDropzone inputId="campaign-csv" />
             </div>
             <button type="submit" className="w-fit rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
               style={{ background: 'var(--violet)' }}>
@@ -83,22 +85,31 @@ export default async function CampaignsPage({
           {(campaigns ?? []).length === 0 ? (
             <p className="text-sm p-5" style={{ color: 'var(--ink-3)' }}>No campaigns yet.</p>
           ) : (
-            (campaigns ?? []).map((c, i) => (
-              <Link key={c.id} href={`/campaigns/${c.id}`}
-                className="flex items-center justify-between px-5 py-3 hover:bg-black/[0.02] transition-colors"
-                style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{c.name}</p>
-                  <p className="text-xs mt-0.5 capitalize" style={{ color: 'var(--ink-3)' }}>{c.status}</p>
-                </div>
-                <p className="text-xs font-mono" style={{ color: 'var(--ink-3)' }}>
-                  {counts[c.id]?.done ?? 0}/{counts[c.id]?.total ?? 0} done
-                </p>
-              </Link>
-            ))
+            (campaigns ?? []).map((c, i) => {
+              const { done = 0, total = 0 } = counts[c.id] ?? {}
+              const pct = total ? Math.round((done / total) * 100) : 0
+              return (
+                <Link key={c.id} href={`/campaigns/${c.id}`}
+                  className="flex flex-col gap-2 px-5 py-3 hover:bg-black/[0.02] transition-colors"
+                  style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>{c.name}</p>
+                      <p className="text-xs mt-0.5 capitalize" style={{ color: 'var(--ink-3)' }}>{c.status}</p>
+                    </div>
+                    <p className="text-xs font-mono" style={{ color: 'var(--ink-3)' }}>{done}/{total} done</p>
+                  </div>
+                  <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--line)' }}>
+                    <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: 'var(--signal)' }} />
+                  </div>
+                </Link>
+              )
+            })
           )}
         </section>
       </div>
+
+      {(campaigns ?? []).some(c => c.status === 'active') && <CampaignPolling />}
     </div>
   )
 }
