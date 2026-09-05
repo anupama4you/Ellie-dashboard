@@ -255,7 +255,17 @@ describe('bookAppointment with a staff roster', () => {
     fakeSupabase.seed('businesses', [{ id: 'biz-staff-2', vapi_assistant_id: 'asst-staff-2', ...business({}) }])
     fakeSupabase.seed('business_services', [{ business_id: 'biz-staff-2', name: 'Cut', duration_minutes: 30 }])
     fakeSupabase.seed('business_staff', [{ id: 'staff-carol', business_id: 'biz-staff-2', name: 'Carol', active: true, hours: null }])
-    const carolTime = futureWeekdayIso(13, '15:00')
+    // Stays well clear of findNextAvailableSlots' 14-day search horizon
+    // (MAX_DAYS_AHEAD in lib/availability.ts) even in the worst case — if
+    // "9 days ahead" lands on a Saturday, the weekend-skip below pushes it
+    // to Monday, +2 days, landing at day 11. A larger daysAhead (13 was
+    // used here previously) can drift past day 14 depending on which
+    // weekday "today" is when the suite runs, silently dropping the
+    // preferredDate and making this test fail on unrelated days — not a
+    // real bug, since a caller asking about a date beyond the horizon is
+    // expected to fall back to "soonest from today" (see the doc comment
+    // on findNextAvailableSlots' preferredDate option).
+    const carolTime = futureWeekdayIso(9, '15:00')
     fakeSupabase.seed('appointments', [{
       id: 'apt-carol-existing', business_id: 'biz-staff-2', service: 'Cut', staff_id: 'staff-carol',
       customer_name: 'Existing Customer', customer_phone: '0499888777',
