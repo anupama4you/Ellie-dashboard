@@ -33,7 +33,10 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   const { error: contactsError } = await supabase.from('outbound_campaign_contacts').insert(
     valid.map(c => ({ campaign_id: campaign.id, name: c.name, phone: c.phone, note: c.note })),
   )
-  if (contactsError) throw new Error(contactsError.message)
+  if (contactsError) {
+    await supabase.from('outbound_campaigns').delete().eq('id', campaign.id)
+    throw new Error(contactsError.message)
+  }
 
   revalidatePath('/campaigns')
   redirect(`/campaigns/${campaign.id}${skipped > 0 ? `?skipped=${skipped}` : ''}`)
@@ -108,10 +111,15 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
           ...(contact.note ? { note: contact.note } : {}),
         },
       })
-      await supabase.from('outbound_campaign_contacts')
+      const { error: updateError } = await supabase.from('outbound_campaign_contacts')
         .update({ status: 'calling', vapi_call_id: call.id })
         .eq('id', contact.id)
-      placed++
+      if (updateError) {
+        console.error(`Placed an outbound call for contact ${contact.id} (Vapi call ${call.id}) but failed to record it — this contact may be re-selected on the next batch, risking a duplicate call:`, updateError)
+        failed++
+      } else {
+        placed++
+      }
     } catch (err) {
       console.error(`Failed to place outbound call for contact ${contact.id}:`, err)
       failed++
