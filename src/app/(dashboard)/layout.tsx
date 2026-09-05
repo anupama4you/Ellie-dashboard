@@ -11,10 +11,21 @@ import AccountDisabledScreen from '@/components/AccountDisabledScreen'
 const WINDOW_DAYS = 14
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, business: biz, businesses } = await getCurrentBusiness()
-  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
-
+  const { user, business: selectedBusiness, businesses } = await getCurrentBusiness()
   const isAdmin = Boolean(user?.email && user.email === process.env.ADMIN_EMAIL)
+
+  // account_disabled is per-location. If the cookie-selected location is
+  // disabled but this user has another location that isn't, fall through to
+  // that one for this render rather than locking the client out of
+  // locations that are still fine — the disabled screen should only ever
+  // block a client with no working location left, not steer them away from
+  // one that works. Not persisted to the cookie (Server Components can't
+  // set cookies), but cheap enough to re-derive on every render.
+  const biz = (selectedBusiness?.account_disabled && !isAdmin)
+    ? businesses.find(b => !b.account_disabled) ?? selectedBusiness
+    : selectedBusiness
+
+  const timeZone = biz?.timezone ?? 'Australia/Adelaide'
   const features = resolveDashboardFeatures(biz)
 
   // The one real access gate in the app — plan_status (trial/active/cancelled)

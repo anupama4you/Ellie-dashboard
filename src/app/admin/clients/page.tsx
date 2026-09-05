@@ -164,7 +164,8 @@ export default async function ClientsPage() {
           <div>
             <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Clients</h1>
             <p className="text-sm mt-0.5" style={{ color: 'var(--t5)' }}>
-              {list.length} client{list.length !== 1 ? 's' : ''} registered
+              {groups.length} client{groups.length !== 1 ? 's' : ''} registered
+              {groups.length !== list.length ? ` · ${list.length} locations` : ''}
             </p>
           </div>
           <Link href="/admin/clients/new"

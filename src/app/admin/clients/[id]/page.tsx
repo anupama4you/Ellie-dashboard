@@ -160,8 +160,25 @@ export default async function EditClientPage({
   async function deleteClient() {
     'use server'
     const admin = createAdminClient()
+
+    // businesses.user_id cascades on auth-user delete, so deleting the login
+    // would take every sibling location (and their appointments/calls/etc)
+    // with it. Only remove the login once this is the last location left —
+    // queried fresh here rather than trusting a page-load-time closure, since
+    // another location could have been added or removed since this page
+    // rendered.
+    const { data: remainingLocations } = await admin
+      .from('businesses')
+      .select('id')
+      .eq('user_id', userId)
+      .neq('id', bizId)
+
     await admin.from('businesses').delete().eq('id', bizId)
-    await admin.auth.admin.deleteUser(userId)
+
+    if (!remainingLocations || remainingLocations.length === 0) {
+      await admin.auth.admin.deleteUser(userId)
+    }
+
     redirect('/admin/clients')
   }
 
@@ -274,7 +291,7 @@ export default async function EditClientPage({
       redirect(`/admin/clients/${bizId}?locationError=1`)
     }
 
-    redirect(`/admin/clients/${newBiz.id}/prompt?created=1`)
+    redirect(`/admin/clients/${newBiz.id}/prompt?created=1&newLocation=1`)
   }
 
   return (
@@ -655,8 +672,19 @@ export default async function EditClientPage({
               <div className="px-5 pb-5 flex flex-col gap-3"
                 style={{ borderTop: '1px solid rgba(221,81,64,0.1)' }}>
                 <p className="text-xs pt-4 leading-relaxed" style={{ color: 'var(--t3)' }}>
-                  Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> and their
-                  login account. All appointments are also removed. This cannot be undone.
+                  {(siblingLocations ?? []).length > 0 ? (
+                    <>
+                      Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> — this
+                      location only. Its appointments are also removed. The client&apos;s login and their other{' '}
+                      {(siblingLocations ?? []).length} location{(siblingLocations ?? []).length !== 1 ? 's' : ''} are unaffected.
+                      This cannot be undone.
+                    </>
+                  ) : (
+                    <>
+                      Permanently deletes <strong style={{ color: 'var(--t2)' }}>{biz.name}</strong> and their
+                      login account. All appointments are also removed. This cannot be undone.
+                    </>
+                  )}
                 </p>
                 <form action={deleteClient}>
                   <AdminSubmitButton

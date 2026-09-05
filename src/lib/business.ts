@@ -24,6 +24,11 @@ export function resolveSelectedBusinessId<T extends { id: string }>(
   return businesses[0].id
 }
 
+/** Whether businessId belongs to one of the given businesses — the ownership check selectLocationAction relies on before ever trusting a client-submitted id. */
+export function isOwnedBusinessId<T extends { id: string }>(businesses: T[], businessId: string): boolean {
+  return businesses.some(b => b.id === businessId)
+}
+
 /** All of a user's locations (businesses rows sharing one user_id), oldest first. */
 export async function getUserBusinesses(supabase: SupabaseClient, userId: string) {
   const { data } = await supabase

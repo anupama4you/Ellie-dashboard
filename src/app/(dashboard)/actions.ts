@@ -6,7 +6,7 @@ import { cookies } from 'next/headers'
 import { createClient } from '@/lib/supabase/server'
 import { setTwilioVoiceUrl, VAPI_INBOUND_VOICE_URL } from '@/lib/twilio'
 import { toE164Au } from '@/lib/sms'
-import { getUserBusinesses, getSelectedBusinessId, SELECTED_BUSINESS_COOKIE } from '@/lib/business'
+import { getUserBusinesses, getSelectedBusinessId, isOwnedBusinessId, SELECTED_BUSINESS_COOKIE } from '@/lib/business'
 
 /**
  * Pauses or resumes Ellie answering the currently-selected location's
@@ -67,13 +67,14 @@ export async function selectLocationAction(businessId: string): Promise<void> {
   if (!user) throw new Error('Not signed in.')
 
   const businesses = await getUserBusinesses(supabase, user.id)
-  if (!businesses.some(b => b.id === businessId)) {
+  if (!isOwnedBusinessId(businesses, businessId)) {
     throw new Error('That location does not belong to your account.')
   }
 
   const cookieStore = await cookies()
   cookieStore.set(SELECTED_BUSINESS_COOKIE, businessId, {
     httpOnly: true,
+    secure: true,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 365,

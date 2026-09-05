@@ -8,6 +8,7 @@ import type { FeatureKey } from '@/lib/dashboardFeatures'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive, selectLocationAction } from '@/app/(dashboard)/actions'
 import BlockableLink from '@/components/BlockableLink'
+import { useNavigationBlocker } from '@/lib/navigationBlocker'
 
 const NAV = [
   { href: '/',             label: 'Dashboard',           icon: LayoutDashboard },
@@ -73,11 +74,22 @@ export default function Sidebar({
   const [isSigningOut, setIsSigningOut] = useState(false)
 
   const [isSwitchingLocation, startLocationSwitch] = useTransition()
+  const { isBlocked } = useNavigationBlocker()
 
   function handleLocationChange(e: React.ChangeEvent<HTMLSelectElement>) {
     const businessId = e.target.value
-    startLocationSwitch(() => {
-      selectLocationAction(businessId)
+    // Same guard every nav link gets via BlockableLink — switching location is
+    // a full navigation, and the Briefing page is the most edit-heavy screen
+    // in the product. The <select> is controlled by `currentBusinessId`, so
+    // returning without a state change snaps the displayed value back.
+    if (isBlocked && !window.confirm('You have unsaved changes. Leave without saving?')) {
+      return
+    }
+    // Awaited so `isSwitchingLocation` stays true for the real duration of the
+    // action. No try/catch: selectLocationAction ends in redirect(), which
+    // Next implements by throwing an internal error that must propagate.
+    startLocationSwitch(async () => {
+      await selectLocationAction(businessId)
     })
   }
 
@@ -200,10 +212,11 @@ export default function Sidebar({
 
       {businesses.length > 1 && (
         <div className={`px-2.5 pb-3 ${collapsed ? 'md:hidden' : ''}`}>
-          <label className="text-[10px] tracking-widest uppercase block pb-1" style={{ color: '#736C90' }}>
+          <label htmlFor="location-switcher" className="text-[10px] tracking-widest uppercase block pb-1" style={{ color: '#736C90' }}>
             Location
           </label>
           <select
+            id="location-switcher"
             value={currentBusinessId}
             onChange={handleLocationChange}
             disabled={isSwitchingLocation}

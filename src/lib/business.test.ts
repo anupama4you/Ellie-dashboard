@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSelectedBusinessId } from './business'
+import { isOwnedBusinessId, resolveSelectedBusinessId } from './business'
 
 describe('resolveSelectedBusinessId', () => {
   const businesses = [
@@ -26,5 +26,21 @@ describe('resolveSelectedBusinessId', () => {
 
   it('falls back to the only business for a single-location user even with a stale cookie', () => {
     expect(resolveSelectedBusinessId([{ id: 'only' }], 'some-other-id')).toBe('only')
+  })
+})
+
+describe('isOwnedBusinessId', () => {
+  const businesses = [{ id: 'a' }, { id: 'b' }]
+
+  it('returns true when the id belongs to one of the businesses', () => {
+    expect(isOwnedBusinessId(businesses, 'b')).toBe(true)
+  })
+
+  it('returns false when the id does not belong to any of the businesses', () => {
+    expect(isOwnedBusinessId(businesses, 'z')).toBe(false)
+  })
+
+  it('returns false for an empty list', () => {
+    expect(isOwnedBusinessId([], 'a')).toBe(false)
   })
 })
