@@ -29,6 +29,36 @@ describe('resolveSelectedBusinessId', () => {
   })
 })
 
+describe('resolveSelectedBusinessId — disabled locations', () => {
+  it('skips a disabled cookie-selected business in favor of a non-disabled one', () => {
+    const businesses = [
+      { id: 'a', account_disabled: true },
+      { id: 'b', account_disabled: false },
+    ]
+    expect(resolveSelectedBusinessId(businesses, 'a')).toBe('b')
+  })
+
+  it('falls back to the oldest non-disabled business when no cookie is set and the first is disabled', () => {
+    const businesses = [
+      { id: 'a', account_disabled: true },
+      { id: 'b', account_disabled: false },
+    ]
+    expect(resolveSelectedBusinessId(businesses, undefined)).toBe('b')
+  })
+
+  it('still resolves to a disabled business when every business is disabled', () => {
+    const businesses = [
+      { id: 'a', account_disabled: true },
+      { id: 'b', account_disabled: true },
+    ]
+    expect(resolveSelectedBusinessId(businesses, 'a')).toBe('a')
+  })
+
+  it('treats a business with no account_disabled field as not disabled', () => {
+    expect(resolveSelectedBusinessId([{ id: 'a' }], undefined)).toBe('a')
+  })
+})
+
 describe('isOwnedBusinessId', () => {
   const businesses = [{ id: 'a' }, { id: 'b' }]
 

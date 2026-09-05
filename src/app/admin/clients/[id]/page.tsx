@@ -37,10 +37,10 @@ export default async function EditClientPage({
   searchParams,
 }: {
   params:       Promise<{ id: string }>
-  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string; locationError?: string }>
+  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string; locationError?: string; deleteError?: string }>
 }) {
   const { id }                       = await params
-  const { reset, saved, paymentLink, locationError } = await searchParams
+  const { reset, saved, paymentLink, locationError, deleteError } = await searchParams
 
   const admin = createAdminClient()
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
@@ -167,15 +167,25 @@ export default async function EditClientPage({
     // queried fresh here rather than trusting a page-load-time closure, since
     // another location could have been added or removed since this page
     // rendered.
-    const { data: remainingLocations } = await admin
+    //
+    // A failed query returns data: null too, which is indistinguishable from
+    // "no siblings" — proceeding on that would delete the shared login (and
+    // cascade through every sibling location) because of a transient error.
+    // Abort instead: deleting nothing is always recoverable, this isn't.
+    const { data: remainingLocations, error: siblingCheckError } = await admin
       .from('businesses')
       .select('id')
       .eq('user_id', userId)
       .neq('id', bizId)
 
+    if (siblingCheckError) {
+      console.error('Failed to check for sibling locations before deleting — aborting rather than risk deleting a shared login in error:', siblingCheckError)
+      redirect(`/admin/clients/${bizId}?deleteError=1`)
+    }
+
     await admin.from('businesses').delete().eq('id', bizId)
 
-    if (!remainingLocations || remainingLocations.length === 0) {
+    if (remainingLocations.length === 0) {
       await admin.auth.admin.deleteUser(userId)
     }
 
@@ -341,6 +351,13 @@ export default async function EditClientPage({
             style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
             <AlertTriangle size={15} className="shrink-0" />
             Couldn&apos;t send the payment link — check the server logs, or use &quot;Copy Payment Link&quot; instead.
+          </div>
+        )}
+        {deleteError === '1' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            Couldn&apos;t safely check this client&apos;s other locations before deleting — nothing was deleted. Try again, and check the server logs if it keeps happening.
           </div>
         )}
 

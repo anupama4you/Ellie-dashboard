@@ -13,15 +13,27 @@ export const SELECTED_BUSINESS_COOKIE = 'selected_business_id'
  * stale cookie from a deleted location, or one belonging to someone else)
  * falls back to the oldest row — the same single business a one-location
  * client has always seen. Pure and DB-free so it's unit-testable without
- * mocking Supabase or Next's cookie jar.
+ * mocking Supabase or Next's cookie jar. It also prefers a non-disabled
+ * location whenever the user has one, so a disabled location never becomes
+ * "current" while a healthy sibling exists.
  */
-export function resolveSelectedBusinessId<T extends { id: string }>(
+export function resolveSelectedBusinessId<T extends { id: string; account_disabled?: boolean }>(
   businesses: T[],
   cookieBusinessId: string | undefined,
 ): string | null {
   if (businesses.length === 0) return null
-  if (cookieBusinessId && businesses.some(b => b.id === cookieBusinessId)) return cookieBusinessId
-  return businesses[0].id
+
+  // Prefer a non-disabled location whenever one exists, so a client with
+  // one disabled location and a healthy sibling never gets stuck on the
+  // disabled one — via the cookie or via the oldest-row fallback. Only
+  // when EVERY location is disabled do we fall back to considering them
+  // all, so the account_disabled gate at the call site still has a real
+  // (disabled) business to show its "access disabled" screen for.
+  const usable = businesses.filter(b => !b.account_disabled)
+  const pool = usable.length > 0 ? usable : businesses
+
+  if (cookieBusinessId && pool.some(b => b.id === cookieBusinessId)) return cookieBusinessId
+  return pool[0].id
 }
 
 /** Whether businessId belongs to one of the given businesses — the ownership check selectLocationAction relies on before ever trusting a client-submitted id. */
