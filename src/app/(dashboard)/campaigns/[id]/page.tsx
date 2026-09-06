@@ -23,7 +23,7 @@ export default async function CampaignDetailPage({
   const supabase = await createClient()
   const { data: campaign } = await supabase
     .from('outbound_campaigns')
-    .select('id, name, status, call_instructions')
+    .select('id, name, status, first_message, system_prompt')
     .eq('id', id)
     .eq('business_id', biz.id)
     .single()
@@ -63,9 +63,15 @@ export default async function CampaignDetailPage({
 
         <CampaignDetailActions campaignId={campaign.id} status={campaign.status} pendingCount={pendingCount} withinWindow={withinWindow} />
 
-        <section className="rounded-2xl p-5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--ink-3)' }}>How Ellie will behave on these calls</p>
-          <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{campaign.call_instructions}</p>
+        <section className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+          <div>
+            <p className="text-xs font-medium mb-1" style={{ color: 'var(--ink-3)' }}>Opening line</p>
+            <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{campaign.first_message}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium mb-1" style={{ color: 'var(--ink-3)' }}>How Ellie will behave on these calls</p>
+            <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{campaign.system_prompt}</p>
+          </div>
         </section>
 
         {allContacts.length > 0 && (

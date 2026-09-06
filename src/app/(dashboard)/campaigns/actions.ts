@@ -7,7 +7,6 @@ import { getCurrentBusiness } from '@/lib/business'
 import { parseContactsCsv } from '@/lib/outboundCsv'
 import { listPhoneNumbers, resolveOutboundPhoneNumberId, createOutboundCall } from '@/lib/vapi'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
-import { buildOutboundSystemPrompt, buildOutboundFirstMessage } from '@/lib/outboundPrompt'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 
 const BATCH_SIZE = 5
@@ -20,9 +19,11 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   const nameField = formData.get('name')
   const name = typeof nameField === 'string' ? nameField.trim() : ''
 
-  const instructionsField = formData.get('instructions')
-  const instructions = typeof instructionsField === 'string' ? instructionsField.trim() : ''
-  if (!instructions) redirect('/campaigns?error=noinstructions')
+  const firstMessageField = formData.get('firstMessage')
+  const firstMessage = typeof firstMessageField === 'string' ? firstMessageField.trim() : ''
+  const systemPromptField = formData.get('systemPrompt')
+  const systemPrompt = typeof systemPromptField === 'string' ? systemPromptField.trim() : ''
+  if (!firstMessage || !systemPrompt) redirect('/campaigns?error=noinstructions')
 
   const file = formData.get('csv')
   if (!(file instanceof File) || file.size === 0) redirect('/campaigns?error=nofile')
@@ -34,7 +35,7 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   const supabase = await createClient()
   const { data: campaign, error: campaignError } = await supabase
     .from('outbound_campaigns')
-    .insert({ business_id: biz.id, name: name || 'Untitled campaign', call_instructions: instructions })
+    .insert({ business_id: biz.id, name: name || 'Untitled campaign', first_message: firstMessage, system_prompt: systemPrompt })
     .select('id')
     .single()
   if (campaignError || !campaign) redirect('/campaigns?error=create')
@@ -54,11 +55,13 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
 
 /**
  * The client confirming consent AND submitting for admin review, in one
- * step — status goes to 'pending_review', not straight to 'active'. An
- * admin has to look at call_instructions and approve
- * (see admin/clients/[id]/campaigns/page.tsx) before callNextBatchAction
- * will do anything, the same "client input shouldn't drive live Ellie
- * behavior unreviewed" reasoning as the Briefing draft/live split.
+ * step. If the campaign's first_message/system_prompt are still exactly
+ * the business's current outbound defaults (admin already approved that
+ * exact wording when they set it as the default), it goes straight to
+ * 'active' — only a campaign whose wording was actually changed needs a
+ * fresh admin look (see admin/clients/[id]/campaigns/page.tsx), the same
+ * "client input shouldn't drive live Ellie behavior unreviewed" reasoning
+ * as the Briefing draft/live split.
  */
 export async function submitForReviewAction(campaignId: string): Promise<void> {
   const { business: biz } = await getCurrentBusiness()
@@ -66,9 +69,25 @@ export async function submitForReviewAction(campaignId: string): Promise<void> {
   if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
 
   const supabase = await createClient()
+
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('first_message, system_prompt')
+    .eq('id', campaignId)
+    .eq('business_id', biz.id)
+    .single()
+  if (!campaign) throw new Error('Campaign not found.')
+
+  const matchesDefault =
+    campaign.first_message === (biz.outbound_default_first_message ?? '') &&
+    campaign.system_prompt === (biz.outbound_default_system_prompt ?? '')
+
   const { error } = await supabase
     .from('outbound_campaigns')
-    .update({ status: 'pending_review', consent_confirmed_at: new Date().toISOString() })
+    .update({
+      status: matchesDefault ? 'active' : 'pending_review',
+      consent_confirmed_at: new Date().toISOString(),
+    })
     .eq('id', campaignId)
     .eq('business_id', biz.id)
   if (error) throw new Error(error.message)
@@ -91,7 +110,7 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
 
   const { data: campaign } = await supabase
     .from('outbound_campaigns')
-    .select('id, status, call_instructions')
+    .select('id, status, first_message, system_prompt')
     .eq('id', campaignId)
     .eq('business_id', biz.id)
     .single()
@@ -123,8 +142,6 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
     throw new Error(`This location's number (${biz.twilio_phone_number}) isn't imported into Vapi as an outbound-capable number.`)
   }
 
-  const systemPrompt = buildOutboundSystemPrompt(biz.name, campaign.call_instructions)
-
   let placed = 0
   let failed = 0
 
@@ -134,8 +151,12 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
         assistantId: biz.vapi_assistant_id,
         phoneNumberId,
         customerNumber: contact.phone,
-        systemPrompt,
-        firstMessage: buildOutboundFirstMessage(biz.name, contact.name),
+        // Exactly what the client saved on this campaign, verbatim — no
+        // code-side wrapping/building. {{customerName}}/{{note}} in either
+        // field get substituted by Vapi from variableValues below if the
+        // client chose to reference them.
+        firstMessage: campaign.first_message,
+        systemPrompt: campaign.system_prompt,
         variableValues: {
           customerName: contact.name,
           ...(contact.note ? { note: contact.note } : {}),

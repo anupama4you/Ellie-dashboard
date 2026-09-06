@@ -11,7 +11,7 @@ import { Megaphone, Plus } from 'lucide-react'
 const ERROR_MESSAGES: Record<string, string> = {
   nobusiness: 'No business profile found.',
   disabled: 'Campaigns are not enabled for this location.',
-  noinstructions: 'Describe how Ellie should behave on these calls.',
+  noinstructions: 'Fill in what Ellie says first and how she should behave.',
   nofile: 'Choose a CSV file to upload.',
   novalid: 'No valid contacts found in that file — check it has name and phone columns.',
   create: 'Failed to create the campaign. Please try again.',
@@ -69,12 +69,22 @@ export default async function CampaignsPage({
               <input type="text" name="name" required placeholder="Spring re-engagement" className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label htmlFor="campaign-instructions" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>How should Ellie behave on these calls?</label>
-              <textarea id="campaign-instructions" name="instructions" required rows={4}
-                placeholder="Introduce yourself as calling from [Business], mention it's been a while since their last visit, and offer to book them in this week."
+              <label htmlFor="campaign-first-message" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Opening line</label>
+              <textarea id="campaign-first-message" name="firstMessage" required rows={2}
+                defaultValue={biz.outbound_default_first_message ?? ''}
+                placeholder="Hi, this is Ellie calling from [Business]."
+                className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>What Ellie says the moment the call connects.</p>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="campaign-system-prompt" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>How should Ellie behave on these calls?</label>
+              <textarea id="campaign-system-prompt" name="systemPrompt" required rows={4}
+                defaultValue={biz.outbound_default_system_prompt ?? ''}
+                placeholder="Mention it's been a while since their last visit, and offer to book them in this week."
                 className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
               <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
-                This replaces Ellie&apos;s usual script entirely for these calls — an admin reviews it before the campaign can start.
+                Pre-filled with your usual script — edit it for this campaign if you want. Using it unchanged starts calling right away;
+                changing it needs a quick admin check first.
               </p>
             </div>
             <div className="flex flex-col gap-1.5">
