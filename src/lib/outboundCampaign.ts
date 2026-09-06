@@ -31,6 +31,12 @@ export async function placeNextQueuedCall(
   biz: Biz,
   campaign: Campaign,
   getNotifyEmail: () => Promise<string | null>,
+  // Set for exactly one placement — the call a client just explicitly
+  // confirmed via the outside-hours warning at start/resume. Every call
+  // after that (chained by the webhook) checks the window again normally,
+  // so a run started late in the evening still pauses at the boundary
+  // instead of running unattended all night.
+  skipWindowCheck = false,
 ): Promise<void> {
   const { data: next } = await supabase
     .from('outbound_campaign_contacts')
@@ -46,7 +52,7 @@ export async function placeNextQueuedCall(
     return
   }
 
-  if (!isWithinOutboundCallingWindow(new Date(), biz.timezone)) {
+  if (!skipWindowCheck && !isWithinOutboundCallingWindow(new Date(), biz.timezone)) {
     await supabase.from('outbound_campaigns')
       .update({ running: false, stopped_reason: "Paused — outside the 9am–8pm calling window. Resume once you're back in hours." })
       .eq('id', campaign.id)

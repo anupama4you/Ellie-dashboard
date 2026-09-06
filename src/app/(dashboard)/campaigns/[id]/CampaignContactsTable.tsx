@@ -65,7 +65,7 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
     setError('')
     startTransition(async () => {
       try {
-        await startCallingAction(campaignId, [...selected])
+        await startCallingAction(campaignId, [...selected], !withinWindow)
         setSelected(new Set())
         setShowConfirm(false)
         router.refresh()
@@ -81,10 +81,10 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
       {selected.size > 0 && !running && (
         <div className="flex items-center justify-between rounded-xl px-4 py-2.5" style={{ background: 'var(--violet-soft)' }}>
           <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>{selected.size} selected</p>
-          <button onClick={() => setShowConfirm(true)} disabled={!withinWindow || isPending}
+          <button onClick={() => setShowConfirm(true)} disabled={isPending}
             className="rounded-lg px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
             style={{ background: 'var(--violet)' }}>
-            {withinWindow ? 'Start calling' : 'Outside calling hours'}
+            Start calling
           </button>
         </div>
       )}
@@ -153,10 +153,15 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
               <p><strong style={{ color: 'var(--ink)' }}>Behavior:</strong> {systemPrompt}</p>
               <p>
                 Ellie will call these one at a time in the background — you don&apos;t need to keep this page open.
-                Calls only happen 9am–8pm; if the run reaches the end of the window it pauses until you resume it
-                manually. If a call can&apos;t be placed because of a system issue, the run stops there and we&apos;ll
-                email you.
+                If the run reaches the end of the 9am–8pm window it pauses until you resume it manually. If a call
+                can&apos;t be placed because of a system issue, the run stops there and we&apos;ll email you.
               </p>
+              {!withinWindow && (
+                <p className="rounded-lg px-3 py-2" style={{ color: 'var(--amber)', background: 'var(--amber-soft)' }}>
+                  It&apos;s currently outside the usual 9am–8pm calling window. The first call will go out right away
+                  if you confirm — proceed anyway?
+                </p>
+              )}
             </div>
             <div className="flex justify-end gap-2 mt-2">
               <button onClick={() => setShowConfirm(false)} className="rounded-lg px-3 py-2 text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>

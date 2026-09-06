@@ -23,6 +23,8 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   const systemPrompt = typeof systemPromptField === 'string' ? systemPromptField.trim() : ''
   if (!firstMessage || !systemPrompt) redirect('/campaigns?error=noinstructions')
 
+  if (formData.get('consent') !== 'true') redirect('/campaigns?error=noconsent')
+
   const file = formData.get('csv')
   if (!(file instanceof File) || file.size === 0) redirect('/campaigns?error=nofile')
 
@@ -33,7 +35,14 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   const supabase = await createClient()
   const { data: campaign, error: campaignError } = await supabase
     .from('outbound_campaigns')
-    .insert({ business_id: biz.id, name: name || 'Untitled campaign', first_message: firstMessage, system_prompt: systemPrompt })
+    .insert({
+      business_id: biz.id,
+      name: name || 'Untitled campaign',
+      first_message: firstMessage,
+      system_prompt: systemPrompt,
+      status: 'active',
+      consent_confirmed_at: new Date().toISOString(),
+    })
     .select('id')
     .single()
   if (campaignError || !campaign) redirect('/campaigns?error=create')
@@ -51,23 +60,6 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   redirect(`/campaigns/${campaign.id}${skipped > 0 ? `?skipped=${skipped}` : ''}`)
 }
 
-/** The client confirming consent — activates the campaign immediately, no admin approval step. */
-export async function confirmConsentAction(campaignId: string): Promise<void> {
-  const { business: biz } = await getCurrentBusiness()
-  if (!biz) throw new Error('No business profile found.')
-  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
-
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from('outbound_campaigns')
-    .update({ status: 'active', consent_confirmed_at: new Date().toISOString() })
-    .eq('id', campaignId)
-    .eq('business_id', biz.id)
-  if (error) throw new Error(error.message)
-
-  revalidatePath(`/campaigns/${campaignId}`)
-}
-
 /**
  * Kicks off a one-call-at-a-time background run for the contacts the client
  * selected: queues them, marks the campaign running, and places the first
@@ -75,13 +67,15 @@ export async function confirmConsentAction(campaignId: string): Promise<void> {
  * (see src/lib/outboundCampaign.ts) — the client doesn't need to stay on
  * this page or click anything again for the rest of the run.
  */
-export async function startCallingAction(campaignId: string, contactIds: string[]): Promise<void> {
+export async function startCallingAction(campaignId: string, contactIds: string[], overrideWindow = false): Promise<void> {
   const { user, business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
   if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
   if (!biz.vapi_assistant_id) throw new Error('This location has no Vapi assistant configured.')
   if (!biz.twilio_phone_number) throw new Error('This location has no phone number configured.')
-  if (!isWithinOutboundCallingWindow(new Date(), biz.timezone)) throw new Error('Outbound calls can only be started between 9am and 8pm.')
+  if (!overrideWindow && !isWithinOutboundCallingWindow(new Date(), biz.timezone)) {
+    throw new Error('Outbound calls can only be started between 9am and 8pm.')
+  }
   if (contactIds.length === 0) throw new Error('Select at least one contact to call.')
 
   const supabase = await createClient()
@@ -126,7 +120,7 @@ export async function startCallingAction(campaignId: string, contactIds: string[
     .eq('id', campaignId)
   if (runError) throw new Error(runError.message)
 
-  await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null)
+  await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null, overrideWindow)
 
   revalidatePath(`/campaigns/${campaignId}`)
 }
@@ -134,11 +128,13 @@ export async function startCallingAction(campaignId: string, contactIds: string[
 /** Continues an already-queued run after it paused (outside hours, or a
  * system failure the client has looked at) — same one-at-a-time chain,
  * just re-entering it instead of selecting contacts again. */
-export async function resumeCallingAction(campaignId: string): Promise<void> {
+export async function resumeCallingAction(campaignId: string, overrideWindow = false): Promise<void> {
   const { user, business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
   if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
-  if (!isWithinOutboundCallingWindow(new Date(), biz.timezone)) throw new Error('Outbound calls can only be placed between 9am and 8pm.')
+  if (!overrideWindow && !isWithinOutboundCallingWindow(new Date(), biz.timezone)) {
+    throw new Error('Outbound calls can only be placed between 9am and 8pm.')
+  }
 
   const supabase = await createClient()
 
@@ -174,7 +170,7 @@ export async function resumeCallingAction(campaignId: string): Promise<void> {
     .eq('id', campaignId)
   if (runError) throw new Error(runError.message)
 
-  await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null)
+  await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null, overrideWindow)
 
   revalidatePath(`/campaigns/${campaignId}`)
 }

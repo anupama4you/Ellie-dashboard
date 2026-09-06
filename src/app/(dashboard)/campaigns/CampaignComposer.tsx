@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useRef, useState, useTransition, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import { extractCustomVariableNames } from '@/lib/outboundCsv'
 import CsvDropzone from './CsvDropzone'
@@ -30,7 +30,11 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const [systemPrompt, setSystemPrompt] = useState(defaultSystemPrompt)
   const [customVariables, setCustomVariables] = useState<string[]>([])
   const [activeField, setActiveField] = useState<'firstMessage' | 'systemPrompt'>('firstMessage')
+  const [showConsent, setShowConsent] = useState(false)
+  const [consented, setConsented] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
+  const formRef = useRef<HTMLFormElement>(null)
   const firstMessageRef = useRef<HTMLTextAreaElement>(null)
   const systemPromptRef = useRef<HTMLTextAreaElement>(null)
 
@@ -63,8 +67,23 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
 
   const allVariables = [...FIXED_VARIABLES, ...customVariables.map(key => ({ key, label: key }))]
 
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!formRef.current?.reportValidity()) return
+    setShowConsent(true)
+  }
+
+  function confirmCreate() {
+    if (!formRef.current) return
+    const formData = new FormData(formRef.current)
+    formData.set('consent', 'true')
+    startTransition(() => {
+      action(formData)
+    })
+  }
+
   return (
-    <form action={action} className="p-5 flex flex-col gap-3">
+    <form ref={formRef} onSubmit={handleSubmit} className="p-5 flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <label className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Campaign name</label>
         <input type="text" name="name" required placeholder="Spring re-engagement" className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
@@ -122,6 +141,31 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
         style={{ background: 'var(--violet)' }}>
         <span className="flex items-center gap-1.5"><Plus size={14} /> Create campaign</span>
       </button>
+
+      {showConsent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="rounded-2xl p-5 max-w-md w-full flex flex-col gap-3" style={{ background: 'var(--card)' }}>
+            <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Before you create this campaign</h3>
+            <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+              Every contact in this CSV is exactly who Ellie will call. Confirm before continuing:
+            </p>
+            <label className="flex items-start gap-2.5 text-sm cursor-pointer" style={{ color: 'var(--ink)' }}>
+              <input type="checkbox" checked={consented} onChange={e => setConsented(e.target.checked)} className="mt-0.5" />
+              These are my own existing customers and I have the right to contact them.
+            </label>
+            <div className="flex justify-end gap-2 mt-2">
+              <button type="button" onClick={() => setShowConsent(false)} className="rounded-lg px-3 py-2 text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={confirmCreate} disabled={!consented || isPending}
+                className="rounded-lg px-4 py-2 text-xs font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+                style={{ background: 'var(--violet)' }}>
+                {isPending ? 'Creating…' : 'Confirm & create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </form>
   )
 }
