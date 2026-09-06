@@ -4,9 +4,9 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { createCampaignAction } from './actions'
-import CsvDropzone from './CsvDropzone'
+import CampaignComposer from './CampaignComposer'
 import CampaignPolling from './CampaignPolling'
-import { Megaphone, Plus } from 'lucide-react'
+import { Megaphone } from 'lucide-react'
 
 const ERROR_MESSAGES: Record<string, string> = {
   nobusiness: 'No business profile found.',
@@ -60,41 +60,14 @@ export default async function CampaignsPage({
           <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
             <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>New campaign</h2>
             <p className="text-xs mt-1" style={{ color: 'var(--ink-3)' }}>
-              Upload a CSV with <code>name</code>, <code>phone</code>, and an optional <code>note</code> column — this is exactly who Ellie will call, so filter the list yourself before uploading.
+              Upload a CSV with <code>name</code>, <code>phone</code>, and any other columns you like — this is exactly who Ellie will call, so filter the list yourself before uploading.
             </p>
           </div>
-          <form action={createCampaignAction} className="p-5 flex flex-col gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Campaign name</label>
-              <input type="text" name="name" required placeholder="Spring re-engagement" className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="campaign-first-message" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Opening line</label>
-              <textarea id="campaign-first-message" name="firstMessage" required rows={2}
-                defaultValue={biz.outbound_default_first_message ?? ''}
-                placeholder="Hi, this is Ellie calling from [Business]."
-                className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
-              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>What Ellie says the moment the call connects.</p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="campaign-system-prompt" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>How should Ellie behave on these calls?</label>
-              <textarea id="campaign-system-prompt" name="systemPrompt" required rows={4}
-                defaultValue={biz.outbound_default_system_prompt ?? ''}
-                placeholder="Mention it's been a while since their last visit, and offer to book them in this week."
-                className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
-              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
-                Pre-filled with your usual script — edit it for this campaign if you want.
-              </p>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
-              <CsvDropzone inputId="campaign-csv" />
-            </div>
-            <button type="submit" className="w-fit rounded-xl px-4 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90"
-              style={{ background: 'var(--violet)' }}>
-              <span className="flex items-center gap-1.5"><Plus size={14} /> Create campaign</span>
-            </button>
-          </form>
+          <CampaignComposer
+            action={createCampaignAction}
+            defaultFirstMessage={biz.outbound_default_first_message ?? ''}
+            defaultSystemPrompt={biz.outbound_default_system_prompt ?? ''}
+          />
         </section>
 
         <section className="rounded-2xl overflow-hidden" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>

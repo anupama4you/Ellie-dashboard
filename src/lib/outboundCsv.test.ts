@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { parseContactsCsv } from './outboundCsv'
+import { parseContactsCsv, extractCustomVariableNames } from './outboundCsv'
 
 describe('parseContactsCsv', () => {
   it('parses valid rows with name, phone, and note', () => {
     const csv = 'name,phone,note\nJane Doe,0412345678,Last visited March\nJohn Roe,0498765432,'
     const result = parseContactsCsv(csv)
     expect(result.valid).toEqual([
-      { name: 'Jane Doe', phone: '+61412345678', note: 'Last visited March' },
-      { name: 'John Roe', phone: '+61498765432', note: null },
+      { name: 'Jane Doe', phone: '+61412345678', note: 'Last visited March', extra: {} },
+      { name: 'John Roe', phone: '+61498765432', note: null, extra: {} },
     ])
     expect(result.skipped).toBe(0)
   })
@@ -36,7 +36,7 @@ describe('parseContactsCsv', () => {
   it('is case-insensitive and trims header names', () => {
     const csv = ' Name , Phone \nJane Doe,0412345678'
     const result = parseContactsCsv(csv)
-    expect(result.valid).toEqual([{ name: 'Jane Doe', phone: '+61412345678', note: null }])
+    expect(result.valid).toEqual([{ name: 'Jane Doe', phone: '+61412345678', note: null, extra: {} }])
   })
 
   it('skips an international phone number that toE164Au could otherwise mangle into a different real AU number', () => {
@@ -56,6 +56,38 @@ describe('parseContactsCsv', () => {
   it('accepts a plausible AU number without the + prefix', () => {
     const csv = 'name,phone\nJane Doe,61412345678'
     const result = parseContactsCsv(csv)
-    expect(result.valid).toEqual([{ name: 'Jane Doe', phone: '+61412345678', note: null }])
+    expect(result.valid).toEqual([{ name: 'Jane Doe', phone: '+61412345678', note: null, extra: {} }])
+  })
+
+  it('captures any extra columns as sanitized, usable variable names', () => {
+    const csv = 'name,phone,Last Visit,Loyalty Tier\nJane Doe,0412345678,March,Gold'
+    const result = parseContactsCsv(csv)
+    expect(result.valid).toEqual([{
+      name: 'Jane Doe',
+      phone: '+61412345678',
+      note: null,
+      extra: { last_visit: 'March', loyalty_tier: 'Gold' },
+    }])
+  })
+
+  it('omits an extra column that is blank for a given row', () => {
+    const csv = 'name,phone,favorite_service\nJane Doe,0412345678,\nJohn Roe,0498765432,Haircut'
+    const result = parseContactsCsv(csv)
+    expect(result.valid).toEqual([
+      { name: 'Jane Doe', phone: '+61412345678', note: null, extra: {} },
+      { name: 'John Roe', phone: '+61498765432', note: null, extra: { favorite_service: 'Haircut' } },
+    ])
+  })
+})
+
+describe('extractCustomVariableNames', () => {
+  it('returns sanitized names for every column beyond name/phone/note', () => {
+    const csv = 'name,phone,note,Last Visit,Loyalty Tier\nJane Doe,0412345678,,March,Gold'
+    expect(extractCustomVariableNames(csv)).toEqual(['last_visit', 'loyalty_tier'])
+  })
+
+  it('returns an empty array when there are no extra columns', () => {
+    const csv = 'name,phone,note\nJane Doe,0412345678,'
+    expect(extractCustomVariableNames(csv)).toEqual([])
   })
 })

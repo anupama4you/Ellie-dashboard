@@ -41,7 +41,7 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   if (campaignError || !campaign) redirect('/campaigns?error=create')
 
   const { error: contactsError } = await supabase.from('outbound_campaign_contacts').insert(
-    valid.map(c => ({ campaign_id: campaign.id, name: c.name, phone: c.phone, note: c.note })),
+    valid.map(c => ({ campaign_id: campaign.id, name: c.name, phone: c.phone, note: c.note, extra_fields: c.extra })),
   )
   if (contactsError) {
     const { error: cleanupError } = await supabase.from('outbound_campaigns').delete().eq('id', campaign.id)
@@ -94,7 +94,7 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
 
   const { data: pending } = await supabase
     .from('outbound_campaign_contacts')
-    .select('id, name, phone, note')
+    .select('id, name, phone, note, extra_fields')
     .eq('campaign_id', campaignId)
     .eq('status', 'pending')
     .order('created_at', { ascending: true })
@@ -121,14 +121,16 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
         phoneNumberId,
         customerNumber: contact.phone,
         // Exactly what the client saved on this campaign, verbatim — no
-        // code-side wrapping/building. {{customerName}}/{{note}} in either
-        // field get substituted by Vapi from variableValues below if the
-        // client chose to reference them.
+        // code-side wrapping/building. {{customerName}}/{{note}}/any of the
+        // contact's own spreadsheet columns (extra_fields) get substituted
+        // by Vapi from variableValues below if the client chose to
+        // reference them.
         firstMessage: campaign.first_message,
         systemPrompt: campaign.system_prompt,
         variableValues: {
           customerName: contact.name,
           ...(contact.note ? { note: contact.note } : {}),
+          ...(contact.extra_fields as Record<string, string> | null ?? {}),
         },
       })
       const { error: updateError } = await supabase.from('outbound_campaign_contacts')

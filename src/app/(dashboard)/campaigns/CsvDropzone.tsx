@@ -7,8 +7,11 @@ import { UploadCloud, FileText } from 'lucide-react'
  * the same <input name="csv"> the parent <form action={createCampaignAction}>
  * reads — dropping a file just populates that hidden input's FileList.
  * `inputId` lets a parent <label htmlFor> stay properly associated with the
- * (visually hidden but still real) file input for accessibility. */
-export default function CsvDropzone({ inputId }: { inputId?: string }) {
+ * (visually hidden but still real) file input for accessibility.
+ * `onFileSelected` lets a parent read the file too (e.g. to detect its
+ * columns for "insert a personal detail" buttons) without owning the
+ * drag/drop or hidden-input plumbing itself. */
+export default function CsvDropzone({ inputId, onFileSelected }: { inputId?: string; onFileSelected?: (file: File | null) => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [fileName, setFileName] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -22,6 +25,7 @@ export default function CsvDropzone({ inputId }: { inputId?: string }) {
       dt.items.add(file)
       inputRef.current.files = dt.files
     }
+    onFileSelected?.(file)
   }
 
   return (
@@ -63,7 +67,7 @@ export default function CsvDropzone({ inputId }: { inputId?: string }) {
         <>
           <UploadCloud size={22} style={{ color: 'var(--ink-3)' }} />
           <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Drag a CSV here, or click to browse</p>
-          <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Columns: name, phone, and an optional note</p>
+          <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Needs name and phone — any other column becomes a personal detail you can use in the script</p>
         </>
       )}
     </div>
