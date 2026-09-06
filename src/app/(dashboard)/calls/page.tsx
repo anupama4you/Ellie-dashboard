@@ -71,6 +71,7 @@ export default async function CallsPage({
       badgeColor: color,
       badgeBg: bg,
       isAfterHours: call.started_at ? isAfterHours(new Date(call.started_at), bizHours, timeZone) : false,
+      isOutbound: call.call_type === 'outboundPhoneCall',
     }
   })
 

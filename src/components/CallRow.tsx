@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronRight, Clock3 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Clock3, PhoneOutgoing } from 'lucide-react'
 import CopyButton from './CopyButton'
 import { initials, avatarColor } from '@/lib/avatar'
 
@@ -23,12 +23,13 @@ export type CallRowProps = {
   badgeColor: string
   badgeBg: string
   isAfterHours?: boolean
+  isOutbound?: boolean
 }
 
 export default function CallRow({
   customerNumber, customerName,
   startedTime, durationSecs, category, badgeLabel, badgeColor, badgeBg,
-  isAfterHours, active, onSelect,
+  isAfterHours, isOutbound, active, onSelect,
 }: CallRowProps & { active: boolean; onSelect: () => void }) {
   const errored     = category === 'errored'
   const displayName = customerName?.trim() || customerNumber || 'Unknown caller'
@@ -58,6 +59,12 @@ export default function CallRow({
           <p className="text-sm font-semibold truncate" style={{ color: errored ? 'var(--ink-3)' : 'var(--ink)' }}>
             {displayName}
           </p>
+          {isOutbound && (
+            <span title="Outbound campaign call" className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+              style={{ color: 'var(--violet)', background: 'var(--violet-soft)' }}>
+              <PhoneOutgoing size={9} /> Outbound
+            </span>
+          )}
           {isAfterHours && (
             <span title="Outside business hours">
               <Clock3 size={11} style={{ color: 'var(--ink-3)' }} />
