@@ -50,7 +50,7 @@ export default async function CampaignDetailPage({
 
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto flex flex-col gap-5">
+      <div className="max-w-[1220px] mx-auto flex flex-col gap-5">
         <div>
           <h1 className="font-extrabold text-xl" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>{campaign.name}</h1>
           <p className="text-xs mt-1 capitalize" style={{ color: 'var(--ink-3)' }}>{campaign.status.replace('_', ' ')} · {(contacts ?? []).length} contacts</p>

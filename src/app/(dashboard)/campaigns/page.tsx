@@ -45,7 +45,7 @@ export default async function CampaignsPage({
 
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
-      <div className="max-w-3xl mx-auto flex flex-col gap-5">
+      <div className="max-w-[1220px] mx-auto flex flex-col gap-5">
         <div className="flex items-center gap-2.5">
           <Megaphone size={20} style={{ color: 'var(--ink)' }} />
           <h1 className="font-extrabold text-xl" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Campaigns</h1>
