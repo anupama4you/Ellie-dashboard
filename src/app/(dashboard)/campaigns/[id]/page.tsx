@@ -5,6 +5,7 @@ import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { categoryStyle } from '@/lib/callClassify'
 import CampaignDetailActions from './CampaignDetailActions'
+import CampaignContactsTable from './CampaignContactsTable'
 import CampaignPolling from '../CampaignPolling'
 
 export default async function CampaignDetailPage({
@@ -23,7 +24,7 @@ export default async function CampaignDetailPage({
   const supabase = await createClient()
   const { data: campaign } = await supabase
     .from('outbound_campaigns')
-    .select('id, name, status, first_message, system_prompt')
+    .select('id, name, status, first_message, system_prompt, running, stopped_reason')
     .eq('id', id)
     .eq('business_id', biz.id)
     .single()
@@ -36,8 +37,8 @@ export default async function CampaignDetailPage({
     .order('created_at', { ascending: true })
 
   const allContacts = contacts ?? []
-  const pendingCount = allContacts.filter(c => c.status === 'pending').length
   const callingCount = allContacts.filter(c => c.status === 'calling').length
+  const queuedCount = allContacts.filter(c => c.status === 'queued').length
   const doneContacts = allContacts.filter(c => c.status === 'done')
   const withinWindow = isWithinOutboundCallingWindow(new Date(), biz.timezone)
 
@@ -61,7 +62,14 @@ export default async function CampaignDetailPage({
           </div>
         )}
 
-        <CampaignDetailActions campaignId={campaign.id} status={campaign.status} pendingCount={pendingCount} withinWindow={withinWindow} />
+        <CampaignDetailActions
+          campaignId={campaign.id}
+          status={campaign.status}
+          running={campaign.running}
+          stoppedReason={campaign.stopped_reason}
+          queuedCount={queuedCount}
+          withinWindow={withinWindow}
+        />
 
         <section className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
           <div>
@@ -108,50 +116,14 @@ export default async function CampaignDetailPage({
           </section>
         )}
 
-        <section className="rounded-2xl overflow-hidden" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-          <div className="px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
-            <h2 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Contacts</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--line)' }}>
-                  <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Name</th>
-                  <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Phone</th>
-                  <th className="text-left font-semibold px-5 py-2.5" style={{ color: 'var(--ink-3)' }}>Note</th>
-                  <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allContacts.map((c, i) => {
-                  const pill = c.status === 'done'
-                    ? categoryStyle(c.outcome ?? 'done')
-                    : c.status === 'calling'
-                      ? { label: 'Calling', color: 'var(--violet)', bg: 'var(--violet-soft)' }
-                      : { label: 'Pending', color: 'var(--ink-3)', bg: 'var(--paper)' }
-                  return (
-                    <tr key={c.id} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
-                      <td className="px-5 py-3 font-semibold whitespace-nowrap" style={{ color: 'var(--ink)' }}>{c.name}</td>
-                      <td className="px-5 py-3 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>{c.phone}</td>
-                      <td className="px-5 py-3" style={{ color: 'var(--ink-3)' }}>{c.note ?? '—'}</td>
-                      <td className="px-5 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full" style={{ color: pill.color, background: pill.bg }}>
-                          {c.status === 'calling' && (
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: pill.color }} />
-                              <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: pill.color }} />
-                            </span>
-                          )}
-                          {pill.label}
-                        </span>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <CampaignContactsTable
+          campaignId={campaign.id}
+          contacts={allContacts}
+          running={campaign.running}
+          withinWindow={withinWindow}
+          firstMessage={campaign.first_message}
+          systemPrompt={campaign.system_prompt}
+        />
       </div>
 
       {campaign.status === 'active' && <CampaignPolling />}

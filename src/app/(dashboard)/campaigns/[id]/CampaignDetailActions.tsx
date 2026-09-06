@@ -2,16 +2,18 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { confirmConsentAction, callNextBatchAction } from '../actions'
+import { confirmConsentAction, resumeCallingAction } from '../actions'
 
 type Props = {
   campaignId: string
   status: string
-  pendingCount: number
+  running: boolean
+  stoppedReason: string | null
+  queuedCount: number
   withinWindow: boolean
 }
 
-export default function CampaignDetailActions({ campaignId, status, pendingCount, withinWindow }: Props) {
+export default function CampaignDetailActions({ campaignId, status, running, stoppedReason, queuedCount, withinWindow }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
@@ -29,15 +31,14 @@ export default function CampaignDetailActions({ campaignId, status, pendingCount
     })
   }
 
-  function callBatch() {
+  function resume() {
     setMessage('')
     startTransition(async () => {
       try {
-        const result = await callNextBatchAction(campaignId)
-        setMessage(`Placed ${result.placed} call${result.placed === 1 ? '' : 's'}${result.failed ? `, ${result.failed} failed` : ''}.`)
+        await resumeCallingAction(campaignId)
         router.refresh()
       } catch (err) {
-        setMessage(err instanceof Error ? err.message : 'Failed to place calls.')
+        setMessage(err instanceof Error ? err.message : 'Failed to resume.')
       }
     })
   }
@@ -59,20 +60,31 @@ export default function CampaignDetailActions({ campaignId, status, pendingCount
     )
   }
 
-  return (
-    <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-      <button onClick={callBatch} disabled={isPending || pendingCount === 0 || !withinWindow}
-        className="w-fit rounded-xl px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
-        style={{ background: 'var(--violet)' }}>
-        {isPending
-          ? 'Calling…'
-          : pendingCount === 0
-            ? 'All contacts called'
-            : !withinWindow
-              ? 'Outbound calls only 9am–8pm'
-              : `Call next batch (${Math.min(5, pendingCount)} of ${pendingCount} pending)`}
-      </button>
-      {message && <p className="text-xs" style={{ color: 'var(--ink-3)' }}>{message}</p>}
-    </div>
-  )
+  if (running) {
+    return (
+      <div className="rounded-2xl p-5 flex items-center gap-2.5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--violet)' }} />
+          <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--violet)' }} />
+        </span>
+        <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>Calling one contact at a time in the background — you can leave this page.</p>
+      </div>
+    )
+  }
+
+  if (stoppedReason && queuedCount > 0) {
+    return (
+      <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--amber-soft)', border: '1px solid var(--line)' }}>
+        <p className="text-sm font-semibold" style={{ color: 'var(--amber)' }}>Paused: {stoppedReason}</p>
+        <button onClick={resume} disabled={isPending || !withinWindow}
+          className="w-fit rounded-xl px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+          style={{ background: 'var(--violet)' }}>
+          {isPending ? 'Resuming…' : !withinWindow ? 'Outside calling hours' : `Resume (${queuedCount} queued)`}
+        </button>
+        {message && <p className="text-xs" style={{ color: 'var(--coral)' }}>{message}</p>}
+      </div>
+    )
+  }
+
+  return null
 }

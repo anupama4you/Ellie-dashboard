@@ -11,6 +11,7 @@ import { rememberCustomerName } from '@/lib/customers'
 import { getPhoneNumber } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
+import { placeNextQueuedCall } from '@/lib/outboundCampaign'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -1144,9 +1145,35 @@ export async function POST(req: Request) {
 
         if (remaining === 0) {
           const { error: completeError } = await supabase.from('outbound_campaigns')
-            .update({ status: 'completed' })
+            .update({ status: 'completed', running: false })
             .eq('id', campaignContact.campaign_id)
           if (completeError) console.error('Failed to mark campaign completed:', completeError)
+        } else {
+          // Still contacts left (queued/failed) — if this call was part of
+          // a live one-at-a-time chain, place the next queued call right
+          // here. A no-op if the chain already stopped for some other
+          // reason (paused outside hours, a prior failure) since `running`
+          // will be false.
+          const { data: campaign } = await supabase
+            .from('outbound_campaigns')
+            .select('id, name, business_id, running, first_message, system_prompt')
+            .eq('id', campaignContact.campaign_id)
+            .single()
+
+          if (campaign?.running) {
+            const { data: biz } = await supabase
+              .from('businesses')
+              .select('id, vapi_assistant_id, twilio_phone_number, user_id, timezone')
+              .eq('id', campaign.business_id)
+              .single()
+
+            if (biz) {
+              await placeNextQueuedCall(supabase, biz, campaign, async () => {
+                const { data } = await supabase.auth.admin.getUserById(biz.user_id)
+                return data.user?.email ?? null
+              })
+            }
+          }
         }
       }
     } catch (err) {

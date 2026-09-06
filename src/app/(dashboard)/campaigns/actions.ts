@@ -5,11 +5,9 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { parseContactsCsv } from '@/lib/outboundCsv'
-import { listPhoneNumbers, resolveOutboundPhoneNumberId, createOutboundCall } from '@/lib/vapi'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
-
-const BATCH_SIZE = 5
+import { placeNextQueuedCall } from '@/lib/outboundCampaign'
 
 export async function createCampaignAction(formData: FormData): Promise<void> {
   const { business: biz } = await getCurrentBusiness()
@@ -70,84 +68,113 @@ export async function confirmConsentAction(campaignId: string): Promise<void> {
   revalidatePath(`/campaigns/${campaignId}`)
 }
 
-export async function callNextBatchAction(campaignId: string): Promise<{ placed: number; failed: number }> {
-  const { business: biz } = await getCurrentBusiness()
+/**
+ * Kicks off a one-call-at-a-time background run for the contacts the client
+ * selected: queues them, marks the campaign running, and places the first
+ * call. Every call after that is chained by the end-of-call-report webhook
+ * (see src/lib/outboundCampaign.ts) — the client doesn't need to stay on
+ * this page or click anything again for the rest of the run.
+ */
+export async function startCallingAction(campaignId: string, contactIds: string[]): Promise<void> {
+  const { user, business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
   if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
   if (!biz.vapi_assistant_id) throw new Error('This location has no Vapi assistant configured.')
   if (!biz.twilio_phone_number) throw new Error('This location has no phone number configured.')
-
-  if (!isWithinOutboundCallingWindow(new Date(), biz.timezone)) {
-    throw new Error('Outbound calls can only be placed between 9am and 8pm.')
-  }
+  if (!isWithinOutboundCallingWindow(new Date(), biz.timezone)) throw new Error('Outbound calls can only be started between 9am and 8pm.')
+  if (contactIds.length === 0) throw new Error('Select at least one contact to call.')
 
   const supabase = await createClient()
 
   const { data: campaign } = await supabase
     .from('outbound_campaigns')
-    .select('id, status, first_message, system_prompt')
+    .select('id, name, status, running, first_message, system_prompt')
     .eq('id', campaignId)
     .eq('business_id', biz.id)
     .single()
   if (!campaign) throw new Error('Campaign not found.')
   if (campaign.status !== 'active') throw new Error('Confirm consent before placing calls.')
+  if (campaign.running) throw new Error('This campaign is already running.')
 
-  const { data: pending } = await supabase
+  const { data: otherRunning } = await supabase
+    .from('outbound_campaigns')
+    .select('id, name')
+    .eq('business_id', biz.id)
+    .eq('running', true)
+    .neq('id', campaignId)
+    .limit(1)
+    .maybeSingle()
+  if (otherRunning) throw new Error(`"${otherRunning.name}" is already running — only one campaign can call at a time.`)
+
+  const { data: selected } = await supabase
     .from('outbound_campaign_contacts')
-    .select('id, name, phone, note, extra_fields')
+    .select('id')
     .eq('campaign_id', campaignId)
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(BATCH_SIZE)
+    .in('id', contactIds)
+    .in('status', ['pending', 'failed'])
+  if (!selected || selected.length === 0) throw new Error('None of the selected contacts are callable.')
 
-  if (!pending || pending.length === 0) {
-    revalidatePath(`/campaigns/${campaignId}`)
-    return { placed: 0, failed: 0 }
-  }
+  const { error: queueError } = await supabase
+    .from('outbound_campaign_contacts')
+    .update({ status: 'queued' })
+    .in('id', selected.map(c => c.id))
+  if (queueError) throw new Error(queueError.message)
 
-  const phoneNumbers = await listPhoneNumbers()
-  const phoneNumberId = resolveOutboundPhoneNumberId(phoneNumbers, biz.twilio_phone_number)
-  if (!phoneNumberId) {
-    throw new Error(`This location's number (${biz.twilio_phone_number}) isn't imported into Vapi as an outbound-capable number.`)
-  }
+  const { error: runError } = await supabase
+    .from('outbound_campaigns')
+    .update({ running: true, stopped_reason: null })
+    .eq('id', campaignId)
+  if (runError) throw new Error(runError.message)
 
-  let placed = 0
-  let failed = 0
-
-  for (const contact of pending) {
-    try {
-      const call = await createOutboundCall({
-        assistantId: biz.vapi_assistant_id,
-        phoneNumberId,
-        customerNumber: contact.phone,
-        // Exactly what the client saved on this campaign, verbatim — no
-        // code-side wrapping/building. {{customerName}}/{{note}}/any of the
-        // contact's own spreadsheet columns (extra_fields) get substituted
-        // by Vapi from variableValues below if the client chose to
-        // reference them.
-        firstMessage: campaign.first_message,
-        systemPrompt: campaign.system_prompt,
-        variableValues: {
-          customerName: contact.name,
-          ...(contact.note ? { note: contact.note } : {}),
-          ...(contact.extra_fields as Record<string, string> | null ?? {}),
-        },
-      })
-      const { error: updateError } = await supabase.from('outbound_campaign_contacts')
-        .update({ status: 'calling', vapi_call_id: call.id })
-        .eq('id', contact.id)
-      if (updateError) {
-        console.error(`Placed an outbound call for contact ${contact.id} (Vapi call ${call.id}) but failed to record it — this contact may be re-selected on the next batch, risking a duplicate call:`, updateError)
-        failed++
-      } else {
-        placed++
-      }
-    } catch (err) {
-      console.error(`Failed to place outbound call for contact ${contact.id}:`, err)
-      failed++
-    }
-  }
+  await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null)
 
   revalidatePath(`/campaigns/${campaignId}`)
-  return { placed, failed }
+}
+
+/** Continues an already-queued run after it paused (outside hours, or a
+ * system failure the client has looked at) — same one-at-a-time chain,
+ * just re-entering it instead of selecting contacts again. */
+export async function resumeCallingAction(campaignId: string): Promise<void> {
+  const { user, business: biz } = await getCurrentBusiness()
+  if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
+  if (!isWithinOutboundCallingWindow(new Date(), biz.timezone)) throw new Error('Outbound calls can only be placed between 9am and 8pm.')
+
+  const supabase = await createClient()
+
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('id, name, status, running, first_message, system_prompt')
+    .eq('id', campaignId)
+    .eq('business_id', biz.id)
+    .single()
+  if (!campaign) throw new Error('Campaign not found.')
+  if (campaign.running) throw new Error('This campaign is already running.')
+
+  const { data: otherRunning } = await supabase
+    .from('outbound_campaigns')
+    .select('id, name')
+    .eq('business_id', biz.id)
+    .eq('running', true)
+    .neq('id', campaignId)
+    .limit(1)
+    .maybeSingle()
+  if (otherRunning) throw new Error(`"${otherRunning.name}" is already running — only one campaign can call at a time.`)
+
+  const { count: queuedCount } = await supabase
+    .from('outbound_campaign_contacts')
+    .select('id', { count: 'exact', head: true })
+    .eq('campaign_id', campaignId)
+    .eq('status', 'queued')
+  if (!queuedCount) throw new Error('Nothing queued to resume — select contacts to start a new run.')
+
+  const { error: runError } = await supabase
+    .from('outbound_campaigns')
+    .update({ running: true, stopped_reason: null })
+    .eq('id', campaignId)
+  if (runError) throw new Error(runError.message)
+
+  await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null)
+
+  revalidatePath(`/campaigns/${campaignId}`)
 }
