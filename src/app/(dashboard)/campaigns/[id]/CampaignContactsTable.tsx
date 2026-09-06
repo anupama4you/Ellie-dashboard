@@ -12,6 +12,7 @@ type Contact = {
   note: string | null
   status: string
   outcome: string | null
+  extra_fields: Record<string, string> | null
 }
 
 type Props = {
@@ -24,6 +25,10 @@ type Props = {
 }
 
 const SELECTABLE_STATUSES = new Set(['pending', 'failed'])
+
+function prettifyColumnKey(key: string): string {
+  return key.split('_').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
+}
 
 function pillFor(c: Contact) {
   if (c.status === 'done') return categoryStyle(c.outcome ?? 'done')
@@ -47,6 +52,19 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
 
   const selectable = useMemo(() => contacts.filter(c => SELECTABLE_STATUSES.has(c.status)), [contacts])
   const allSelected = selectable.length > 0 && selectable.every(c => selected.has(c.id))
+
+  // Every extra CSV column across all contacts, in first-seen order — not
+  // every contact necessarily has every key (blank cells are omitted at
+  // parse time), so this is a union, not just contacts[0]'s keys.
+  const extraColumns = useMemo(() => {
+    const keys: string[] = []
+    for (const c of contacts) {
+      for (const key of Object.keys(c.extra_fields ?? {})) {
+        if (!keys.includes(key)) keys.push(key)
+      }
+    }
+    return keys
+  }, [contacts])
 
   function toggle(id: string) {
     setSelected(prev => {
@@ -106,6 +124,11 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                 <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Name</th>
                 <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Phone</th>
                 <th className="text-left font-semibold px-5 py-2.5" style={{ color: 'var(--ink-3)' }}>Note</th>
+                {extraColumns.map(key => (
+                  <th key={key} className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>
+                    {prettifyColumnKey(key)}
+                  </th>
+                ))}
                 <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Status</th>
               </tr>
             </thead>
@@ -123,6 +146,11 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                     <td className="px-5 py-3 font-semibold whitespace-nowrap" style={{ color: 'var(--ink)' }}>{c.name}</td>
                     <td className="px-5 py-3 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>{c.phone}</td>
                     <td className="px-5 py-3" style={{ color: 'var(--ink-3)' }}>{c.note ?? '—'}</td>
+                    {extraColumns.map(key => (
+                      <td key={key} className="px-5 py-3 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>
+                        {c.extra_fields?.[key] ?? '—'}
+                      </td>
+                    ))}
                     <td className="px-5 py-3 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2 py-1 rounded-full" style={{ color: pill.color, background: pill.bg }}>
                         {c.status === 'calling' && (

@@ -32,7 +32,7 @@ export default async function CampaignDetailPage({
 
   const { data: contacts } = await supabase
     .from('outbound_campaign_contacts')
-    .select('id, name, phone, note, status, outcome')
+    .select('id, name, phone, note, status, outcome, extra_fields')
     .eq('campaign_id', id)
     .order('created_at', { ascending: true })
 
