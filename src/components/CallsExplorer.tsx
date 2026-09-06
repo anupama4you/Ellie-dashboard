@@ -29,10 +29,18 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'duration-asc',   label: 'Shortest first' },
 ]
 
+type Direction = 'all' | 'inbound' | 'outbound'
+const DIRECTIONS: { key: Direction; label: string }[] = [
+  { key: 'all',      label: 'All' },
+  { key: 'inbound',  label: 'Inbound' },
+  { key: 'outbound', label: 'Outbound' },
+]
+
 export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; timeZone: string }) {
   const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
+  const [direction, setDirection]     = useState<Direction>('all')
   const [page, setPage]               = useState(1)
   const [sort, setSort]               = useState<SortOption>('startedAt-desc')
   const [selectedId, setSelectedId]   = useState<string | null>(null)
@@ -49,6 +57,8 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
     const q = search.trim().toLowerCase()
     const rows = calls.filter(call => {
       if (chip !== 'all' && call.category !== chip) return false
+      if (direction === 'inbound' && call.isOutbound) return false
+      if (direction === 'outbound' && !call.isOutbound) return false
       if (!q) return true
       return (
         call.customerNumber?.toLowerCase().includes(q) ||
@@ -61,7 +71,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
       return sortDir === 'asc' ? av - bv : bv - av
     })
     return sorted
-  }, [calls, chip, search, sortField, sortDir])
+  }, [calls, chip, direction, search, sortField, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -75,6 +85,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
     setPage(1)
   }
   function updateChip(c: typeof chip) { setChip(c); setPage(1) }
+  function updateDirection(d: Direction) { setDirection(d); setPage(1) }
 
   return (
     <div
@@ -121,6 +132,26 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
             >
               {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          </div>
+
+          <div className="flex gap-1.5">
+            {DIRECTIONS.map(({ key, label }) => {
+              const active = direction === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => updateDirection(key)}
+                  className="flex-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                  style={{
+                    background: active ? 'var(--violet)' : 'var(--paper)',
+                    color: active ? '#fff' : 'var(--ink-2)',
+                    border: `1px solid ${active ? 'var(--violet)' : 'var(--line)'}`,
+                  }}
+                >
+                  {label}
+                </button>
+              )
+            })}
           </div>
 
           <div className="flex gap-1.5 flex-wrap">

@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSelectedBusinessId } from '@/lib/business'
+import { getCampaignLinkForCall } from '@/lib/calls'
 
 // Only what CallDetailPane's toDetailData() actually reads — not raw_payload
 // (a jsonb blob it never touches) or the other bookkeeping columns.
@@ -34,5 +35,7 @@ export async function GET(
 
   if (!call) return Response.json({ error: 'Not found' }, { status: 404 })
 
-  return Response.json(call)
+  const campaignLink = await getCampaignLinkForCall(call.vapi_call_id)
+
+  return Response.json({ ...call, campaignLink })
 }

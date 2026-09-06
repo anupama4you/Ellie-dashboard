@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { categoryStyle } from '@/lib/callClassify'
 import { startCallingAction } from '../actions'
 
@@ -13,6 +14,8 @@ type Contact = {
   status: string
   outcome: string | null
   extra_fields: Record<string, string> | null
+  callId: string | null
+  summary: string | null
 }
 
 type Props = {
@@ -22,6 +25,7 @@ type Props = {
   withinWindow: boolean
   firstMessage: string
   systemPrompt: string
+  highlightContactId?: string
 }
 
 const SELECTABLE_STATUSES = new Set(['pending', 'failed'])
@@ -43,12 +47,19 @@ function pillFor(c: Contact) {
  * component since checkboxes need interactivity a Server Component can't
  * provide; still calls back into the same startCallingAction Server Action
  * everything else here uses. */
-export default function CampaignContactsTable({ campaignId, contacts, running, withinWindow, firstMessage, systemPrompt }: Props) {
+export default function CampaignContactsTable({ campaignId, contacts, running, withinWindow, firstMessage, systemPrompt, highlightContactId }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
+
+  // Arriving from a call's "View contact" link — scroll straight to the row
+  // that call belongs to instead of leaving the client to hunt for it.
+  useEffect(() => {
+    if (!highlightContactId) return
+    document.getElementById(`contact-${highlightContactId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [highlightContactId])
 
   const selectable = useMemo(() => contacts.filter(c => SELECTABLE_STATUSES.has(c.status)), [contacts])
   const allSelected = selectable.length > 0 && selectable.every(c => selected.has(c.id))
@@ -130,14 +141,21 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                   </th>
                 ))}
                 <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Status</th>
+                <th className="text-left font-semibold px-5 py-2.5" style={{ color: 'var(--ink-3)' }}>Call summary</th>
               </tr>
             </thead>
             <tbody>
               {contacts.map((c, i) => {
                 const pill = pillFor(c)
                 const canSelect = SELECTABLE_STATUSES.has(c.status) && !running
+                const isHighlighted = c.id === highlightContactId
                 return (
-                  <tr key={c.id} style={{ borderTop: i > 0 ? '1px solid var(--line)' : 'none' }}>
+                  <tr key={c.id} id={`contact-${c.id}`}
+                    style={{
+                      borderTop: i > 0 ? '1px solid var(--line)' : 'none',
+                      background: isHighlighted ? 'var(--violet-soft)' : undefined,
+                      transition: 'background 1.5s ease',
+                    }}>
                     <td className="px-5 py-3">
                       {canSelect && (
                         <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} aria-label={`Select ${c.name}`} />
@@ -161,6 +179,17 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                         )}
                         {pill.label}
                       </span>
+                    </td>
+                    <td className="px-5 py-3 max-w-[320px]" style={{ color: 'var(--ink-3)' }}>
+                      {c.callId ? (
+                        <Link href={`/calls/${c.callId}`} title={c.summary ?? undefined}
+                          className="block truncate underline decoration-dotted transition-opacity hover:opacity-70"
+                          style={{ color: 'var(--violet)' }}>
+                          {c.summary || 'View call details'}
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
                     </td>
                   </tr>
                 )

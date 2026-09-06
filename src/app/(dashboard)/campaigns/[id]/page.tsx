@@ -13,10 +13,10 @@ export default async function CampaignDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ skipped?: string }>
+  searchParams: Promise<{ skipped?: string; highlight?: string }>
 }) {
   const { id } = await params
-  const { skipped } = await searchParams
+  const { skipped, highlight } = await searchParams
   const { business: biz } = await getCurrentBusiness()
   if (!isFeatureEnabled(biz, 'campaigns')) redirect('/')
   if (!biz) redirect('/')
@@ -32,11 +32,24 @@ export default async function CampaignDetailPage({
 
   const { data: contacts } = await supabase
     .from('outbound_campaign_contacts')
-    .select('id, name, phone, note, status, outcome, extra_fields')
+    .select('id, name, phone, note, status, outcome, extra_fields, vapi_call_id')
     .eq('campaign_id', id)
     .order('created_at', { ascending: true })
 
-  const allContacts = contacts ?? []
+  // AI summaries live on the local `calls` row, joined by vapi_call_id — one
+  // batch query for every contact that's actually been called, so the
+  // contacts table can show each call's summary (and link to its full
+  // detail) without a query per row.
+  const calledIds = (contacts ?? []).map(c => c.vapi_call_id).filter((v): v is string => !!v)
+  const { data: callRows } = calledIds.length > 0
+    ? await supabase.from('calls').select('id, vapi_call_id, summary').eq('business_id', biz.id).in('vapi_call_id', calledIds)
+    : { data: [] as { id: string; vapi_call_id: string; summary: string | null }[] }
+  const callsByVapiId = new Map((callRows ?? []).map(c => [c.vapi_call_id, c]))
+
+  const allContacts = (contacts ?? []).map(c => {
+    const call = c.vapi_call_id ? callsByVapiId.get(c.vapi_call_id) : undefined
+    return { ...c, callId: call?.id ?? null, summary: call?.summary ?? null }
+  })
   const callingCount = allContacts.filter(c => c.status === 'calling').length
   const queuedCount = allContacts.filter(c => c.status === 'queued').length
   const doneContacts = allContacts.filter(c => c.status === 'done')
@@ -123,6 +136,7 @@ export default async function CampaignDetailPage({
           withinWindow={withinWindow}
           firstMessage={campaign.first_message}
           systemPrompt={campaign.system_prompt}
+          highlightContactId={highlight}
         />
       </div>
 

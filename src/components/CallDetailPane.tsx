@@ -5,9 +5,11 @@ import { ArrowLeft, PhoneIncoming } from 'lucide-react'
 import CallDetailPanel, { type CallDetailData } from './CallDetailPanel'
 import CallDetailSkeleton from './CallDetailSkeleton'
 import { recordingProxyUrl } from '@/lib/recordingUrl'
+import type { CampaignCallLink } from '@/lib/calls'
 import type { CallItem } from './CallsExplorer'
 
-// Shape returned by GET /api/client/calls/[callId] — the raw `calls` row.
+// Shape returned by GET /api/client/calls/[callId] — the raw `calls` row
+// plus the campaign link the route joins in.
 type RawCall = {
   call_type: string | null
   caller_phone: string | null
@@ -21,6 +23,7 @@ type RawCall = {
   recording_url: string | null
   transcript: string | null
   vapi_call_id: string
+  campaignLink: CampaignCallLink | null
 }
 
 function toDetailData(raw: RawCall): CallDetailData {
@@ -37,6 +40,7 @@ function toDetailData(raw: RawCall): CallDetailData {
     recordingUrl: raw.recording_url ? recordingProxyUrl(raw.vapi_call_id) : undefined,
     transcript: raw.transcript ?? undefined,
     vapiCallId: raw.vapi_call_id ?? undefined,
+    campaignLink: raw.campaignLink ?? undefined,
   }
 }
 

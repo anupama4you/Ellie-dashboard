@@ -1,10 +1,12 @@
+import Link from 'next/link'
 import {
   Phone, Clock, CheckCircle2, XCircle, Mic, FileText,
-  PhoneIncoming, PhoneOutgoing, Globe,
+  PhoneIncoming, PhoneOutgoing, Globe, Megaphone, ArrowRight,
 } from 'lucide-react'
 import WaveformPlayer from './WaveformPlayer'
 import CopyButton from './CopyButton'
 import { formatInZone } from '@/lib/timezone'
+import type { CampaignCallLink } from '@/lib/calls'
 
 function fmtDuration(secs: number) {
   if (!secs || !isFinite(secs) || secs <= 0) return '—'
@@ -65,6 +67,7 @@ export type CallDetailData = {
   recordingUrl?: string
   transcript?: string
   vapiCallId?: string
+  campaignLink?: CampaignCallLink | null
 }
 
 export default function CallDetailPanel({ call, timeZone }: { call: CallDetailData; timeZone: string }) {
@@ -134,6 +137,22 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
           ))}
         </div>
       </div>
+
+      {/* Campaign link — this call was placed by an outbound campaign */}
+      {call.campaignLink && (
+        <Link
+          href={`/campaigns/${call.campaignLink.campaignId}?highlight=${call.campaignLink.contactId}`}
+          className="rounded-xl p-3 sm:p-4 flex items-center justify-between gap-2 transition-opacity hover:opacity-80"
+          style={{ background: 'var(--violet-soft)' }}
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--violet)' }}>
+            <Megaphone size={14} /> From campaign &quot;{call.campaignLink.campaignName}&quot;
+          </span>
+          <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: 'var(--violet)' }}>
+            View contact <ArrowRight size={12} />
+          </span>
+        </Link>
+      )}
 
       {/* AI Summary */}
       {call.summary && (
