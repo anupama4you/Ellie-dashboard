@@ -53,41 +53,16 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   redirect(`/campaigns/${campaign.id}${skipped > 0 ? `?skipped=${skipped}` : ''}`)
 }
 
-/**
- * The client confirming consent AND submitting for admin review, in one
- * step. If the campaign's first_message/system_prompt are still exactly
- * the business's current outbound defaults (admin already approved that
- * exact wording when they set it as the default), it goes straight to
- * 'active' — only a campaign whose wording was actually changed needs a
- * fresh admin look (see admin/clients/[id]/campaigns/page.tsx), the same
- * "client input shouldn't drive live Ellie behavior unreviewed" reasoning
- * as the Briefing draft/live split.
- */
-export async function submitForReviewAction(campaignId: string): Promise<void> {
+/** The client confirming consent — activates the campaign immediately, no admin approval step. */
+export async function confirmConsentAction(campaignId: string): Promise<void> {
   const { business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
   if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
 
   const supabase = await createClient()
-
-  const { data: campaign } = await supabase
-    .from('outbound_campaigns')
-    .select('first_message, system_prompt')
-    .eq('id', campaignId)
-    .eq('business_id', biz.id)
-    .single()
-  if (!campaign) throw new Error('Campaign not found.')
-
-  const matchesDefault =
-    campaign.first_message === (biz.outbound_default_first_message ?? '') &&
-    campaign.system_prompt === (biz.outbound_default_system_prompt ?? '')
-
   const { error } = await supabase
     .from('outbound_campaigns')
-    .update({
-      status: matchesDefault ? 'active' : 'pending_review',
-      consent_confirmed_at: new Date().toISOString(),
-    })
+    .update({ status: 'active', consent_confirmed_at: new Date().toISOString() })
     .eq('id', campaignId)
     .eq('business_id', biz.id)
   if (error) throw new Error(error.message)
@@ -115,13 +90,7 @@ export async function callNextBatchAction(campaignId: string): Promise<{ placed:
     .eq('business_id', biz.id)
     .single()
   if (!campaign) throw new Error('Campaign not found.')
-  if (campaign.status !== 'active') {
-    throw new Error(
-      campaign.status === 'pending_review'
-        ? 'Waiting on admin approval of your call instructions before calling can start.'
-        : 'Submit this campaign for review before placing calls.',
-    )
-  }
+  if (campaign.status !== 'active') throw new Error('Confirm consent before placing calls.')
 
   const { data: pending } = await supabase
     .from('outbound_campaign_contacts')

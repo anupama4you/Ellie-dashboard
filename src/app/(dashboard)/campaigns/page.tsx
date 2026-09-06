@@ -83,8 +83,7 @@ export default async function CampaignsPage({
                 placeholder="Mention it's been a while since their last visit, and offer to book them in this week."
                 className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
               <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
-                Pre-filled with your usual script — edit it for this campaign if you want. Using it unchanged starts calling right away;
-                changing it needs a quick admin check first.
+                Pre-filled with your usual script — edit it for this campaign if you want.
               </p>
             </div>
             <div className="flex flex-col gap-1.5">

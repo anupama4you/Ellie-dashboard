@@ -5,10 +5,9 @@ import AdminSubmitButton from '@/components/AdminSubmitButton'
 import { Megaphone, CheckCircle2 } from 'lucide-react'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string }> = {
-  draft:          { color: 'var(--t5)',    bg: 'var(--b4)' },
-  pending_review: { color: 'var(--amber)', bg: 'rgba(217,138,11,0.12)' },
-  active:         { color: 'var(--signal)', bg: 'rgba(15,163,122,0.1)' },
-  completed:      { color: 'var(--t5)',    bg: 'var(--b4)' },
+  draft:     { color: 'var(--t5)',     bg: 'var(--b4)' },
+  active:    { color: 'var(--signal)', bg: 'rgba(15,163,122,0.1)' },
+  completed: { color: 'var(--t5)',     bg: 'var(--b4)' },
 }
 
 export default async function AdminClientCampaignsPage({
@@ -43,20 +42,10 @@ export default async function AdminClientCampaignsPage({
     return acc
   }, {})
 
-  async function approveCampaignAction(formData: FormData) {
-    'use server'
-    const admin = createAdminClient()
-    const campaignId = formData.get('campaignId') as string
-    await admin.from('outbound_campaigns').update({ status: 'active' }).eq('id', campaignId).eq('business_id', id)
-    redirect(`/admin/clients/${id}/campaigns?saved=1`)
-  }
-
   /**
    * Plain DB fields, not a Vapi assistant config — there's no separate
-   * outbound Vapi assistant. These are only ever used to pre-fill a new
-   * campaign's own first_message/system_prompt on the client's side, and
-   * to decide (in submitForReviewAction) whether an unmodified campaign
-   * can skip review.
+   * outbound Vapi assistant. Only ever used to pre-fill a new campaign's
+   * own first_message/system_prompt on the client's side.
    */
   async function saveDefaultsAction(formData: FormData) {
     'use server'
@@ -95,8 +84,7 @@ export default async function AdminClientCampaignsPage({
           <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Default outbound script</h2>
             <p className="text-xs mt-1" style={{ color: 'var(--t5)' }}>
-              Pre-fills every new campaign the client creates. A campaign the client leaves unchanged skips review and goes straight to
-              active — only a campaign with edited wording needs your approval below.
+              Pre-fills every new campaign the client creates — they can use it as-is or edit it per campaign.
             </p>
           </div>
           <form action={saveDefaultsAction} className="p-5 flex flex-col gap-3">
@@ -137,7 +125,7 @@ export default async function AdminClientCampaignsPage({
                   </div>
                   <span className="text-xs font-bold px-2.5 py-1 rounded-full capitalize"
                     style={{ color: statusStyle.color, background: statusStyle.bg }}>
-                    {c.status.replace('_', ' ')}
+                    {c.status}
                   </span>
                 </div>
                 <div className="p-5 flex flex-col gap-3">
@@ -149,18 +137,6 @@ export default async function AdminClientCampaignsPage({
                     <p className="text-xs font-medium mb-1" style={{ color: 'var(--t3)' }}>How Ellie should behave</p>
                     <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text)' }}>{c.system_prompt || '—'}</p>
                   </div>
-                  {c.status === 'pending_review' && (
-                    <form action={approveCampaignAction}>
-                      <input type="hidden" name="campaignId" value={c.id} />
-                      <AdminSubmitButton
-                        pendingLabel="Approving…"
-                        icon={<CheckCircle2 size={13} />}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                        style={{ color: 'var(--signal)', background: 'rgba(15,163,122,0.08)', border: '1px solid rgba(15,163,122,0.2)' }}>
-                        Approve — let the client start calling
-                      </AdminSubmitButton>
-                    </form>
-                  )}
                 </div>
               </div>
             )
