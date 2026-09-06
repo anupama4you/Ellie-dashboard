@@ -23,7 +23,7 @@ export default async function CampaignDetailPage({
   const supabase = await createClient()
   const { data: campaign } = await supabase
     .from('outbound_campaigns')
-    .select('id, name, status')
+    .select('id, name, status, call_instructions')
     .eq('id', id)
     .eq('business_id', biz.id)
     .single()
@@ -52,7 +52,7 @@ export default async function CampaignDetailPage({
       <div className="max-w-3xl mx-auto flex flex-col gap-5">
         <div>
           <h1 className="font-extrabold text-xl" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>{campaign.name}</h1>
-          <p className="text-xs mt-1 capitalize" style={{ color: 'var(--ink-3)' }}>{campaign.status} · {(contacts ?? []).length} contacts</p>
+          <p className="text-xs mt-1 capitalize" style={{ color: 'var(--ink-3)' }}>{campaign.status.replace('_', ' ')} · {(contacts ?? []).length} contacts</p>
         </div>
 
         {skipped && (
@@ -62,6 +62,11 @@ export default async function CampaignDetailPage({
         )}
 
         <CampaignDetailActions campaignId={campaign.id} status={campaign.status} pendingCount={pendingCount} withinWindow={withinWindow} />
+
+        <section className="rounded-2xl p-5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--ink-3)' }}>How Ellie will behave on these calls</p>
+          <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{campaign.call_instructions}</p>
+        </section>
 
         {allContacts.length > 0 && (
           <section className="rounded-2xl p-5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>

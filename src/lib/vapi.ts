@@ -211,19 +211,34 @@ export function resolveOutboundPhoneNumberId(
   return phoneNumbers.find(p => p.number === twilioNumber)?.id ?? null
 }
 
+/**
+ * `systemPrompt`/`firstMessage` use Vapi's per-call assistantOverrides —
+ * NOT the assistant's own persistent config (that stays untouched, see
+ * syncAssistantPrompt above) — so an outbound campaign call can run on
+ * entirely different instructions than the assistant's real inbound
+ * script, for exactly this one call, with zero risk of that outbound
+ * script leaking into how the assistant answers real inbound calls.
+ */
 export async function createOutboundCall(opts: {
   assistantId: string
   phoneNumberId: string
   customerNumber: string
   variableValues?: Record<string, string>
+  systemPrompt?: string
+  firstMessage?: string
 }): Promise<{ id: string }> {
+  const assistantOverrides: Record<string, unknown> = {}
+  if (opts.variableValues) assistantOverrides.variableValues = opts.variableValues
+  if (opts.systemPrompt) assistantOverrides.model = { messages: [{ role: 'system', content: opts.systemPrompt }] }
+  if (opts.firstMessage) assistantOverrides.firstMessage = opts.firstMessage
+
   return vapiRequest('/call', {
     method: 'POST',
     body: JSON.stringify({
       assistantId: opts.assistantId,
       phoneNumberId: opts.phoneNumberId,
       customer: { number: opts.customerNumber },
-      ...(opts.variableValues ? { assistantOverrides: { variableValues: opts.variableValues } } : {}),
+      ...(Object.keys(assistantOverrides).length > 0 ? { assistantOverrides } : {}),
     }),
   })
 }
