@@ -218,6 +218,14 @@ export function resolveOutboundPhoneNumberId(
  * entirely different instructions than the assistant's real inbound
  * script, for exactly this one call, with zero risk of that outbound
  * script leaking into how the assistant answers real inbound calls.
+ *
+ * Same fetch-then-spread reasoning as syncAssistantPrompt applies here too:
+ * `assistantOverrides.model`, when present, has to be a whole valid model
+ * object (provider + model, not just messages) — Vapi rejects a partial
+ * `{ messages }` override with a 400 (`model.provider must be one of...`)
+ * rather than deep-merging it into the assistant's existing config. So the
+ * assistant's current provider/model are fetched and spread in, with only
+ * `messages` actually overridden.
  */
 export async function createOutboundCall(opts: {
   assistantId: string
@@ -229,7 +237,10 @@ export async function createOutboundCall(opts: {
 }): Promise<{ id: string }> {
   const assistantOverrides: Record<string, unknown> = {}
   if (opts.variableValues) assistantOverrides.variableValues = opts.variableValues
-  if (opts.systemPrompt) assistantOverrides.model = { messages: [{ role: 'system', content: opts.systemPrompt }] }
+  if (opts.systemPrompt) {
+    const assistant = await getAssistant(opts.assistantId)
+    assistantOverrides.model = { ...assistant.model, messages: [{ role: 'system', content: opts.systemPrompt }] }
+  }
   if (opts.firstMessage) assistantOverrides.firstMessage = opts.firstMessage
 
   return vapiRequest('/call', {
