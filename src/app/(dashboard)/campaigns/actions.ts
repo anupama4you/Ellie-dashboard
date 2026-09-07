@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
-import { parseContactsCsv } from '@/lib/outboundCsv'
+import { parseContactsCsv, parseManualContact, type ParsedContact } from '@/lib/outboundCsv'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { placeNextQueuedCall, startCampaignNow } from '@/lib/outboundCampaign'
@@ -45,11 +45,27 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
     scheduledAtUtc = scheduledDate.toISOString()
   }
 
+  // Contacts can come from a CSV, hand-typed rows, or both — combined below.
+  // Neither is individually required; only the combined result has to be
+  // non-empty.
   const file = formData.get('csv')
-  if (!(file instanceof File) || file.size === 0) redirect('/campaigns?error=nofile')
+  const csvText = file instanceof File && file.size > 0 ? await file.text() : ''
+  const { valid: csvValid, skipped } = csvText ? parseContactsCsv(csvText) : { valid: [] as ParsedContact[], skipped: 0 }
 
-  const csvText = await file.text()
-  const { valid, skipped } = parseContactsCsv(csvText)
+  const manualContactsRaw = formData.get('manualContacts')
+  let manualContactsInput: { name: string; phone: string; note: string }[] = []
+  if (typeof manualContactsRaw === 'string' && manualContactsRaw) {
+    try {
+      manualContactsInput = JSON.parse(manualContactsRaw)
+    } catch {
+      manualContactsInput = []
+    }
+  }
+  const manualValid = manualContactsInput
+    .map(c => parseManualContact(c.name ?? '', c.phone ?? '', c.note ?? ''))
+    .filter((c): c is ParsedContact => c !== null)
+
+  const valid = [...csvValid, ...manualValid]
   if (valid.length === 0) redirect('/campaigns?error=novalid')
 
   const supabase = await createClient()

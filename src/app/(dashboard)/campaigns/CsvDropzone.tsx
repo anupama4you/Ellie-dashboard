@@ -53,7 +53,6 @@ export default function CsvDropzone({ inputId, onFileSelected }: { inputId?: str
         type="file"
         name="csv"
         accept=".csv"
-        required
         className="hidden"
         onChange={e => handleFiles(e.target.files)}
       />

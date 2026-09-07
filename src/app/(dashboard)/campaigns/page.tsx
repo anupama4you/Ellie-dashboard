@@ -16,8 +16,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   noschedule: 'Pick a date and time to schedule this campaign.',
   schedulepast: 'Pick a date and time in the future.',
   schedulefar: 'Campaigns can only be scheduled up to 7 days in advance.',
-  nofile: 'Choose a CSV file to upload.',
-  novalid: 'No valid contacts found in that file — check it has name and phone columns.',
+  novalid: 'No valid contacts found — check your CSV has name and phone columns, or the numbers you typed in manually.',
   create: 'Failed to create the campaign. Please try again.',
 }
 

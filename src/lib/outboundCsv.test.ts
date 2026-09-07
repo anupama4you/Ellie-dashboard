@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseContactsCsv, extractCustomVariableNames } from './outboundCsv'
+import { parseContactsCsv, extractCustomVariableNames, parseManualContact } from './outboundCsv'
 
 describe('parseContactsCsv', () => {
   it('parses valid rows with name, phone, and note', () => {
@@ -77,6 +77,29 @@ describe('parseContactsCsv', () => {
       { name: 'Jane Doe', phone: '+61412345678', note: null, extra: {} },
       { name: 'John Roe', phone: '+61498765432', note: null, extra: { favorite_service: 'Haircut' } },
     ])
+  })
+})
+
+describe('parseManualContact', () => {
+  it('accepts a valid hand-typed contact', () => {
+    expect(parseManualContact('Jane Doe', '0412345678', 'Prefers afternoons')).toEqual({
+      name: 'Jane Doe', phone: '+61412345678', note: 'Prefers afternoons', extra: {},
+    })
+  })
+
+  it('returns null for a blank name or phone', () => {
+    expect(parseManualContact('', '0412345678', '')).toBeNull()
+    expect(parseManualContact('Jane Doe', '', '')).toBeNull()
+  })
+
+  it('returns null for an unresolvable phone number, same as the CSV path', () => {
+    expect(parseManualContact('Jane Doe', '12345', '')).toBeNull()
+  })
+
+  it('treats a blank note as null', () => {
+    expect(parseManualContact('Jane Doe', '0412345678', '  ')).toEqual({
+      name: 'Jane Doe', phone: '+61412345678', note: null, extra: {},
+    })
   })
 })
 

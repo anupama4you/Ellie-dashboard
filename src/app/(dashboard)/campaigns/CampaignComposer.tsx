@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { Check, ChevronLeft, ChevronRight, Plus, Send, CalendarClock } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Plus, Send, CalendarClock, X } from 'lucide-react'
 import { extractCustomVariableNames, parseContactsCsv } from '@/lib/outboundCsv'
 import CsvDropzone from './CsvDropzone'
 
@@ -11,10 +11,12 @@ const FIXED_VARIABLES = [
 ]
 
 const STEPS = [
-  { n: 1, label: 'Details' },
-  { n: 2, label: 'Contacts' },
+  { n: 1, label: 'Campaign' },
+  { n: 2, label: 'Agent' },
   { n: 3, label: 'Review' },
 ] as const
+
+type ManualContact = { name: string; phone: string; note: string }
 
 type Props = {
   action: (formData: FormData) => void
@@ -50,7 +52,7 @@ const MAX_SCHEDULE_DAYS_AHEAD = 7
  * All three steps stay mounted in the DOM at once (just hidden via CSS)
  * instead of being conditionally rendered — that keeps the textarea refs
  * alive so "insert a personal detail" still works after navigating away
- * from step 1, and keeps every field's value intact when moving back and
+ * from step 2, and keeps every field's value intact when moving back and
  * forth between steps.
  */
 export default function CampaignComposer({ action, defaultFirstMessage, defaultSystemPrompt, timezone }: Props) {
@@ -58,13 +60,15 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const [stepError, setStepError] = useState('')
 
   const [name, setName] = useState('')
-  const [firstMessage, setFirstMessage] = useState(defaultFirstMessage)
-  const [systemPrompt, setSystemPrompt] = useState(defaultSystemPrompt)
-  const [activeField, setActiveField] = useState<'firstMessage' | 'systemPrompt'>('firstMessage')
 
   const [customVariables, setCustomVariables] = useState<string[]>([])
   const [fileName, setFileName] = useState<string | null>(null)
-  const [contactCount, setContactCount] = useState<number | null>(null)
+  const [csvContactCount, setCsvContactCount] = useState<number | null>(null)
+  const [manualContacts, setManualContacts] = useState<ManualContact[]>([])
+
+  const [firstMessage, setFirstMessage] = useState(defaultFirstMessage)
+  const [systemPrompt, setSystemPrompt] = useState(defaultSystemPrompt)
+  const [activeField, setActiveField] = useState<'firstMessage' | 'systemPrompt'>('firstMessage')
 
   const [sendOption, setSendOption] = useState<'now' | 'schedule'>('now')
   const [scheduleDate, setScheduleDate] = useState('')
@@ -77,12 +81,23 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const systemPromptRef = useRef<HTMLTextAreaElement>(null)
 
   async function handleFile(file: File | null) {
-    if (!file) { setFileName(null); setCustomVariables([]); setContactCount(null); return }
+    if (!file) { setFileName(null); setCustomVariables([]); setCsvContactCount(null); return }
     const text = await file.text()
     setFileName(file.name)
     setCustomVariables(extractCustomVariableNames(text))
-    setContactCount(parseContactsCsv(text).valid.length)
+    setCsvContactCount(parseContactsCsv(text).valid.length)
   }
+
+  function addManualContact() {
+    setManualContacts(prev => [...prev, { name: '', phone: '', note: '' }])
+  }
+  function updateManualContact(i: number, field: keyof ManualContact, value: string) {
+    setManualContacts(prev => prev.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)))
+  }
+  function removeManualContact(i: number) {
+    setManualContacts(prev => prev.filter((_, idx) => idx !== i))
+  }
+  const manualFilled = manualContacts.filter(c => c.name.trim() && c.phone.trim())
 
   function insertVariable(key: string) {
     const token = `{{${key}}}`
@@ -110,13 +125,17 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   function goNext() {
     setStepError('')
     if (step === 1) {
-      if (!name.trim() || !firstMessage.trim() || !systemPrompt.trim()) {
-        setStepError('Fill in the campaign name, opening line, and behavior before continuing.')
+      if (!name.trim()) {
+        setStepError('Give this campaign a name before continuing.')
+        return
+      }
+      if (!fileName && manualFilled.length === 0) {
+        setStepError('Upload a CSV or add at least one contact manually.')
         return
       }
     } else if (step === 2) {
-      if (!fileName) {
-        setStepError('Choose a CSV file to upload.')
+      if (!firstMessage.trim() || !systemPrompt.trim()) {
+        setStepError('Fill in the opening line and how Ellie should behave before continuing.')
         return
       }
     }
@@ -140,6 +159,7 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
     formData.set('consent', 'true')
     formData.set('sendOption', sendOption)
     if (sendOption === 'schedule') formData.set('scheduledAt', scheduledAt)
+    formData.set('manualContacts', JSON.stringify(manualFilled))
     startTransition(() => {
       action(formData)
     })
@@ -152,6 +172,8 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const [minScheduleDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [maxScheduleDate] = useState(() => new Date(Date.now() + MAX_SCHEDULE_DAYS_AHEAD * 86_400_000).toISOString().slice(0, 10))
   const [tzLabel] = useState(() => timezoneLabel(timezone))
+
+  const totalContacts = (csvContactCount ?? 0) + manualFilled.length
 
   return (
     <form ref={formRef} onSubmit={e => e.preventDefault()} className="p-5 flex flex-col gap-4">
@@ -180,7 +202,7 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
         ))}
       </div>
 
-      {/* Step 1 — Details */}
+      {/* Step 1 — Campaign name + contacts (CSV and/or manual) */}
       <div className="flex flex-col gap-3" hidden={step !== 1}>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="campaign-name" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Campaign name</label>
@@ -188,6 +210,50 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
             placeholder="Spring re-engagement" className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
+          <CsvDropzone inputId="campaign-csv" onFileSelected={handleFile} />
+          {csvContactCount !== null && (
+            <p className="text-xs" style={{ color: 'var(--ink-3)' }}>{csvContactCount} valid contact{csvContactCount === 1 ? '' : 's'} found in {fileName}.</p>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Or add contacts manually</p>
+            <button type="button" onClick={addManualContact}
+              className="flex items-center gap-1 text-xs font-semibold transition-opacity hover:opacity-80"
+              style={{ color: 'var(--violet)' }}>
+              <Plus size={12} /> Add contact
+            </button>
+          </div>
+
+          {manualContacts.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              {manualContacts.map((c, i) => (
+                <div key={i} className="flex gap-1.5 items-center">
+                  <input value={c.name} onChange={e => updateManualContact(i, 'name', e.target.value)}
+                    placeholder="Name" className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                  <input value={c.phone} onChange={e => updateManualContact(i, 'phone', e.target.value)}
+                    placeholder="Phone" className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                  <input value={c.note} onChange={e => updateManualContact(i, 'note', e.target.value)}
+                    placeholder="Note (optional)" className="flex-1 min-w-0 rounded-lg px-2.5 py-1.5 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                  <button type="button" onClick={() => removeManualContact(i)} aria-label="Remove contact"
+                    className="p-1.5 rounded-lg shrink-0 transition-opacity hover:opacity-70" style={{ color: 'var(--ink-3)' }}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+            Manually-added contacts don&apos;t have their own custom columns — only name, phone, and an optional note.
+          </p>
+        </div>
+      </div>
+
+      {/* Step 2 — Agent details */}
+      <div className="flex flex-col gap-3" hidden={step !== 2}>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="campaign-first-message" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Opening line</label>
           <textarea
@@ -227,18 +293,9 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
           </div>
           <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
             Click into the field above you want, then tap a detail to drop it in — Ellie fills in the real value for each contact automatically.
-            {customVariables.length === 0 && ' Upload your CSV on the next step to see details from your own columns here too.'}
+            {customVariables.length === 0 && ' Contacts added manually only offer Customer name and Note — upload a CSV for more.'}
           </p>
         </div>
-      </div>
-
-      {/* Step 2 — Contacts */}
-      <div className="flex flex-col gap-1.5" hidden={step !== 2}>
-        <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
-        <CsvDropzone inputId="campaign-csv" onFileSelected={handleFile} />
-        {contactCount !== null && (
-          <p className="text-xs" style={{ color: 'var(--ink-3)' }}>{contactCount} valid contact{contactCount === 1 ? '' : 's'} found in {fileName}.</p>
-        )}
       </div>
 
       {/* Step 3 — Review */}
@@ -259,7 +316,9 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
           <div>
             <p className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts</p>
             <p className="text-sm" style={{ color: 'var(--ink-2)' }}>
-              {contactCount !== null ? `${contactCount} valid contact${contactCount === 1 ? '' : 's'}` : 'No file uploaded'} from {fileName ?? '—'}
+              {totalContacts} contact{totalContacts === 1 ? '' : 's'} total
+              {csvContactCount ? ` — ${csvContactCount} from ${fileName}` : ''}
+              {manualFilled.length > 0 ? `, ${manualFilled.length} added manually` : ''}
             </p>
           </div>
         </div>

@@ -87,6 +87,27 @@ export function parseContactsCsv(csvText: string): ParseContactsResult {
 }
 
 /**
+ * Validates one hand-typed contact (name/phone/note entered directly in the
+ * UI, not from a CSV row) using the exact same phone-safety checks as a CSV
+ * row — the plausibility pre-check before normalization matters just as
+ * much here, since a manually mistyped number is just as capable of
+ * silently resolving to a different real AU number as a bad CSV cell.
+ * Manual contacts never carry `extra` fields — those only exist as CSV
+ * columns.
+ */
+export function parseManualContact(name: string, phone: string, note: string): ParsedContact | null {
+  const trimmedName = name.trim()
+  const rawPhone = phone.trim()
+  if (!trimmedName || !rawPhone) return null
+  if (!isPlausibleAuPhone(rawPhone)) return null
+
+  const normalizedPhone = toE164Au(rawPhone)
+  if (!AU_E164.test(normalizedPhone)) return null
+
+  return { name: trimmedName, phone: normalizedPhone, note: note.trim() || null, extra: {} }
+}
+
+/**
  * The sanitized variable names a CSV's extra columns would produce,
  * without validating/parsing any actual rows — cheap enough to run
  * client-side the moment a file is chosen, so "insert a personal detail"
