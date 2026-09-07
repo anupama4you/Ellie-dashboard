@@ -10,6 +10,8 @@ import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { placeNextQueuedCall, startCampaignNow } from '@/lib/outboundCampaign'
 import { zonedTimeToUtc } from '@/lib/timezone'
 
+const MAX_SCHEDULE_DAYS_AHEAD = 7
+
 export async function createCampaignAction(formData: FormData): Promise<void> {
   const { user, business: biz } = await getCurrentBusiness()
   if (!biz) redirect('/campaigns?error=nobusiness')
@@ -39,6 +41,7 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
     const [y, mo, d, h, mi] = [match[1], match[2], match[3], match[4], match[5]].map(Number)
     const scheduledDate = zonedTimeToUtc(biz.timezone, y, mo, d, h, mi)
     if (scheduledDate.getTime() <= Date.now()) redirect('/campaigns?error=schedulepast')
+    if (scheduledDate.getTime() > Date.now() + MAX_SCHEDULE_DAYS_AHEAD * 86_400_000) redirect('/campaigns?error=schedulefar')
     scheduledAtUtc = scheduledDate.toISOString()
   }
 

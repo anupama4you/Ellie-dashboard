@@ -15,6 +15,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   noconsent: 'Confirm you have the right to contact these customers before creating the campaign.',
   noschedule: 'Pick a date and time to schedule this campaign.',
   schedulepast: 'Pick a date and time in the future.',
+  schedulefar: 'Campaigns can only be scheduled up to 7 days in advance.',
   nofile: 'Choose a CSV file to upload.',
   novalid: 'No valid contacts found in that file — check it has name and phone columns.',
   create: 'Failed to create the campaign. Please try again.',
@@ -70,6 +71,7 @@ export default async function CampaignsPage({
             action={createCampaignAction}
             defaultFirstMessage={biz.outbound_default_first_message ?? ''}
             defaultSystemPrompt={biz.outbound_default_system_prompt ?? ''}
+            timezone={biz.timezone}
           />
         </section>
 

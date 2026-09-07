@@ -20,7 +20,23 @@ type Props = {
   action: (formData: FormData) => void
   defaultFirstMessage: string
   defaultSystemPrompt: string
+  timezone: string
 }
+
+/** "Australia/Adelaide (GMT+9:30)" — read-only context next to the
+ * scheduler, since the picker below is always in this business's own
+ * timezone, never the browser's. */
+function timezoneLabel(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: timezone, timeZoneName: 'shortOffset' }).formatToParts(new Date())
+    const offset = parts.find(p => p.type === 'timeZoneName')?.value ?? ''
+    return offset ? `${timezone} (${offset})` : timezone
+  } catch {
+    return timezone
+  }
+}
+
+const MAX_SCHEDULE_DAYS_AHEAD = 7
 
 /**
  * Owns the whole "New campaign" form as a client component (rather than
@@ -37,7 +53,7 @@ type Props = {
  * from step 1, and keeps every field's value intact when moving back and
  * forth between steps.
  */
-export default function CampaignComposer({ action, defaultFirstMessage, defaultSystemPrompt }: Props) {
+export default function CampaignComposer({ action, defaultFirstMessage, defaultSystemPrompt, timezone }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [stepError, setStepError] = useState('')
 
@@ -51,7 +67,8 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const [contactCount, setContactCount] = useState<number | null>(null)
 
   const [sendOption, setSendOption] = useState<'now' | 'schedule'>('now')
-  const [scheduledAt, setScheduledAt] = useState('')
+  const [scheduleDate, setScheduleDate] = useState('')
+  const [scheduleTime, setScheduleTime] = useState('')
   const [consented, setConsented] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -111,6 +128,8 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
     setStep(s => (s > 1 ? ((s - 1) as 1 | 2 | 3) : s))
   }
 
+  const scheduledAt = scheduleDate && scheduleTime ? `${scheduleDate}T${scheduleTime}` : ''
+
   function confirmCreate() {
     if (!formRef.current) return
     if (sendOption === 'schedule' && !scheduledAt) {
@@ -126,14 +145,13 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
     })
   }
 
-  // Soft client-side floor for the picker — the server re-validates against
-  // the business's own timezone, this just stops an obviously-past pick.
-  // Computed once (not on every render) since "now" only needs to be
-  // approximately right, not live.
-  const [minScheduledAt] = useState(() => {
-    const now = new Date()
-    return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-  })
+  // Soft client-side floor/ceiling for the picker — the server re-validates
+  // against the business's own timezone, this just stops an obviously-past
+  // or too-far-out pick. Computed once (not on every render) since these
+  // only need to be approximately right, not live.
+  const [minScheduleDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [maxScheduleDate] = useState(() => new Date(Date.now() + MAX_SCHEDULE_DAYS_AHEAD * 86_400_000).toISOString().slice(0, 10))
+  const [tzLabel] = useState(() => timezoneLabel(timezone))
 
   return (
     <form ref={formRef} onSubmit={e => e.preventDefault()} className="p-5 flex flex-col gap-4">
@@ -246,35 +264,70 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <p className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>When should this run?</p>
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-2.5">
+          <div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Schedule campaign</p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--ink-3)' }}>Campaigns can be scheduled up to {MAX_SCHEDULE_DAYS_AHEAD} days in advance.</p>
+          </div>
+
+          {/* Segmented control — one pill, not two separate buttons */}
+          <div className="grid grid-cols-2 rounded-lg p-1" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
             <button type="button" onClick={() => setSendOption('now')}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors"
+              className="flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors"
               style={{
-                background: sendOption === 'now' ? 'var(--violet-soft)' : 'var(--paper)',
-                color: sendOption === 'now' ? 'var(--violet)' : 'var(--ink-2)',
-                border: `1px solid ${sendOption === 'now' ? 'var(--violet)' : 'var(--line)'}`,
+                background: sendOption === 'now' ? 'var(--card)' : 'transparent',
+                color: sendOption === 'now' ? 'var(--ink)' : 'var(--ink-3)',
+                boxShadow: sendOption === 'now' ? 'var(--shadow)' : 'none',
               }}>
               <Send size={14} /> Send now
             </button>
             <button type="button" onClick={() => setSendOption('schedule')}
-              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors"
+              className="flex items-center justify-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors"
               style={{
-                background: sendOption === 'schedule' ? 'var(--violet-soft)' : 'var(--paper)',
-                color: sendOption === 'schedule' ? 'var(--violet)' : 'var(--ink-2)',
-                border: `1px solid ${sendOption === 'schedule' ? 'var(--violet)' : 'var(--line)'}`,
+                background: sendOption === 'schedule' ? 'var(--card)' : 'transparent',
+                color: sendOption === 'schedule' ? 'var(--violet)' : 'var(--ink-3)',
+                boxShadow: sendOption === 'schedule' ? 'var(--shadow)' : 'none',
               }}>
               <CalendarClock size={14} /> Schedule for later
             </button>
           </div>
+
           {sendOption === 'schedule' && (
             <>
-              <input type="datetime-local" value={scheduledAt} min={minScheduledAt} onChange={e => setScheduledAt(e.target.value)}
-                className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
-              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
-                In your business&apos;s local time. Calls only ever start 9am–8pm — if this lands outside that window, or another campaign is already running, it starts as soon as both clear.
-              </p>
+              <div className="flex flex-col gap-1">
+                <p className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Timezone</p>
+                <div className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink-2)', background: 'var(--paper)' }}>
+                  {tzLabel}
+                </div>
+              </div>
+
+              <div className="rounded-lg px-3 py-2 flex gap-2 items-start" style={{ background: 'var(--amber-soft)', color: 'var(--amber)' }}>
+                <span className="text-xs">
+                  Calls outside typical business hours may violate state or local calling regulations — review the rules in your area before scheduling.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="schedule-date" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Date</label>
+                  <input id="schedule-date" type="date" value={scheduleDate} min={minScheduleDate} max={maxScheduleDate}
+                    onChange={e => setScheduleDate(e.target.value)}
+                    className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="schedule-time" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Time</label>
+                  <input id="schedule-time" type="time" value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                    className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+                </div>
+              </div>
+
+              <div className="rounded-lg px-3 py-2.5 flex gap-2 items-start" style={{ background: 'var(--violet-soft)' }}>
+                <span className="text-xs" style={{ color: 'var(--violet)' }}>
+                  <b>Campaign execution:</b> calls go out one at a time starting at the scheduled time. If it&apos;s outside the 9am–8pm window when
+                  that time arrives, or another campaign is still running, it waits and starts as soon as both clear — no calls happen automatically outside those hours.
+                </span>
+              </div>
             </>
           )}
         </div>
