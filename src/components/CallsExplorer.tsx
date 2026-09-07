@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search, PhoneIncoming, ArrowUpDown } from 'lucide-react'
+import { Search, PhoneIncoming, PhoneOutgoing, ArrowUpDown } from 'lucide-react'
 import CallRow, { type CallRowProps } from './CallRow'
 import CallDetailPane from './CallDetailPane'
 import { pageWindow } from '@/lib/pagination'
@@ -29,36 +29,50 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'duration-asc',   label: 'Shortest first' },
 ]
 
-type Direction = 'all' | 'inbound' | 'outbound'
-const DIRECTIONS: { key: Direction; label: string }[] = [
-  { key: 'all',      label: 'All' },
-  { key: 'inbound',  label: 'Inbound' },
-  { key: 'outbound', label: 'Outbound' },
+type Direction = 'inbound' | 'outbound'
+const DIRECTIONS: { key: Direction; label: string; icon: typeof PhoneIncoming }[] = [
+  { key: 'inbound',  label: 'Inbound',  icon: PhoneIncoming },
+  { key: 'outbound', label: 'Outbound', icon: PhoneOutgoing },
 ]
 
 export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; timeZone: string }) {
   const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
-  const [direction, setDirection]     = useState<Direction>('all')
+  const [direction, setDirection]     = useState<Direction>('inbound')
   const [page, setPage]               = useState(1)
   const [sort, setSort]               = useState<SortOption>('startedAt-desc')
   const [selectedId, setSelectedId]   = useState<string | null>(null)
 
   const [sortField, sortDir] = sort.split('-') as ['startedAt' | 'duration', 'asc' | 'desc']
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: calls.length, booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
-    for (const call of calls) c[call.category]++
+  // Inbound and outbound are kept as fully separate lists — chip counts,
+  // search, and pagination all only ever look at whichever direction's
+  // tab is active, not the combined total.
+  const directionCounts = useMemo(() => {
+    const c = { inbound: 0, outbound: 0 }
+    for (const call of calls) {
+      if (call.isOutbound) c.outbound++
+      else c.inbound++
+    }
     return c
   }, [calls])
 
+  const callsInDirection = useMemo(
+    () => calls.filter(call => (direction === 'outbound' ? call.isOutbound : !call.isOutbound)),
+    [calls, direction],
+  )
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: callsInDirection.length, booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
+    for (const call of callsInDirection) c[call.category]++
+    return c
+  }, [callsInDirection])
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const rows = calls.filter(call => {
+    const rows = callsInDirection.filter(call => {
       if (chip !== 'all' && call.category !== chip) return false
-      if (direction === 'inbound' && call.isOutbound) return false
-      if (direction === 'outbound' && !call.isOutbound) return false
       if (!q) return true
       return (
         call.customerNumber?.toLowerCase().includes(q) ||
@@ -71,7 +85,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
       return sortDir === 'asc' ? av - bv : bv - av
     })
     return sorted
-  }, [calls, chip, direction, search, sortField, sortDir])
+  }, [callsInDirection, chip, search, sortField, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -85,7 +99,14 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
     setPage(1)
   }
   function updateChip(c: typeof chip) { setChip(c); setPage(1) }
-  function updateDirection(d: Direction) { setDirection(d); setPage(1) }
+  function updateDirection(d: Direction) {
+    setDirection(d)
+    setChip('all')
+    setDraftSearch('')
+    setSearch('')
+    setPage(1)
+    setSelectedId(null)
+  }
 
   return (
     <div
@@ -97,6 +118,28 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
         className={`w-full lg:w-[400px] shrink-0 h-full flex-col ${selectedId ? 'hidden lg:flex' : 'flex'}`}
         style={{ borderRight: '1px solid var(--line)' }}
       >
+        {/* Inbound / Outbound — two fully separate lists, not a filter on one shared list */}
+        <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
+          {DIRECTIONS.map(({ key, label, icon: Icon }) => {
+            const active = direction === key
+            return (
+              <button
+                key={key}
+                onClick={() => updateDirection(key)}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-semibold transition-colors relative -mb-px"
+                style={{
+                  color: active ? 'var(--violet)' : 'var(--ink-3)',
+                  borderBottom: `2px solid ${active ? 'var(--violet)' : 'transparent'}`,
+                }}
+              >
+                <Icon size={14} />
+                {label}
+                <span className="font-mono text-xs opacity-70">{directionCounts[key]}</span>
+              </button>
+            )
+          })}
+        </div>
+
         <div className="p-3 sm:p-4 flex flex-col gap-3 shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
           <form onSubmit={applySearch} className="flex gap-2">
             <div
@@ -132,26 +175,6 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
             >
               {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-          </div>
-
-          <div className="flex gap-1.5">
-            {DIRECTIONS.map(({ key, label }) => {
-              const active = direction === key
-              return (
-                <button
-                  key={key}
-                  onClick={() => updateDirection(key)}
-                  className="flex-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-                  style={{
-                    background: active ? 'var(--violet)' : 'var(--paper)',
-                    color: active ? '#fff' : 'var(--ink-2)',
-                    border: `1px solid ${active ? 'var(--violet)' : 'var(--line)'}`,
-                  }}
-                >
-                  {label}
-                </button>
-              )
-            })}
           </div>
 
           <div className="flex gap-1.5 flex-wrap">
@@ -191,7 +214,11 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
                 <PhoneIncoming size={20} style={{ color: 'var(--ink-3)' }} />
               </div>
               <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
-                {search || chip !== 'all' ? 'No calls match your search' : 'No calls yet — Ellie is ready and waiting'}
+                {search || chip !== 'all'
+                  ? 'No calls match your search'
+                  : direction === 'outbound'
+                    ? 'No outbound calls yet — start a campaign to see them here'
+                    : 'No inbound calls yet — Ellie is ready and waiting'}
               </p>
             </div>
           )}
