@@ -8,7 +8,7 @@ import { getValidAccessToken, listEvents, createCalendarEvent, updateCalendarEve
 import { formatInZone, dateStrInZone, zonedTimeToUtc } from '@/lib/timezone'
 import { mapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
-import { getPhoneNumber } from '@/lib/vapi'
+import { getPhoneNumber, listPhoneNumbers } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
@@ -749,6 +749,20 @@ export async function POST(req: Request) {
               from = (await getPhoneNumber(phoneNumberId)).number
             } catch (lookupErr) {
               console.error('Failed to resolve phoneNumberId to a number:', lookupErr)
+            }
+          }
+
+          // A website-chat session (Vapi's Chat API) is never a real phone
+          // call — there's no dialled number/phoneNumberId at all, so the
+          // lookup above always misses. Fall back to whichever number this
+          // assistant itself has linked in Vapi, since that's unambiguous
+          // for a given assistantId even with zero call context.
+          if (!from && assistantId) {
+            try {
+              const numbers = await listPhoneNumbers()
+              from = numbers.find(n => n.assistantId === assistantId)?.number ?? undefined
+            } catch (lookupErr) {
+              console.error('Failed to resolve assistant-linked phone number:', lookupErr)
             }
           }
 
