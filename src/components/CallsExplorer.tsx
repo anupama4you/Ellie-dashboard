@@ -35,7 +35,7 @@ const DIRECTIONS: { key: Direction; label: string; icon: typeof PhoneIncoming }[
   { key: 'outbound', label: 'Outbound', icon: PhoneOutgoing },
 ]
 
-export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; timeZone: string }) {
+export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls: CallItem[]; timeZone: string; showOutbound: boolean }) {
   const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
@@ -58,9 +58,14 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
     return c
   }, [calls])
 
+  // With campaigns disabled for this business there's no outbound tab to
+  // switch to, so the list is always inbound-only regardless of `direction`
+  // state — a defensive floor, not just hiding the tab button below.
+  const effectiveDirection: Direction = showOutbound ? direction : 'inbound'
+
   const callsInDirection = useMemo(
-    () => calls.filter(call => (direction === 'outbound' ? call.isOutbound : !call.isOutbound)),
-    [calls, direction],
+    () => calls.filter(call => (effectiveDirection === 'outbound' ? call.isOutbound : !call.isOutbound)),
+    [calls, effectiveDirection],
   )
 
   const counts = useMemo(() => {
@@ -118,27 +123,31 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
         className={`w-full lg:w-[400px] shrink-0 h-full flex-col ${selectedId ? 'hidden lg:flex' : 'flex'}`}
         style={{ borderRight: '1px solid var(--line)' }}
       >
-        {/* Inbound / Outbound — two fully separate lists, not a filter on one shared list */}
-        <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
-          {DIRECTIONS.map(({ key, label, icon: Icon }) => {
-            const active = direction === key
-            return (
-              <button
-                key={key}
-                onClick={() => updateDirection(key)}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-semibold transition-colors relative -mb-px"
-                style={{
-                  color: active ? 'var(--violet)' : 'var(--ink-3)',
-                  borderBottom: `2px solid ${active ? 'var(--violet)' : 'transparent'}`,
-                }}
-              >
-                <Icon size={14} />
-                {label}
-                <span className="font-mono text-xs opacity-70">{directionCounts[key]}</span>
-              </button>
-            )
-          })}
-        </div>
+        {/* Inbound / Outbound — two fully separate lists, not a filter on one shared list.
+           No tab bar at all when campaigns (and therefore outbound calling) is disabled
+           for this business — nothing to switch to, so there's nothing to show a tab for. */}
+        {showOutbound && (
+          <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
+            {DIRECTIONS.map(({ key, label, icon: Icon }) => {
+              const active = effectiveDirection === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => updateDirection(key)}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-semibold transition-colors relative -mb-px"
+                  style={{
+                    color: active ? 'var(--violet)' : 'var(--ink-3)',
+                    borderBottom: `2px solid ${active ? 'var(--violet)' : 'transparent'}`,
+                  }}
+                >
+                  <Icon size={14} />
+                  {label}
+                  <span className="font-mono text-xs opacity-70">{directionCounts[key]}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         <div className="p-3 sm:p-4 flex flex-col gap-3 shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
           <form onSubmit={applySearch} className="flex gap-2">
@@ -216,7 +225,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
               <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
                 {search || chip !== 'all'
                   ? 'No calls match your search'
-                  : direction === 'outbound'
+                  : effectiveDirection === 'outbound'
                     ? 'No outbound calls yet — start a campaign to see them here'
                     : 'No inbound calls yet — Ellie is ready and waiting'}
               </p>
