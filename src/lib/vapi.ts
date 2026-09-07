@@ -198,6 +198,52 @@ export async function getPhoneNumber(id: string): Promise<VapiPhoneNumber> {
 }
 
 /**
+ * Matches a business's Twilio number (E.164, as stored in
+ * businesses.twilio_phone_number) against Vapi's list of imported phone
+ * number resources, to find the id an outbound call needs — Vapi's /call
+ * endpoint takes a phoneNumberId, not a raw phone number string. Pure so it's
+ * unit-testable without hitting Vapi's API.
+ */
+export function resolveOutboundPhoneNumberId(
+  phoneNumbers: VapiPhoneNumber[],
+  twilioNumber: string,
+): string | null {
+  return phoneNumbers.find(p => p.number === twilioNumber)?.id ?? null
+}
+
+/**
+ * `systemPrompt`/`firstMessage` use Vapi's per-call assistantOverrides —
+ * NOT the assistant's own persistent config (that stays untouched, see
+ * syncAssistantPrompt above) — so an outbound campaign call can run on
+ * entirely different instructions than the assistant's real inbound
+ * script, for exactly this one call, with zero risk of that outbound
+ * script leaking into how the assistant answers real inbound calls.
+ */
+export async function createOutboundCall(opts: {
+  assistantId: string
+  phoneNumberId: string
+  customerNumber: string
+  variableValues?: Record<string, string>
+  systemPrompt?: string
+  firstMessage?: string
+}): Promise<{ id: string }> {
+  const assistantOverrides: Record<string, unknown> = {}
+  if (opts.variableValues) assistantOverrides.variableValues = opts.variableValues
+  if (opts.systemPrompt) assistantOverrides.model = { messages: [{ role: 'system', content: opts.systemPrompt }] }
+  if (opts.firstMessage) assistantOverrides.firstMessage = opts.firstMessage
+
+  return vapiRequest('/call', {
+    method: 'POST',
+    body: JSON.stringify({
+      assistantId: opts.assistantId,
+      phoneNumberId: opts.phoneNumberId,
+      customer: { number: opts.customerNumber },
+      ...(Object.keys(assistantOverrides).length > 0 ? { assistantOverrides } : {}),
+    }),
+  })
+}
+
+/**
  * Fetch-then-patch so we only ever replace firstMessage and the system
  * message — nothing else on the assistant. PATCH isn't guaranteed to
  * deep-merge nested objects, so `model` is spread from the current value

@@ -67,6 +67,26 @@ export function classifyCall(endedReason?: string, hasBooking?: boolean, hasResc
   return { category: 'enquiry', label: 'Enquiry', color: 'var(--violet)', bg: 'var(--violet-soft)' }
 }
 
+const CATEGORY_STYLES: Record<CallCategory, { label: string; color: string; bg: string }> = {
+  booked:      { label: 'Booked',            color: 'var(--signal)', bg: 'var(--signal-soft)' },
+  rebooked:    { label: 'Rebooked',          color: 'var(--violet)', bg: 'var(--violet-soft)' },
+  linked:      { label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' },
+  enquiry:     { label: 'Enquiry',           color: 'var(--violet)', bg: 'var(--violet-soft)' },
+  transferred: { label: 'Transferred',       color: 'var(--amber)',  bg: 'var(--amber-soft)' },
+  missed:      { label: 'No answer',         color: 'var(--coral)',  bg: 'var(--coral-soft)' },
+  errored:     { label: 'Error',             color: 'var(--coral)',  bg: 'var(--coral-soft)' },
+}
+
+/**
+ * Same label/color mapping classifyCall() produces, for a place that only
+ * has the already-resolved category string (e.g. outbound_campaign_contacts
+ * .outcome, stored as classifyCall(...).category) and not the raw
+ * endedReason/hasBooking signals needed to re-derive it.
+ */
+export function categoryStyle(category: string): { label: string; color: string; bg: string } {
+  return CATEGORY_STYLES[category as CallCategory] ?? { label: category, color: 'var(--ink-3)', bg: 'var(--paper)' }
+}
+
 export function callTypeLabel(type?: string) {
   if (type === 'webCall') return 'Web'
   if (type === 'outboundPhoneCall') return 'Outbound'

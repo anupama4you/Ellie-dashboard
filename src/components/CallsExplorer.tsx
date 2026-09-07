@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Search, PhoneIncoming, ArrowUpDown } from 'lucide-react'
+import { Search, PhoneIncoming, PhoneOutgoing, ArrowUpDown } from 'lucide-react'
 import CallRow, { type CallRowProps } from './CallRow'
 import CallDetailPane from './CallDetailPane'
 import { pageWindow } from '@/lib/pagination'
@@ -29,25 +29,54 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'duration-asc',   label: 'Shortest first' },
 ]
 
-export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; timeZone: string }) {
+type Direction = 'inbound' | 'outbound'
+const DIRECTIONS: { key: Direction; label: string; icon: typeof PhoneIncoming }[] = [
+  { key: 'inbound',  label: 'Inbound',  icon: PhoneIncoming },
+  { key: 'outbound', label: 'Outbound', icon: PhoneOutgoing },
+]
+
+export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls: CallItem[]; timeZone: string; showOutbound: boolean }) {
   const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
+  const [direction, setDirection]     = useState<Direction>('inbound')
   const [page, setPage]               = useState(1)
   const [sort, setSort]               = useState<SortOption>('startedAt-desc')
   const [selectedId, setSelectedId]   = useState<string | null>(null)
 
   const [sortField, sortDir] = sort.split('-') as ['startedAt' | 'duration', 'asc' | 'desc']
 
-  const counts = useMemo(() => {
-    const c: Record<string, number> = { all: calls.length, booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
-    for (const call of calls) c[call.category]++
+  // Inbound and outbound are kept as fully separate lists — chip counts,
+  // search, and pagination all only ever look at whichever direction's
+  // tab is active, not the combined total.
+  const directionCounts = useMemo(() => {
+    const c = { inbound: 0, outbound: 0 }
+    for (const call of calls) {
+      if (call.isOutbound) c.outbound++
+      else c.inbound++
+    }
     return c
   }, [calls])
 
+  // With campaigns disabled for this business there's no outbound tab to
+  // switch to, so the list is always inbound-only regardless of `direction`
+  // state — a defensive floor, not just hiding the tab button below.
+  const effectiveDirection: Direction = showOutbound ? direction : 'inbound'
+
+  const callsInDirection = useMemo(
+    () => calls.filter(call => (effectiveDirection === 'outbound' ? call.isOutbound : !call.isOutbound)),
+    [calls, effectiveDirection],
+  )
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: callsInDirection.length, booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
+    for (const call of callsInDirection) c[call.category]++
+    return c
+  }, [callsInDirection])
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const rows = calls.filter(call => {
+    const rows = callsInDirection.filter(call => {
       if (chip !== 'all' && call.category !== chip) return false
       if (!q) return true
       return (
@@ -61,7 +90,7 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
       return sortDir === 'asc' ? av - bv : bv - av
     })
     return sorted
-  }, [calls, chip, search, sortField, sortDir])
+  }, [callsInDirection, chip, search, sortField, sortDir])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
@@ -75,6 +104,14 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
     setPage(1)
   }
   function updateChip(c: typeof chip) { setChip(c); setPage(1) }
+  function updateDirection(d: Direction) {
+    setDirection(d)
+    setChip('all')
+    setDraftSearch('')
+    setSearch('')
+    setPage(1)
+    setSelectedId(null)
+  }
 
   return (
     <div
@@ -86,6 +123,32 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
         className={`w-full lg:w-[400px] shrink-0 h-full flex-col ${selectedId ? 'hidden lg:flex' : 'flex'}`}
         style={{ borderRight: '1px solid var(--line)' }}
       >
+        {/* Inbound / Outbound — two fully separate lists, not a filter on one shared list.
+           No tab bar at all when campaigns (and therefore outbound calling) is disabled
+           for this business — nothing to switch to, so there's nothing to show a tab for. */}
+        {showOutbound && (
+          <div className="flex shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
+            {DIRECTIONS.map(({ key, label, icon: Icon }) => {
+              const active = effectiveDirection === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => updateDirection(key)}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2.5 text-sm font-semibold transition-colors relative -mb-px"
+                  style={{
+                    color: active ? 'var(--violet)' : 'var(--ink-3)',
+                    borderBottom: `2px solid ${active ? 'var(--violet)' : 'transparent'}`,
+                  }}
+                >
+                  <Icon size={14} />
+                  {label}
+                  <span className="font-mono text-xs opacity-70">{directionCounts[key]}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
         <div className="p-3 sm:p-4 flex flex-col gap-3 shrink-0" style={{ borderBottom: '1px solid var(--line)' }}>
           <form onSubmit={applySearch} className="flex gap-2">
             <div
@@ -160,7 +223,11 @@ export default function CallsExplorer({ calls, timeZone }: { calls: CallItem[]; 
                 <PhoneIncoming size={20} style={{ color: 'var(--ink-3)' }} />
               </div>
               <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>
-                {search || chip !== 'all' ? 'No calls match your search' : 'No calls yet — Ellie is ready and waiting'}
+                {search || chip !== 'all'
+                  ? 'No calls match your search'
+                  : effectiveDirection === 'outbound'
+                    ? 'No outbound calls yet — start a campaign to see them here'
+                    : 'No inbound calls yet — Ellie is ready and waiting'}
               </p>
             </div>
           )}

@@ -109,6 +109,34 @@ export async function getLocalCall(businessId: string, id: string): Promise<Loca
 
 export { recordingProxyUrl } from './recordingUrl'
 
+export type CampaignCallLink = { campaignId: string; contactId: string; campaignName: string }
+
+/** If this call was placed by an outbound campaign, the campaign + contact
+ * row it belongs to — lets the call detail view link back to "the row that
+ * was called" instead of showing an outbound call as a dead end. RLS on
+ * both tables already scopes this to businesses the current user owns, so
+ * no explicit business_id check is needed here. */
+export async function getCampaignLinkForCall(vapiCallId: string | null): Promise<CampaignCallLink | null> {
+  if (!vapiCallId) return null
+  const supabase = await createClient()
+
+  const { data: contact } = await supabase
+    .from('outbound_campaign_contacts')
+    .select('id, campaign_id')
+    .eq('vapi_call_id', vapiCallId)
+    .maybeSingle()
+  if (!contact) return null
+
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('name')
+    .eq('id', contact.campaign_id)
+    .maybeSingle()
+  if (!campaign) return null
+
+  return { campaignId: contact.campaign_id, contactId: contact.id, campaignName: campaign.name }
+}
+
 /**
  * The AI-generated summary can be blank — analysis is sometimes disabled,
  * skipped for trivial calls, or still processing right after a call ends.

@@ -11,6 +11,7 @@ import { rememberCustomerName } from '@/lib/customers'
 import { getPhoneNumber, listPhoneNumbers } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
+import { placeNextQueuedCall } from '@/lib/outboundCampaign'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -1106,6 +1107,8 @@ export async function POST(req: Request) {
       }
       callerName = callerName ?? report.analysis?.structuredData?.callerName ?? null
 
+      const outcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink).category
+
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,
         vapi_call_id:       callId,
@@ -1119,7 +1122,7 @@ export async function POST(req: Request) {
         ended_at:           endedAt ?? null,
         duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
         ended_reason:       endedReason ?? null,
-        outcome:            classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink).category,
+        outcome,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
@@ -1129,6 +1132,64 @@ export async function POST(req: Request) {
       }, { onConflict: 'vapi_call_id' })
 
       if (error) console.error('Failed to save call record:', error)
+
+      // This call may have been placed by an outbound campaign batch (see
+      // src/app/(dashboard)/campaigns/actions.ts) — if so, flip that contact
+      // to done with the same outcome, and complete the campaign once every
+      // contact has one. A no-op for any ordinary inbound/webCall (the
+      // overwhelming majority of calls this handler sees).
+      const { data: campaignContact } = await supabase
+        .from('outbound_campaign_contacts')
+        .select('id, campaign_id')
+        .eq('vapi_call_id', callId)
+        .maybeSingle()
+
+      if (campaignContact) {
+        const { error: contactUpdateError } = await supabase.from('outbound_campaign_contacts')
+          .update({ status: 'done', outcome })
+          .eq('id', campaignContact.id)
+        if (contactUpdateError) console.error('Failed to mark campaign contact done:', contactUpdateError)
+
+        const { count: remaining, error: remainingError } = await supabase
+          .from('outbound_campaign_contacts')
+          .select('id', { count: 'exact', head: true })
+          .eq('campaign_id', campaignContact.campaign_id)
+          .neq('status', 'done')
+        if (remainingError) console.error('Failed to count remaining campaign contacts:', remainingError)
+
+        if (remaining === 0) {
+          const { error: completeError } = await supabase.from('outbound_campaigns')
+            .update({ status: 'completed', running: false })
+            .eq('id', campaignContact.campaign_id)
+          if (completeError) console.error('Failed to mark campaign completed:', completeError)
+        } else {
+          // Still contacts left (queued/failed) — if this call was part of
+          // a live one-at-a-time chain, place the next queued call right
+          // here. A no-op if the chain already stopped for some other
+          // reason (paused outside hours, a prior failure) since `running`
+          // will be false.
+          const { data: campaign } = await supabase
+            .from('outbound_campaigns')
+            .select('id, name, business_id, running, first_message, system_prompt')
+            .eq('id', campaignContact.campaign_id)
+            .single()
+
+          if (campaign?.running) {
+            const { data: biz } = await supabase
+              .from('businesses')
+              .select('id, vapi_assistant_id, twilio_phone_number, user_id, timezone')
+              .eq('id', campaign.business_id)
+              .single()
+
+            if (biz) {
+              await placeNextQueuedCall(supabase, biz, campaign, async () => {
+                const { data } = await supabase.auth.admin.getUserById(biz.user_id)
+                return data.user?.email ?? null
+              })
+            }
+          }
+        }
+      }
     } catch (err) {
       captureError(err, { handler: 'end-of-call-report', callId })
     }

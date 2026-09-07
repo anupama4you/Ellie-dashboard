@@ -4,6 +4,7 @@ import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
 import { classifyCall } from '@/lib/callClassify'
 import { formatInZone } from '@/lib/timezone'
 import { isAfterHours } from '@/lib/availability'
+import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { PhoneOff, Search } from 'lucide-react'
 import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
@@ -71,6 +72,7 @@ export default async function CallsPage({
       badgeColor: color,
       badgeBg: bg,
       isAfterHours: call.started_at ? isAfterHours(new Date(call.started_at), bizHours, timeZone) : false,
+      isOutbound: call.call_type === 'outboundPhoneCall',
     }
   })
 
@@ -144,7 +146,7 @@ export default async function CallsPage({
             <p className="text-sm" style={{ color: 'var(--ink-3)' }}>{fetchError}</p>
           </div>
         ) : (
-          <CallsExplorer calls={calls} timeZone={timeZone} />
+          <CallsExplorer calls={calls} timeZone={timeZone} showOutbound={isFeatureEnabled(biz, 'campaigns')} />
         )}
       </div>
     </div>
