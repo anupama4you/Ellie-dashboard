@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { listPhoneNumbers, resolveOutboundPhoneNumberId, createOutboundCall } from '@/lib/vapi'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
-import { sendEmail } from '@/lib/resend'
+import { sendNotificationEmail, type NotificationPreferences } from '@/lib/notifications'
 
 type Biz = {
   id: string
@@ -9,6 +9,7 @@ type Biz = {
   twilio_phone_number: string | null
   user_id: string
   timezone: string
+  notification_preferences?: NotificationPreferences | null
 }
 
 type Campaign = {
@@ -93,18 +94,11 @@ export async function placeNextQueuedCall(
     await supabase.from('outbound_campaign_contacts').update({ status: 'failed' }).eq('id', next.id)
     await supabase.from('outbound_campaigns').update({ running: false, stopped_reason: message }).eq('id', campaign.id)
 
-    try {
-      const email = await getNotifyEmail()
-      if (email) {
-        await sendEmail(email, `Outbound campaign "${campaign.name}" stopped`, `
-          <p>Ellie hit a problem placing a call and stopped the campaign "${campaign.name}" so no contacts get skipped.</p>
-          <p><strong>Reason:</strong> ${message}</p>
-          <p>The rest of the contacts are still queued — open the campaign and click Resume once you're ready.</p>
-        `)
-      }
-    } catch (emailErr) {
-      console.error('Failed to send campaign-stopped email:', emailErr)
-    }
+    await sendNotificationEmail(biz, 'campaignStopped', getNotifyEmail, `Outbound campaign "${campaign.name}" stopped`, `
+      <p>Ellie hit a problem placing a call and stopped the campaign "${campaign.name}" so no contacts get skipped.</p>
+      <p><strong>Reason:</strong> ${message}</p>
+      <p>The rest of the contacts are still queued — open the campaign and click Resume once you're ready.</p>
+    `)
   }
 }
 

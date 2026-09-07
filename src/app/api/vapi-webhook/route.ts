@@ -12,6 +12,7 @@ import { getPhoneNumber, listPhoneNumbers } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
 import { placeNextQueuedCall } from '@/lib/outboundCampaign'
+import { sendNotificationEmail } from '@/lib/notifications'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
 const supabase = createClient(
@@ -394,17 +395,24 @@ export async function POST(req: Request) {
     let bizPromise: PromiseLike<{
       id: string; name: string; hours: unknown; twilio_phone_number: string | null; timezone: string
       address: string | null; city: string | null; state: string | null; postcode: string | null; google_maps_url: string | null
+      user_id: string; notification_preferences: import('@/lib/notifications').NotificationPreferences | null
     } | null> | null = null
     function getBiz() {
       if (!bizPromise) {
         bizPromise = supabase
           .from('businesses')
-          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences')
           .eq('vapi_assistant_id', assistantId)
           .single()
           .then(({ data }) => data)
       }
       return bizPromise
+    }
+
+    /** Same account-email resolution every trigger site in this file uses. */
+    async function getBizNotifyEmailFor(userId: string): Promise<string | null> {
+      const { data } = await supabase.auth.admin.getUserById(userId)
+      return data.user?.email ?? null
     }
 
     for (const toolCall of (message.toolCallList ?? []) as ToolCall[]) {
@@ -604,6 +612,11 @@ export async function POST(req: Request) {
                 } else {
                   resultText = `Rescheduled${existing.service ? ` ${existing.service}` : ''} for ${existing.customer_name ?? 'the caller'} to ${fmtDate(resolvedSlot.iso, biz.timezone)}.`
 
+                  await sendNotificationEmail(biz, 'appointmentActivity', () => getBizNotifyEmailFor(biz.user_id),
+                    `Appointment rescheduled — ${existing.customer_name ?? 'a caller'}`, `
+                      <p>${existing.customer_name ?? 'A caller'}'s ${existing.service ?? 'appointment'} was moved to ${fmtDate(resolvedSlot.iso, biz.timezone)}.</p>
+                    `)
+
                   const phone = existing.customer_phone
                   if (phone) {
                     try {
@@ -684,6 +697,11 @@ export async function POST(req: Request) {
                 resultText = "Something went wrong cancelling that booking — let the caller know you'll confirm it manually."
               } else {
                 resultText = `Cancelled${existing.service ? ` the ${existing.service}` : ''} appointment for ${existing.customer_name ?? 'the caller'}.`
+
+                await sendNotificationEmail(biz, 'appointmentActivity', () => getBizNotifyEmailFor(biz.user_id),
+                  `Appointment cancelled — ${existing.customer_name ?? 'a caller'}`, `
+                    <p>${existing.customer_name ?? 'A caller'}'s ${existing.service ?? 'appointment'} on ${fmtDate(existing.scheduled_at, biz.timezone)} was cancelled.</p>
+                  `)
 
                 const phone = existing.customer_phone
                 if (phone) {
@@ -996,6 +1014,11 @@ export async function POST(req: Request) {
           } else {
             resultText = `Booked${args.service ? ` ${args.service}` : ''} for ${args.customerName ?? 'the caller'}${finalStaff ? ` with ${finalStaff.name}` : ''} on ${fmtDate(resolvedSlot.iso, biz.timezone)}.`
 
+            await sendNotificationEmail(biz, 'appointmentActivity', () => getBizNotifyEmailFor(biz.user_id),
+              `New appointment — ${args.customerName ?? 'a caller'}`, `
+                <p>${args.customerName ?? 'A caller'} booked${args.service ? ` ${args.service}` : ''}${finalStaff ? ` with ${finalStaff.name}` : ''} on ${fmtDate(resolvedSlot.iso, biz.timezone)}.</p>
+              `)
+
             if (phone) {
               await rememberCustomerName(supabase, biz.id, phone, args.customerName as string | undefined)
 
@@ -1067,13 +1090,18 @@ export async function POST(req: Request) {
 
       const { data: biz } = await supabase
         .from('businesses')
-        .select('id')
+        .select('id, user_id, notification_preferences')
         .eq('vapi_assistant_id', assistantId)
         .single()
 
       if (!biz) {
         console.error('end-of-call-report: no business found for assistant', assistantId)
         return json({ ok: true })
+      }
+
+      const getBizNotifyEmail = async () => {
+        const { data } = await supabase.auth.admin.getUserById(biz.user_id)
+        return data.user?.email ?? null
       }
 
       const startedAt = (report.call?.startedAt ?? report.startedAt) as string | undefined
@@ -1133,6 +1161,17 @@ export async function POST(req: Request) {
 
       if (error) console.error('Failed to save call record:', error)
 
+      // A call that ended without a booking and wasn't handed to a person —
+      // the two outcomes most likely to need a human follow-up.
+      if (outcome === 'missed' || outcome === 'errored') {
+        const displayName = callerName || customer.number || 'Unknown caller'
+        await sendNotificationEmail(biz, 'missedCall', getBizNotifyEmail, `Missed call from ${displayName}`, `
+          <p>A call from <strong>${displayName}</strong> ended without a booking and wasn't transferred to a person.</p>
+          ${customer.number ? `<p>Number: ${customer.number}</p>` : ''}
+          <p>You may want to follow up.</p>
+        `)
+      }
+
       // This call may have been placed by an outbound campaign batch (see
       // src/app/(dashboard)/campaigns/actions.ts) — if so, flip that contact
       // to done with the same outcome, and complete the campaign once every
@@ -1162,6 +1201,29 @@ export async function POST(req: Request) {
             .update({ status: 'completed', running: false })
             .eq('id', campaignContact.campaign_id)
           if (completeError) console.error('Failed to mark campaign completed:', completeError)
+
+          const { data: campaignRow } = await supabase
+            .from('outbound_campaigns')
+            .select('name')
+            .eq('id', campaignContact.campaign_id)
+            .single()
+
+          const { data: allContacts } = await supabase
+            .from('outbound_campaign_contacts')
+            .select('outcome')
+            .eq('campaign_id', campaignContact.campaign_id)
+
+          const tally: Record<string, number> = {}
+          for (const c of allContacts ?? []) {
+            const key = c.outcome ?? 'done'
+            tally[key] = (tally[key] ?? 0) + 1
+          }
+          const summaryLine = Object.entries(tally).map(([k, n]) => `${n} ${k}`).join(', ') || 'no contacts'
+
+          await sendNotificationEmail(biz, 'campaignCompleted', getBizNotifyEmail, `Campaign "${campaignRow?.name ?? ''}" completed`, `
+            <p>Every contact in "${campaignRow?.name ?? 'this campaign'}" has been called.</p>
+            <p><strong>Results:</strong> ${summaryLine}</p>
+          `)
         } else {
           // Still contacts left (queued/failed) — if this call was part of
           // a live one-at-a-time chain, place the next queued call right
@@ -1177,7 +1239,7 @@ export async function POST(req: Request) {
           if (campaign?.running) {
             const { data: biz } = await supabase
               .from('businesses')
-              .select('id, vapi_assistant_id, twilio_phone_number, user_id, timezone')
+              .select('id, vapi_assistant_id, twilio_phone_number, user_id, timezone, notification_preferences')
               .eq('id', campaign.business_id)
               .single()
 

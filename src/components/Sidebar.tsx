@@ -3,7 +3,7 @@
 import { useState, useTransition } from 'react'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight, Loader2, Megaphone } from 'lucide-react'
+import { LayoutDashboard, Phone, CalendarDays, Clock, MessageSquare, BarChart3, Building2, Plug, Settings, LogOut, ShieldCheck, X, Menu, ChevronsLeft, ChevronsRight, Loader2, Megaphone, Bell } from 'lucide-react'
 import type { FeatureKey } from '@/lib/dashboardFeatures'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive, selectLocationAction } from '@/app/(dashboard)/actions'
@@ -20,6 +20,7 @@ const NAV = [
   { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
   { href: '/briefing',     label: 'Business', icon: Building2       },
   { href: '/integrations', label: 'Integrations',        icon: Plug            },
+  { href: '/notifications', label: 'Notifications',      icon: Bell,           feature: 'notifications' as FeatureKey },
   { href: '/settings',     label: 'Settings',            icon: Settings        },
 ]
 

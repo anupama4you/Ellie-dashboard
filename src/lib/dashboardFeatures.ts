@@ -1,12 +1,13 @@
-export type FeatureKey = 'appointments' | 'staff' | 'sms' | 'campaigns'
+export type FeatureKey = 'appointments' | 'staff' | 'sms' | 'campaigns' | 'notifications'
 
 export type DashboardFeatures = Partial<Record<FeatureKey, boolean>>
 
 export const FEATURE_REGISTRY: { key: FeatureKey; label: string; description: string }[] = [
-  { key: 'appointments', label: 'Appointments', description: 'Appointments nav page and in-dashboard booking list.' },
-  { key: 'staff',        label: 'Staff',         description: 'Staff subsection in Briefing and the staff column/filter on Appointments.' },
-  { key: 'sms',          label: 'Messages',      description: 'Messages nav page (the inbound/outbound SMS inbox).' },
-  { key: 'campaigns',    label: 'Campaigns',     description: 'Campaigns nav page (upload a contact list and place outbound calls to it).' },
+  { key: 'appointments',  label: 'Appointments',  description: 'Appointments nav page and in-dashboard booking list.' },
+  { key: 'staff',         label: 'Staff',         description: 'Staff subsection in Briefing and the staff column/filter on Appointments.' },
+  { key: 'sms',           label: 'Messages',      description: 'Messages nav page (the inbound/outbound SMS inbox).' },
+  { key: 'campaigns',     label: 'Campaigns',     description: 'Campaigns nav page (upload a contact list and place outbound calls to it).' },
+  { key: 'notifications', label: 'Notifications', description: 'Notifications nav page (email alerts for campaign, appointment, and missed-call activity).' },
 ]
 
 /**

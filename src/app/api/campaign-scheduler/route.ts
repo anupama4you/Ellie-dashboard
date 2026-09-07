@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     try {
       const { data: biz } = await supabase
         .from('businesses')
-        .select('id, vapi_assistant_id, twilio_phone_number, user_id, timezone')
+        .select('id, vapi_assistant_id, twilio_phone_number, user_id, timezone, notification_preferences')
         .eq('id', campaign.business_id)
         .single()
 
