@@ -229,10 +229,17 @@ export async function syncAssistantPrompt(
 
 export type AnalyticsRow = Record<string, string | number | null>
 
+/**
+ * Vapi's /analytics endpoint has no server-side assistantId filter — only
+ * `type, assistantId, endedReason, analysis.successEvaluation, status` are
+ * valid groupBy dimensions (confirmed against a live 400 response; `date`
+ * is NOT one of them — day-bucketing comes from `timeRange.step` alone).
+ * Always returns every assistant's rows for the range; callers that want
+ * one assistant filter the result themselves (see getAssistantCallCost).
+ */
 export async function getCallsAnalytics(
   start: string,
   end: string,
-  assistantId?: string,
 ): Promise<{ name: string; result: AnalyticsRow[] }[]> {
   return vapiRequest('/analytics', {
     method: 'POST',
@@ -247,10 +254,21 @@ export async function getCallsAnalytics(
             { operation: 'sum',   column: 'cost' },
             { operation: 'avg',   column: 'duration' },
           ],
-          groupBy: ['date'],
-          ...(assistantId ? { assistantId } : {}),
+          groupBy: ['assistantId'],
         },
       ],
     }),
   })
+}
+
+export type CallCostSummary = { totalCost: number; callCount: number }
+
+/** Real Vapi billing cost for one assistant over a date range — summed across every day-bucket row Vapi returns for it. */
+export async function getAssistantCallCost(assistantId: string, start: string, end: string): Promise<CallCostSummary> {
+  const data = await getCallsAnalytics(start, end)
+  const rows = (data[0]?.result ?? []).filter(r => r.assistantId === assistantId)
+  return {
+    totalCost:  rows.reduce((sum, r) => sum + (Number(r.sumCost) || 0), 0),
+    callCount:  rows.reduce((sum, r) => sum + (Number(r.countId) || 0), 0),
+  }
 }

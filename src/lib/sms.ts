@@ -88,6 +88,45 @@ export async function getSmsMessages(businessNumber: string, limit = 200): Promi
   return messages
 }
 
+export type SmsCostSummary = { totalCost: number; messageCount: number; currency: string }
+
+/**
+ * Real Twilio SMS cost for `businessNumber` since `since` — Twilio's `price`
+ * on each message is a negative string in the account's billing currency;
+ * summed as an absolute value. Fetches the most recent 500 messages per
+ * direction (Twilio orders newest-first by default) and stops counting once
+ * a message predates `since` — cheap for typical volumes, but a business
+ * sending more than 500 messages within the window would undercount rather
+ * than page further, since this is a visibility figure, not a billing record.
+ */
+export async function getSmsCost(businessNumber: string, since: Date): Promise<SmsCostSummary> {
+  const sid = process.env.TWILIO_ACCOUNT_SID
+  const token = process.env.TWILIO_AUTH_TOKEN
+  if (!sid || !token) throw new Error('Twilio is not configured — set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN')
+
+  const [outbound, inbound] = await Promise.all([
+    twilioGet(sid, token, '/Messages.json', new URLSearchParams({ From: businessNumber, PageSize: '500' })),
+    twilioGet(sid, token, '/Messages.json', new URLSearchParams({ To: businessNumber, PageSize: '500' })),
+  ])
+
+  let totalCost = 0
+  let messageCount = 0
+  let currency = 'USD'
+  const seen = new Set<string>()
+  for (const m of [...(outbound.messages ?? []), ...(inbound.messages ?? [])] as Record<string, string | null>[]) {
+    if (!m.sid || seen.has(m.sid)) continue
+    seen.add(m.sid)
+    const sentAt = m.date_sent ?? m.date_created
+    if (!sentAt || new Date(sentAt) < since) continue
+    messageCount++
+    if (m.price) {
+      totalCost += Math.abs(parseFloat(m.price))
+      if (m.price_unit) currency = m.price_unit
+    }
+  }
+  return { totalCost, messageCount, currency }
+}
+
 /**
  * Groups messages into per-contact conversations — the "other party" is
  * `to` for an outbound message and `from` for an inbound one. Threads are
