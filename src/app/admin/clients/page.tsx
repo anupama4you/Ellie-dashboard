@@ -1,7 +1,9 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Plus, Pencil, Building2, Clock, PhoneCall, Ban } from 'lucide-react'
+import { Plus, Pencil, Building2, Clock, PhoneCall, Ban, AlertTriangle } from 'lucide-react'
 import { getPlanUsage, type PlanUsage } from '@/lib/planUsage'
+import { calendarHealthFromRow, hasVisibleHealthIssue } from '@/lib/clientHealth'
+import type { DashboardFeatures } from '@/lib/dashboardFeatures'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
@@ -18,9 +20,11 @@ type ClientBusinessRow = {
   account_disabled: boolean
   briefing_needs_review: boolean
   vapi_assistant_id: string | null
+  twilio_phone_number: string | null
+  dashboard_features?: DashboardFeatures | null
 }
 
-function ClientRow({ biz, usage, email, isLast }: { biz: ClientBusinessRow; usage: PlanUsage; email: string; isLast: boolean }) {
+function ClientRow({ biz, usage, email, isLast, hasHealthIssue }: { biz: ClientBusinessRow; usage: PlanUsage; email: string; isLast: boolean; hasHealthIssue: boolean }) {
   const s = PLAN_STYLE[biz.plan] ?? PLAN_STYLE.core
   const hasAssistant = !!biz.vapi_assistant_id
   return (
@@ -44,6 +48,13 @@ function ClientRow({ biz, usage, email, isLast }: { biz: ClientBusinessRow; usag
             style={{ color: 'var(--amber)', background: 'rgba(217,138,11,0.12)' }}
             title="Client updated their Briefing — needs review">
             <Clock size={9} /> Needs review
+          </span>
+        )}
+        {hasHealthIssue && (
+          <span className="flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0"
+            style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.12)' }}
+            title="Setup issue detected — see the Health tab">
+            <AlertTriangle size={9} /> Health issue
           </span>
         )}
       </Link>
@@ -128,6 +139,15 @@ export default async function ClientsPage() {
   const emailMap = Object.fromEntries((users ?? []).map(u => [u.id, u.email ?? '']))
   const list = businesses ?? []
 
+  // One bulk query, not N+1 — same pattern as usageByBusiness below.
+  const { data: calendarRows } = list.length
+    ? await admin.from('calendar_connections').select('business_id, status, token_expiry').in('business_id', list.map(b => b.id))
+    : { data: [] }
+  const calendarByBusiness = new Map((calendarRows ?? []).map(r => [r.business_id, r]))
+  const healthIssueByBusiness = Object.fromEntries(
+    list.map(biz => [biz.id, hasVisibleHealthIssue(biz, calendarHealthFromRow(calendarByBusiness.get(biz.id)))]),
+  )
+
   const usageByBusiness = Object.fromEntries(
     await Promise.all(list.map(async biz => [
       biz.id,
@@ -211,7 +231,7 @@ export default async function ClientsPage() {
               if (group.rows.length === 1) {
                 const biz = group.rows[0]
                 return (
-                  <ClientRow key={biz.id} biz={biz} usage={usageByBusiness[biz.id]} email={email} isLast={isLastGroup} />
+                  <ClientRow key={biz.id} biz={biz} usage={usageByBusiness[biz.id]} email={email} isLast={isLastGroup} hasHealthIssue={healthIssueByBusiness[biz.id]} />
                 )
               }
 
@@ -225,7 +245,7 @@ export default async function ClientsPage() {
                     </span>
                   </summary>
                   {group.rows.map((biz, ri) => (
-                    <ClientRow key={biz.id} biz={biz} usage={usageByBusiness[biz.id]} email={email} isLast={ri === group.rows.length - 1} />
+                    <ClientRow key={biz.id} biz={biz} usage={usageByBusiness[biz.id]} email={email} isLast={ri === group.rows.length - 1} hasHealthIssue={healthIssueByBusiness[biz.id]} />
                   ))}
                 </details>
               )

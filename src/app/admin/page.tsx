@@ -1,7 +1,23 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
-import { Building2, Zap, Plus, Sparkles } from 'lucide-react'
+import { Building2, Zap, Plus, Sparkles, AlertTriangle } from 'lucide-react'
 import { PLAN_LIMITS } from '@/lib/planUsage'
+
+/**
+ * Global (not per-client) env-var health checks — both have concrete,
+ * already-observed failure modes elsewhere in this codebase, so it's worth
+ * a loud warning here rather than only discovering either the hard way.
+ */
+function envIssues(): string[] {
+  const issues: string[] = []
+  if (!process.env.VAPI_WEBHOOK_SECRET) {
+    issues.push('VAPI_WEBHOOK_SECRET is not set — the Vapi webhook logs a warning and accepts unauthenticated requests.')
+  }
+  if (!process.env.APP_URL) {
+    issues.push('APP_URL is not set — "Send/Copy Payment Link" will throw outright the next time either is used.')
+  }
+  return issues
+}
 
 const PLANS = ['starter', 'core', 'professional', 'enterprise', 'unlimited'] as const
 
@@ -17,6 +33,7 @@ export default async function AdminPage() {
   const admin = createAdminClient()
   const { data: businesses } = await admin.from('businesses').select('*')
   const list = businesses ?? []
+  const issues = envIssues()
 
   const planCounts = PLANS.reduce((acc, p) => {
     acc[p] = list.filter(b => b.plan === p).length
@@ -40,6 +57,21 @@ export default async function AdminPage() {
             Add Client
           </Link>
         </div>
+
+        {issues.length > 0 && (
+          <div className="rounded-2xl px-5 py-4 flex flex-col gap-2"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
+            <div className="flex items-center gap-2 text-sm font-bold" style={{ color: 'var(--coral)' }}>
+              <AlertTriangle size={15} />
+              Environment configuration issue{issues.length !== 1 ? 's' : ''}
+            </div>
+            <ul className="flex flex-col gap-1 pl-1">
+              {issues.map(issue => (
+                <li key={issue} className="text-xs leading-relaxed" style={{ color: 'var(--t3)' }}>{issue}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Stat cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

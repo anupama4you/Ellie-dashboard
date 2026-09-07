@@ -8,7 +8,8 @@ import { addDaysInZone, formatInZone } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
 import CopyLinkButton from '@/components/CopyLinkButton'
-import { generateInviteLinkAction, generatePaymentLinkAction } from './actions'
+import { generateInviteLinkAction, generatePaymentLinkAction, generateImpersonationLinkAction } from './actions'
+import { logAdminAction } from '@/lib/adminAudit'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 import { FEATURE_REGISTRY, resolveDashboardFeatures } from '@/lib/dashboardFeatures'
@@ -109,6 +110,12 @@ export default async function EditClientPage({
       ...(newPlan !== bizPlan ? { plan_started_at: new Date().toISOString() } : {}),
     }).eq('id', bizId)
 
+    await logAdminAction({
+      action: 'client_details_updated',
+      businessId: bizId,
+      metadata: { planChanged: newPlan !== bizPlan, emailChanged: !!newEmail && newEmail !== clientEmail },
+    })
+
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -154,6 +161,8 @@ export default async function EditClientPage({
       redirect(`/admin/clients/${bizId}?reset=error`)
     }
 
+    await logAdminAction({ action: 'password_reset_sent', businessId: bizId, targetUserId: userId, metadata: { clientEmail } })
+
     redirect(`/admin/clients/${bizId}?reset=sent`)
   }
 
@@ -183,6 +192,13 @@ export default async function EditClientPage({
       redirect(`/admin/clients/${bizId}?deleteError=1`)
     }
 
+    await logAdminAction({
+      action: 'client_deleted',
+      businessId: bizId,
+      targetUserId: userId,
+      metadata: { bizName, deletedLogin: remainingLocations.length === 0 },
+    })
+
     await admin.from('businesses').delete().eq('id', bizId)
 
     if (remainingLocations.length === 0) {
@@ -198,6 +214,7 @@ export default async function EditClientPage({
     const admin = createAdminClient()
     const now = new Date().toISOString()
     await admin.from('businesses').update({ plan_status: 'trial', trial_started_at: now, plan_started_at: now }).eq('id', bizId)
+    await logAdminAction({ action: 'trial_started', businessId: bizId })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -249,6 +266,7 @@ export default async function EditClientPage({
     }
 
     await admin.from('businesses').update({ plan_status: 'cancelled' }).eq('id', bizId)
+    await logAdminAction({ action: 'plan_cancelled', businessId: bizId, metadata: { stripeSubscriptionId: bizStripeSubscriptionId } })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -257,6 +275,7 @@ export default async function EditClientPage({
     'use server'
     const admin = createAdminClient()
     await admin.from('businesses').update({ account_disabled: !bizAccountDisabled }).eq('id', bizId)
+    await logAdminAction({ action: bizAccountDisabled ? 'account_enabled' : 'account_disabled', businessId: bizId })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -270,6 +289,7 @@ export default async function EditClientPage({
         .map(({ key }) => [key, false]),
     )
     await admin.from('businesses').update({ dashboard_features }).eq('id', bizId)
+    await logAdminAction({ action: 'dashboard_features_updated', businessId: bizId, metadata: { dashboard_features } })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -300,6 +320,8 @@ export default async function EditClientPage({
     if (error || !newBiz) {
       redirect(`/admin/clients/${bizId}?locationError=1`)
     }
+
+    await logAdminAction({ action: 'location_added', businessId: newBiz.id, targetUserId: userId })
 
     redirect(`/admin/clients/${newBiz.id}/prompt?created=1&newLocation=1`)
   }
@@ -569,7 +591,23 @@ export default async function EditClientPage({
                     Send Password Reset Email
                   </AdminSubmitButton>
                 </form>
-                <CopyLinkButton action={generateInviteLinkAction.bind(null, clientEmail)} label="Copy Invite Link" />
+                <CopyLinkButton action={generateInviteLinkAction.bind(null, bizId, clientEmail)} label="Copy Invite Link" />
+                <div className="flex flex-col gap-1.5">
+                  <CopyLinkButton
+                    action={generateImpersonationLinkAction.bind(null, bizId, userId, clientEmail, bizName)}
+                    label="Copy 'View as Client' Link" />
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--t5)' }}>
+                    Logs straight into their dashboard, bypassing their password entirely. Paste this into a
+                    new <strong>Incognito/Private window</strong> — not just a new tab — or it will overwrite
+                    your own admin session, since both share the same browser cookies. Expires in ~1 hour and
+                    works once.
+                  </p>
+                  {bizAccountDisabled && (
+                    <p className="text-xs" style={{ color: 'var(--coral)' }}>
+                      This account&apos;s access is currently disabled — the link will lead to a blocked dashboard until you re-enable it above.
+                    </p>
+                  )}
+                </div>
                 <form action={toggleAccountDisabledAction}>
                   <AdminSubmitButton
                     pendingLabel={bizAccountDisabled ? 'Enabling…' : 'Disabling…'}

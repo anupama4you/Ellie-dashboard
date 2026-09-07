@@ -3,6 +3,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, priceIdForPlan } from '@/lib/stripe'
 import { siteUrl } from '@/lib/siteUrl'
+import { logAdminAction } from '@/lib/adminAudit'
 
 /**
  * Top-level 'use server' exports, not inline closures inside the page
@@ -13,7 +14,7 @@ import { siteUrl } from '@/lib/siteUrl'
  * that used to come from closure now arrive as bound arguments via
  * fn.bind(null, ...) at the call site instead.
  */
-export async function generateInviteLinkAction(email: string): Promise<{ url: string } | { error: string }> {
+export async function generateInviteLinkAction(bizId: string, email: string): Promise<{ url: string } | { error: string }> {
   const admin = createAdminClient()
 
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
@@ -24,7 +25,52 @@ export async function generateInviteLinkAction(email: string): Promise<{ url: st
   const hashedToken = linkData?.properties?.hashed_token
   if (linkErr || !hashedToken) return { error: linkErr?.message ?? 'Failed to generate link' }
 
+  await logAdminAction({ action: 'invite_link_generated', businessId: bizId, metadata: { email } })
+
   return { url: `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=recovery` }
+}
+
+/**
+ * Mints a real Supabase session for the client, entirely bypassing their
+ * password — the only way in if they've changed it and something needs
+ * troubleshooting. Deliberately `type: 'magiclink'` rather than the
+ * 'recovery' type used elsewhere in this file: recovery links detour
+ * through /auth/set-password, but this should land on a normal
+ * authenticated session exactly like a real login would.
+ *
+ * Must be opened in a separate browser context (incognito/private window)
+ * from the admin's own session — consuming it in the same browser would
+ * silently overwrite the admin's own session cookie, since both are the
+ * same origin. See the UI copy at the call site.
+ */
+export async function generateImpersonationLinkAction(
+  bizId: string,
+  userId: string,
+  clientEmail: string,
+  clientName: string,
+): Promise<{ url: string } | { error: string }> {
+  if (!clientEmail) return { error: 'This client has no email on file' }
+
+  const admin = createAdminClient()
+  const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
+    type: 'magiclink',
+    email: clientEmail,
+    options: { redirectTo: `${await siteUrl()}/auth/callback?next=/` },
+  })
+  const hashedToken = linkData?.properties?.hashed_token
+  if (linkErr || !hashedToken) return { error: linkErr?.message ?? 'Failed to generate link' }
+
+  // Logged at generation time only — Supabase gives no signal for whether
+  // or when a link is actually consumed, so "a link was minted" is the
+  // honest, loggable claim here, not "admin logged in as client."
+  await logAdminAction({
+    action: 'impersonation_link_generated',
+    businessId: bizId,
+    targetUserId: userId,
+    metadata: { clientEmail, clientName },
+  })
+
+  return { url: `${await siteUrl()}/auth/callback?next=/&token_hash=${hashedToken}&type=magiclink` }
 }
 
 export async function generatePaymentLinkAction(
@@ -61,6 +107,8 @@ export async function generatePaymentLinkAction(
     })
 
     if (!session.url) throw new Error('Stripe did not return a Checkout URL')
+
+    await logAdminAction({ action: 'payment_link_generated', businessId: bizId, metadata: { plan: bizPlan } })
     return { url: session.url }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to create checkout session' }

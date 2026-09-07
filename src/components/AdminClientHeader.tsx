@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ArrowLeft, IdCard, Building2, ScrollText } from 'lucide-react'
+import { ArrowLeft, IdCard, Building2, ScrollText, HeartPulse } from 'lucide-react'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string }> = {
   starter:      { color: 'var(--t3)',     bg: 'rgba(139,133,160,0.1)' },
@@ -23,7 +23,7 @@ type Props = {
   plan: string
   planStatus?: string | null
   hasAssistant: boolean
-  active: 'details' | 'briefing' | 'prompt'
+  active: 'details' | 'briefing' | 'prompt' | 'health'
 }
 
 export default function AdminClientHeader({ id, name, email, plan, planStatus, hasAssistant, active }: Props) {
@@ -80,6 +80,7 @@ export default function AdminClientHeader({ id, name, email, plan, planStatus, h
           { key: 'details' as const,  href: `/admin/clients/${id}`,          label: 'Details',              icon: IdCard     },
           { key: 'briefing' as const, href: `/admin/clients/${id}/briefing`, label: 'Company Information',  icon: Building2  },
           { key: 'prompt' as const,   href: `/admin/clients/${id}/prompt`,   label: 'System Prompt',        icon: ScrollText },
+          { key: 'health' as const,   href: `/admin/clients/${id}/health`,   label: 'Health',               icon: HeartPulse },
         ].map(({ key, href, label, icon: Icon }) => {
           const isActive = active === key
           return (
