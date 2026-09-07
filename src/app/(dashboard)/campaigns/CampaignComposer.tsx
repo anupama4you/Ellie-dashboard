@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { Check, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Plus, Send, CalendarClock } from 'lucide-react'
 import { extractCustomVariableNames, parseContactsCsv } from '@/lib/outboundCsv'
 import CsvDropzone from './CsvDropzone'
 
@@ -50,6 +50,8 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const [fileName, setFileName] = useState<string | null>(null)
   const [contactCount, setContactCount] = useState<number | null>(null)
 
+  const [sendOption, setSendOption] = useState<'now' | 'schedule'>('now')
+  const [scheduledAt, setScheduledAt] = useState('')
   const [consented, setConsented] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -111,12 +113,27 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
 
   function confirmCreate() {
     if (!formRef.current) return
+    if (sendOption === 'schedule' && !scheduledAt) {
+      setStepError('Pick a date and time to schedule this campaign.')
+      return
+    }
     const formData = new FormData(formRef.current)
     formData.set('consent', 'true')
+    formData.set('sendOption', sendOption)
+    if (sendOption === 'schedule') formData.set('scheduledAt', scheduledAt)
     startTransition(() => {
       action(formData)
     })
   }
+
+  // Soft client-side floor for the picker — the server re-validates against
+  // the business's own timezone, this just stops an obviously-past pick.
+  // Computed once (not on every render) since "now" only needs to be
+  // approximately right, not live.
+  const [minScheduledAt] = useState(() => {
+    const now = new Date()
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+  })
 
   return (
     <form ref={formRef} onSubmit={e => e.preventDefault()} className="p-5 flex flex-col gap-4">
@@ -229,6 +246,39 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
           </div>
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <p className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>When should this run?</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setSendOption('now')}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors"
+              style={{
+                background: sendOption === 'now' ? 'var(--violet-soft)' : 'var(--paper)',
+                color: sendOption === 'now' ? 'var(--violet)' : 'var(--ink-2)',
+                border: `1px solid ${sendOption === 'now' ? 'var(--violet)' : 'var(--line)'}`,
+              }}>
+              <Send size={14} /> Send now
+            </button>
+            <button type="button" onClick={() => setSendOption('schedule')}
+              className="flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors"
+              style={{
+                background: sendOption === 'schedule' ? 'var(--violet-soft)' : 'var(--paper)',
+                color: sendOption === 'schedule' ? 'var(--violet)' : 'var(--ink-2)',
+                border: `1px solid ${sendOption === 'schedule' ? 'var(--violet)' : 'var(--line)'}`,
+              }}>
+              <CalendarClock size={14} /> Schedule for later
+            </button>
+          </div>
+          {sendOption === 'schedule' && (
+            <>
+              <input type="datetime-local" value={scheduledAt} min={minScheduledAt} onChange={e => setScheduledAt(e.target.value)}
+                className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+                In your business&apos;s local time. Calls only ever start 9am–8pm — if this lands outside that window, or another campaign is already running, it starts as soon as both clear.
+              </p>
+            </>
+          )}
+        </div>
+
         <label className="flex items-start gap-2.5 text-sm cursor-pointer" style={{ color: 'var(--ink)' }}>
           <input type="checkbox" checked={consented} onChange={e => setConsented(e.target.checked)} className="mt-0.5" />
           These are my own existing customers and I have the right to contact them.
@@ -251,10 +301,11 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
             Next <ChevronRight size={14} />
           </button>
         ) : (
-          <button type="button" onClick={confirmCreate} disabled={!consented || isPending}
+          <button type="button" onClick={confirmCreate} disabled={!consented || isPending || (sendOption === 'schedule' && !scheduledAt)}
             className="flex items-center gap-1.5 rounded-xl px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
             style={{ background: 'var(--violet)' }}>
-            <Plus size={14} /> {isPending ? 'Creating…' : 'Create campaign'}
+            <Plus size={14} />
+            {isPending ? 'Creating…' : sendOption === 'schedule' ? 'Schedule campaign' : 'Start campaign now'}
           </button>
         )}
       </div>

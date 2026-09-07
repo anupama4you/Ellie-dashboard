@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
+import { CalendarClock } from 'lucide-react'
 import { resumeCallingAction } from '../actions'
 
 type Props = {
@@ -11,9 +12,10 @@ type Props = {
   stoppedReason: string | null
   queuedCount: number
   withinWindow: boolean
+  scheduledAtLabel: string | null
 }
 
-export default function CampaignDetailActions({ campaignId, status, running, stoppedReason, queuedCount, withinWindow }: Props) {
+export default function CampaignDetailActions({ campaignId, status, running, stoppedReason, queuedCount, withinWindow, scheduledAtLabel }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
@@ -48,6 +50,17 @@ export default function CampaignDetailActions({ campaignId, status, running, sto
           <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--violet)' }} />
         </span>
         <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>Calling one contact at a time in the background — you can leave this page.</p>
+      </div>
+    )
+  }
+
+  if (scheduledAtLabel) {
+    return (
+      <div className="rounded-2xl p-5 flex items-center gap-2.5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+        <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: 'var(--violet-soft)' }}>
+          <CalendarClock size={15} style={{ color: 'var(--violet)' }} />
+        </span>
+        <p className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Scheduled to start {scheduledAtLabel}</p>
       </div>
     )
   }

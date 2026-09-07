@@ -3,20 +3,27 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
+import { formatInZone } from '@/lib/timezone'
 import { categoryStyle } from '@/lib/callClassify'
 import CampaignDetailActions from './CampaignDetailActions'
 import CampaignContactsTable from './CampaignContactsTable'
 import CampaignPolling from '../CampaignPolling'
+
+const WARNING_MESSAGES: Record<string, string> = {
+  notconfigured: "Created, but this location has no Vapi assistant or phone number configured yet — select contacts below and start manually once it's set up.",
+  anotherrunning: "Created, but another campaign for this location is already running — start this one manually once it's free.",
+  startfailed: 'Created, but something went wrong starting it automatically — select contacts below and start manually.',
+}
 
 export default async function CampaignDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ skipped?: string; highlight?: string }>
+  searchParams: Promise<{ skipped?: string; highlight?: string; warning?: string }>
 }) {
   const { id } = await params
-  const { skipped, highlight } = await searchParams
+  const { skipped, highlight, warning } = await searchParams
   const { business: biz } = await getCurrentBusiness()
   if (!isFeatureEnabled(biz, 'campaigns')) redirect('/')
   if (!biz) redirect('/')
@@ -24,7 +31,7 @@ export default async function CampaignDetailPage({
   const supabase = await createClient()
   const { data: campaign } = await supabase
     .from('outbound_campaigns')
-    .select('id, name, status, first_message, system_prompt, running, stopped_reason')
+    .select('id, name, status, first_message, system_prompt, running, stopped_reason, scheduled_at')
     .eq('id', id)
     .eq('business_id', biz.id)
     .single()
@@ -75,6 +82,12 @@ export default async function CampaignDetailPage({
           </div>
         )}
 
+        {warning && WARNING_MESSAGES[warning] && (
+          <div className="rounded-xl px-4 py-3 text-sm" style={{ background: 'var(--amber-soft)', color: 'var(--amber)' }}>
+            {WARNING_MESSAGES[warning]}
+          </div>
+        )}
+
         <CampaignDetailActions
           campaignId={campaign.id}
           status={campaign.status}
@@ -82,6 +95,7 @@ export default async function CampaignDetailPage({
           stoppedReason={campaign.stopped_reason}
           queuedCount={queuedCount}
           withinWindow={withinWindow}
+          scheduledAtLabel={campaign.scheduled_at ? formatInZone(new Date(campaign.scheduled_at), biz.timezone, { dateStyle: 'medium', timeStyle: 'short' }) : null}
         />
 
         <section className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>

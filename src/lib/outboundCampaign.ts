@@ -107,3 +107,33 @@ export async function placeNextQueuedCall(
     }
   }
 }
+
+/**
+ * Queues every not-yet-called contact on a campaign and places the first
+ * call — "send now" from campaign creation, and what the scheduler
+ * (src/app/api/campaign-scheduler/route.ts) calls once a "schedule for
+ * later" campaign comes due. Shares the same one-at-a-time chain as a
+ * manual row-selected start; the only difference is that this queues
+ * everyone rather than a client-chosen subset.
+ */
+export async function startCampaignNow(
+  supabase: SupabaseClient,
+  biz: Biz,
+  campaign: Campaign,
+  getNotifyEmail: () => Promise<string | null>,
+): Promise<void> {
+  const { error: queueError } = await supabase
+    .from('outbound_campaign_contacts')
+    .update({ status: 'queued' })
+    .eq('campaign_id', campaign.id)
+    .in('status', ['pending', 'failed'])
+  if (queueError) throw new Error(queueError.message)
+
+  const { error: runError } = await supabase
+    .from('outbound_campaigns')
+    .update({ running: true, stopped_reason: null, scheduled_at: null })
+    .eq('id', campaign.id)
+  if (runError) throw new Error(runError.message)
+
+  await placeNextQueuedCall(supabase, biz, campaign, getNotifyEmail)
+}

@@ -13,6 +13,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   disabled: 'Campaigns are not enabled for this location.',
   noinstructions: 'Fill in what Ellie says first and how she should behave.',
   noconsent: 'Confirm you have the right to contact these customers before creating the campaign.',
+  noschedule: 'Pick a date and time to schedule this campaign.',
+  schedulepast: 'Pick a date and time in the future.',
   nofile: 'Choose a CSV file to upload.',
   novalid: 'No valid contacts found in that file — check it has name and phone columns.',
   create: 'Failed to create the campaign. Please try again.',

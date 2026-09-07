@@ -7,10 +7,11 @@ import { getCurrentBusiness } from '@/lib/business'
 import { parseContactsCsv } from '@/lib/outboundCsv'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
-import { placeNextQueuedCall } from '@/lib/outboundCampaign'
+import { placeNextQueuedCall, startCampaignNow } from '@/lib/outboundCampaign'
+import { zonedTimeToUtc } from '@/lib/timezone'
 
 export async function createCampaignAction(formData: FormData): Promise<void> {
-  const { business: biz } = await getCurrentBusiness()
+  const { user, business: biz } = await getCurrentBusiness()
   if (!biz) redirect('/campaigns?error=nobusiness')
   if (!isFeatureEnabled(biz, 'campaigns')) redirect('/campaigns?error=disabled')
 
@@ -24,6 +25,22 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
   if (!firstMessage || !systemPrompt) redirect('/campaigns?error=noinstructions')
 
   if (formData.get('consent') !== 'true') redirect('/campaigns?error=noconsent')
+
+  // "Schedule for later" — parse the client's datetime-local value (naive
+  // "YYYY-MM-DDTHH:mm", no timezone) as wall-clock time *in this business's
+  // own timezone*, not the server's or the browser's, so 9am means 9am at
+  // the salon regardless of where either happens to be.
+  const sendOption = formData.get('sendOption') === 'schedule' ? 'schedule' : 'now'
+  let scheduledAtUtc: string | null = null
+  if (sendOption === 'schedule') {
+    const scheduledAtRaw = formData.get('scheduledAt')
+    const match = typeof scheduledAtRaw === 'string' ? scheduledAtRaw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/) : null
+    if (!match) redirect('/campaigns?error=noschedule')
+    const [y, mo, d, h, mi] = [match[1], match[2], match[3], match[4], match[5]].map(Number)
+    const scheduledDate = zonedTimeToUtc(biz.timezone, y, mo, d, h, mi)
+    if (scheduledDate.getTime() <= Date.now()) redirect('/campaigns?error=schedulepast')
+    scheduledAtUtc = scheduledDate.toISOString()
+  }
 
   const file = formData.get('csv')
   if (!(file instanceof File) || file.size === 0) redirect('/campaigns?error=nofile')
@@ -42,6 +59,7 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
       system_prompt: systemPrompt,
       status: 'active',
       consent_confirmed_at: new Date().toISOString(),
+      scheduled_at: scheduledAtUtc,
     })
     .select('id')
     .single()
@@ -56,8 +74,46 @@ export async function createCampaignAction(formData: FormData): Promise<void> {
     redirect('/campaigns?error=create')
   }
 
+  // "Send now" starts the chain right here; "Schedule for later" leaves
+  // contacts pending — the scheduler (api/campaign-scheduler) queues them
+  // and starts the chain once scheduled_at comes due.
+  let warning: string | null = null
+  if (sendOption === 'now') {
+    if (!biz.vapi_assistant_id || !biz.twilio_phone_number) {
+      warning = 'notconfigured'
+    } else {
+      const { data: otherRunning } = await supabase
+        .from('outbound_campaigns')
+        .select('id')
+        .eq('business_id', biz.id)
+        .eq('running', true)
+        .neq('id', campaign.id)
+        .limit(1)
+        .maybeSingle()
+      if (otherRunning) {
+        warning = 'anotherrunning'
+      } else {
+        try {
+          await startCampaignNow(
+            supabase,
+            biz,
+            { id: campaign.id, name: name || 'Untitled campaign', first_message: firstMessage, system_prompt: systemPrompt },
+            async () => user?.email ?? null,
+          )
+        } catch (err) {
+          console.error(`Failed to start campaign ${campaign.id} immediately after creation:`, err)
+          warning = 'startfailed'
+        }
+      }
+    }
+  }
+
   revalidatePath('/campaigns')
-  redirect(`/campaigns/${campaign.id}${skipped > 0 ? `?skipped=${skipped}` : ''}`)
+  const params = new URLSearchParams()
+  if (skipped > 0) params.set('skipped', String(skipped))
+  if (warning) params.set('warning', warning)
+  const query = params.toString()
+  redirect(`/campaigns/${campaign.id}${query ? `?${query}` : ''}`)
 }
 
 /**
