@@ -911,6 +911,11 @@ export async function POST(req: Request) {
             }, biz.sms_template_booking_link)
             await sendSms(phone, smsBody, biz.twilio_phone_number)
             resultText = "Text message sent."
+
+            await sendNotificationEmail(biz, 'bookingLinkSent', () => getBizNotifyEmailFor(biz.user_id),
+              `Booking link sent — ${(args.customerName as string | undefined) ?? 'a caller'}`, `
+                <p>Ellie texted ${(args.customerName as string | undefined) ?? 'a caller'} a link to book online${args.service ? ` for ${args.service}` : ''} instead of taking the booking on the call.</p>
+              `)
           }
         } catch (err) {
           captureError(err, { handler: 'sendBookingLink' })

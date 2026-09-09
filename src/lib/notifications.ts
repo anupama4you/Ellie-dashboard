@@ -1,6 +1,6 @@
 import { sendEmail } from '@/lib/resend'
 
-export type NotificationKey = 'campaignStopped' | 'campaignCompleted' | 'appointmentActivity' | 'missedCall'
+export type NotificationKey = 'campaignStopped' | 'campaignCompleted' | 'appointmentActivity' | 'missedCall' | 'bookingLinkSent'
 
 export type NotificationPreferences = Partial<Record<NotificationKey, boolean>>
 
@@ -9,6 +9,7 @@ export const NOTIFICATION_REGISTRY: { key: NotificationKey; label: string; descr
   { key: 'campaignCompleted',    label: 'Campaign completed',     description: 'Every contact in an outbound campaign has been called, with a summary of how it went.' },
   { key: 'appointmentActivity',  label: 'Appointment activity',   description: 'Ellie booked, rescheduled, or cancelled an appointment on a call.' },
   { key: 'missedCall',           label: 'Missed or unresolved call', description: "A call ended without a booking and wasn't transferred to a person — may need a follow-up." },
+  { key: 'bookingLinkSent',      label: 'Booking link sent',      description: 'Ellie texted a caller a link to book online instead of taking the booking on the call.' },
 ]
 
 /**
