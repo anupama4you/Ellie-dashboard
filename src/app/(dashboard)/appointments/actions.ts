@@ -10,6 +10,7 @@ import { mapsLink } from '@/lib/maps'
 import { sendSms } from '@/lib/twilio'
 import { rememberCustomerName } from '@/lib/customers'
 import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms } from '@/lib/smsTemplates'
+import { sendNotificationEmail } from '@/lib/notifications'
 
 export type ManualAppointmentInput = {
   customerName: string
@@ -27,7 +28,7 @@ export type ManualAppointmentInput = {
  * already uses to distinguish "Booked by Ellie" from "Booked by you".
  */
 export async function createManualAppointment(input: ManualAppointmentInput): Promise<void> {
-  const { business: biz } = await getCurrentBusiness()
+  const { user, business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
 
   const customerName = input.customerName.trim()
@@ -58,6 +59,11 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
   if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
 
   await rememberCustomerName(supabase, biz.id, input.customerPhone, customerName)
+
+  await sendNotificationEmail(biz, 'appointmentActivity', async () => user?.email ?? null,
+    `New appointment — ${customerName}`, `
+      <p>${customerName} was booked in${service ? ` for ${service}` : ''} on ${formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })}.</p>
+    `)
 
   if (customerPhone) {
     try {
@@ -95,7 +101,7 @@ export type RescheduleAppointmentInput = {
  * triggered from the dashboard instead of a call.
  */
 export async function rescheduleAppointmentAction(input: RescheduleAppointmentInput): Promise<{ smsWarning: string | null }> {
-  const { business: biz } = await getCurrentBusiness()
+  const { user, business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
   if (!input.date || !input.time) throw new Error('Date and time are required.')
 
@@ -123,6 +129,11 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
 
   const { data: services } = await supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id)
   const durationMins = durationFor(existing.service, services ?? [])
+
+  await sendNotificationEmail(biz, 'appointmentActivity', async () => user?.email ?? null,
+    `Appointment rescheduled — ${existing.customer_name ?? 'a customer'}`, `
+      <p>${existing.customer_name ?? 'A customer'}'s ${existing.service ?? 'appointment'} was moved to ${formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })}.</p>
+    `)
 
   let smsWarning: string | null = null
   if (existing.customer_phone) {
@@ -166,7 +177,7 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
  * call Ellie uses on the phone (same SMS + Google Calendar event removal).
  */
 export async function cancelAppointmentAction(appointmentId: string): Promise<{ smsWarning: string | null }> {
-  const { business: biz } = await getCurrentBusiness()
+  const { user, business: biz } = await getCurrentBusiness()
   if (!biz) throw new Error('No business profile found.')
 
   const supabase = await createClient()
@@ -182,6 +193,11 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<{ 
   if (error) throw new Error(error.message)
 
   const timeZone = biz.timezone ?? 'Australia/Adelaide'
+
+  await sendNotificationEmail(biz, 'appointmentActivity', async () => user?.email ?? null,
+    `Appointment cancelled — ${existing.customer_name ?? 'a customer'}`, `
+      <p>${existing.customer_name ?? 'A customer'}'s ${existing.service ?? 'appointment'} on ${formatInZone(new Date(existing.scheduled_at), timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })} was cancelled.</p>
+    `)
 
   let smsWarning: string | null = null
   if (existing.customer_phone) {
