@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createHmac } from 'node:crypto'
 import { captureError } from '@/lib/monitoring'
+import { checkRateLimit, clientIp } from '@/lib/rateLimit'
 
 /** Twilio's documented request-signing algorithm: HMAC-SHA1(authToken, url + sorted "key"+"value" pairs), base64-encoded. https://www.twilio.com/docs/usage/webhooks/webhooks-security */
 function computeTwilioSignature(authToken: string, url: string, params: Record<string, string>): string {
@@ -75,7 +76,20 @@ function twiml(req: Request): NextResponse {
   return new NextResponse(body, { headers: { 'Content-Type': 'text/xml' } })
 }
 
+// Real traffic here is genuine phone calls to one business's forwarding
+// number — nowhere near this volume in legitimate use, so 20/min per IP is
+// generous headroom while still capping a flood.
+const RATE_LIMIT = { max: 20, windowMs: 60_000 }
+
+function rateLimited(req: Request): NextResponse | null {
+  const { allowed, retryAfterSeconds } = checkRateLimit(`twilio-forward-call:${clientIp(req)}`, RATE_LIMIT.max, RATE_LIMIT.windowMs)
+  if (allowed) return null
+  return new NextResponse('Too Many Requests', { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } })
+}
+
 export async function POST(req: Request) {
+  const limited = rateLimited(req)
+  if (limited) return limited
   const formData = await req.formData().catch(() => null)
   const params = formData ? Object.fromEntries([...formData.entries()].map(([k, v]) => [k, String(v)])) : {}
   await verifyTwilioSignature(req, params)
@@ -83,6 +97,8 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
+  const limited = rateLimited(req)
+  if (limited) return limited
   await verifyTwilioSignature(req, {})
   return twiml(req)
 }

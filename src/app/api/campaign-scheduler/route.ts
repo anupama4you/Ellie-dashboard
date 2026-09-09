@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { startCampaignNow } from '@/lib/outboundCampaign'
 import { captureError } from '@/lib/monitoring'
+import { checkRateLimit, clientIp } from '@/lib/rateLimit'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,6 +32,12 @@ function timingSafeStringEqual(a: string, b: string): boolean {
  * blocker clears, rather than being treated as a failure.
  */
 export async function POST(req: Request) {
+  // Legitimate traffic is one call every 5 minutes from our own scheduled
+  // job — this is purely a damage cap in case the secret ever leaks, not
+  // something normal operation could ever approach.
+  const { allowed, retryAfterSeconds } = checkRateLimit(`campaign-scheduler:${clientIp(req)}`, 5, 60_000)
+  if (!allowed) return json({ error: 'Too Many Requests' }, { status: 429, headers: { 'Retry-After': String(retryAfterSeconds) } })
+
   const secret = process.env.CAMPAIGN_SCHEDULER_SECRET
   if (secret) {
     const provided = req.headers.get('x-scheduler-secret')
