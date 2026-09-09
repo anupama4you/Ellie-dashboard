@@ -7,6 +7,7 @@ import AdminSubmitButton from '@/components/AdminSubmitButton'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 import { assertAdmin } from '@/lib/adminAuth'
+import { AU_TIMEZONES } from '@/lib/timezone'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -68,6 +69,7 @@ export default async function NewClientPage({
       phone:             (formData.get('phone') as string).trim() || null,
       plan:              formData.get('plan') as string,
       vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
+      timezone:          (formData.get('timezone') as string) || 'Australia/Adelaide',
       plan_status:       startTrial ? 'trial' : 'active',
       trial_started_at:  startTrial ? now : null,
       plan_started_at:   now,
@@ -173,6 +175,18 @@ export default async function NewClientPage({
               </select>
               <p className="text-xs" style={{ color: 'var(--t6)' }}>
                 Which plan this converts to once the trial ends (if starting one below) — call limits don&apos;t apply until then.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Timezone *</label>
+              <select name="timezone" defaultValue="Australia/Adelaide" className="admin-input admin-select">
+                {AU_TIMEZONES.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+              <p className="text-xs" style={{ color: 'var(--t6)' }}>
+                Business hours, appointment times, and SMS confirmations are all computed in this timezone — getting it wrong books real appointments at the wrong time.
               </p>
             </div>
 

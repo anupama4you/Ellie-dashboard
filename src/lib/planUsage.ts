@@ -78,11 +78,20 @@ export async function getPlanUsage(
   const cycleStart = startOfBillingCycleInZone(anchor, now, timeZone)
   const renewsAt    = startOfNextBillingCycleInZone(anchor, now, timeZone)
 
+  // Cycle boundaries are calendar-day granular (see startOfBillingCycleInZone)
+  // so the very first cycle after a trial→paid conversion can otherwise reach
+  // back to midnight on the conversion day — sweeping up calls made earlier
+  // that same day while still on the trial's unlimited plan into the brand
+  // new paid-plan count. Never count from earlier than the actual anchor
+  // instant; every cycle after the first is already later than the anchor,
+  // so this is a no-op for them.
+  const countFrom = cycleStart.getTime() > anchor.getTime() ? cycleStart : anchor
+
   const { count } = await supabase
     .from('calls')
     .select('id', { count: 'exact', head: true })
     .eq('business_id', businessId)
-    .gte('started_at', cycleStart.toISOString())
+    .gte('started_at', countFrom.toISOString())
 
   const used = count ?? 0
 

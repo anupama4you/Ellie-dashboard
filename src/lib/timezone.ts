@@ -7,6 +7,18 @@
  * silently uses the wrong one.
  */
 
+/** Every timezone a business (or one location of a multi-location business) can be set to — shown as a dropdown wherever an admin sets one. */
+export const AU_TIMEZONES = [
+  { value: 'Australia/Sydney',      label: 'Sydney / Melbourne / Canberra (AEST/AEDT)' },
+  { value: 'Australia/Brisbane',    label: 'Brisbane (AEST, no DST)' },
+  { value: 'Australia/Adelaide',    label: 'Adelaide (ACST/ACDT)' },
+  { value: 'Australia/Darwin',      label: 'Darwin (ACST, no DST)' },
+  { value: 'Australia/Perth',       label: 'Perth (AWST, no DST)' },
+  { value: 'Australia/Hobart',      label: 'Hobart (AEST/AEDT)' },
+  { value: 'Australia/Broken_Hill', label: 'Broken Hill (ACST/ACDT)' },
+  { value: 'Australia/Lord_Howe',   label: 'Lord Howe Island' },
+] as const
+
 /** The real UTC offset (in minutes, positive = ahead of UTC) for `timeZone` at the instant `date`. DST-correct. */
 function getUtcOffsetMinutes(timeZone: string, date: Date): number {
   const dtf = new Intl.DateTimeFormat('en-US', {

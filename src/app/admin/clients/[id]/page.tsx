@@ -1,10 +1,10 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getStripe } from '@/lib/stripe'
+import { getStripe, priceIdForPlan } from '@/lib/stripe'
 import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle, Plus } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
-import { addDaysInZone, formatInZone } from '@/lib/timezone'
+import { addDaysInZone, formatInZone, AU_TIMEZONES } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
 import CopyLinkButton from '@/components/CopyLinkButton'
@@ -24,26 +24,16 @@ const PLANS = [
   { value: 'unlimited',    label: 'Unlimited — $199/mo'         },
 ]
 
-const TIMEZONES = [
-  { value: 'Australia/Sydney',      label: 'Sydney / Melbourne / Canberra (AEST/AEDT)' },
-  { value: 'Australia/Brisbane',    label: 'Brisbane (AEST, no DST)' },
-  { value: 'Australia/Adelaide',    label: 'Adelaide (ACST/ACDT)' },
-  { value: 'Australia/Darwin',      label: 'Darwin (ACST, no DST)' },
-  { value: 'Australia/Perth',       label: 'Perth (AWST, no DST)' },
-  { value: 'Australia/Hobart',      label: 'Hobart (AEST/AEDT)' },
-  { value: 'Australia/Broken_Hill', label: 'Broken Hill (ACST/ACDT)' },
-  { value: 'Australia/Lord_Howe',   label: 'Lord Howe Island' },
-]
 
 export default async function EditClientPage({
   params,
   searchParams,
 }: {
   params:       Promise<{ id: string }>
-  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string; locationError?: string; deleteError?: string }>
+  searchParams: Promise<{ reset?: string; saved?: string; paymentLink?: string; locationError?: string; deleteError?: string; stripeSyncWarning?: string }>
 }) {
   const { id }                       = await params
-  const { reset, saved, paymentLink, locationError, deleteError } = await searchParams
+  const { reset, saved, paymentLink, locationError, deleteError, stripeSyncWarning } = await searchParams
 
   const admin = createAdminClient()
   const { data: biz } = await admin.from('businesses').select('*').eq('id', id).single()
@@ -92,6 +82,7 @@ export default async function EditClientPage({
     }
 
     const newPlan = formData.get('plan') as string
+    const planChanged = newPlan !== bizPlan
 
     // Empty string -> null (not configured), rather than 0 -> a fabricated
     // $0 estimate would be indistinguishable from a deliberately-set $0.
@@ -99,6 +90,34 @@ export default async function EditClientPage({
     const avgCustomerValueCents = avgValueStr ? Math.round(parseFloat(avgValueStr) * 100) : null
     const conversionRateStr = (formData.get('conversion_rate') as string).trim()
     const enquiryConversionRate = conversionRateStr ? Math.round(parseFloat(conversionRateStr)) : null
+
+    // A plan change for an already-paying client has to reprice their live
+    // Stripe subscription too — otherwise the dashboard immediately shows
+    // the new plan's call limit while Stripe keeps billing (and the
+    // subscription itself stays priced for) the old one, and the two
+    // silently drift apart with nothing surfacing the mismatch. Trial and
+    // cancelled businesses have no live subscription to touch. Stripe's
+    // default proration behaviour applies — same as changing a plan directly
+    // in the Stripe dashboard would do.
+    let stripeSyncFailed = false
+    if (planChanged && bizStripeSubscriptionId && biz.plan_status === 'active') {
+      try {
+        const stripe = getStripe()
+        const subscription = await stripe.subscriptions.retrieve(bizStripeSubscriptionId)
+        const itemId = subscription.items.data[0]?.id
+        if (!itemId) throw new Error('Subscription has no line item to reprice')
+        await stripe.subscriptions.update(bizStripeSubscriptionId, {
+          items: [{ id: itemId, price: priceIdForPlan(newPlan) }],
+        })
+      } catch (err) {
+        // The local plan field still gets updated below — the client's
+        // dashboard limit shouldn't stay silently wrong just because the
+        // Stripe sync failed. Surfaced to the admin via the redirect so they
+        // know to fix the subscription's price by hand in Stripe.
+        console.error('Failed to reprice Stripe subscription for plan change:', err)
+        stripeSyncFailed = true
+      }
+    }
 
     await admin.from('businesses').update({
       name:                (formData.get('name') as string).trim(),
@@ -114,16 +133,16 @@ export default async function EditClientPage({
       // (checkout.session.completed in api/stripe-webhook). Otherwise the
       // anchor silently stays wherever it was (e.g. still the trial-start
       // moment), and renewal dates shown to the client stop making sense.
-      ...(newPlan !== bizPlan ? { plan_started_at: new Date().toISOString() } : {}),
+      ...(planChanged ? { plan_started_at: new Date().toISOString() } : {}),
     }).eq('id', bizId)
 
     await logAdminAction({
       action: 'client_details_updated',
       businessId: bizId,
-      metadata: { planChanged: newPlan !== bizPlan, emailChanged: !!newEmail && newEmail !== clientEmail },
+      metadata: { planChanged, emailChanged: !!newEmail && newEmail !== clientEmail, stripeSyncFailed },
     })
 
-    redirect(`/admin/clients/${bizId}?saved=1`)
+    redirect(`/admin/clients/${bizId}?saved=1${stripeSyncFailed ? '&stripeSyncWarning=1' : ''}`)
   }
 
   async function sendPasswordReset() {
@@ -350,6 +369,7 @@ export default async function EditClientPage({
       phone:             (formData.get('phone') as string).trim() || null,
       plan:              formData.get('plan') as string,
       vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
+      timezone:          (formData.get('timezone') as string) || 'Australia/Adelaide',
       plan_status:       startTrial ? 'trial' : 'active',
       trial_started_at:  startTrial ? now : null,
       plan_started_at:   now,
@@ -383,6 +403,13 @@ export default async function EditClientPage({
             style={{ background: 'rgba(15,163,122,0.07)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
             <CheckCircle2 size={15} className="shrink-0" />
             Client details saved.
+          </div>
+        )}
+        {stripeSyncWarning === '1' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            Plan saved, but updating the price on their live Stripe subscription failed — check the server logs and fix it in Stripe directly, or they&apos;ll be billed at the old rate.
           </div>
         )}
         {reset === 'sent' && (
@@ -462,7 +489,7 @@ export default async function EditClientPage({
               <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
                 <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Timezone</label>
                 <select name="timezone" defaultValue={biz.timezone ?? 'Australia/Adelaide'} className="admin-input admin-select">
-                  {TIMEZONES.map(t => (
+                  {AU_TIMEZONES.map(t => (
                     <option key={t.value} value={t.value}>{t.label}</option>
                   ))}
                 </select>
@@ -730,6 +757,17 @@ export default async function EditClientPage({
                           <option key={p.value} value={p.value}>{p.label}</option>
                         ))}
                       </select>
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Timezone *</label>
+                      <select name="timezone" defaultValue="Australia/Adelaide" className="admin-input admin-select">
+                        {AU_TIMEZONES.map(t => (
+                          <option key={t.value} value={t.value}>{t.label}</option>
+                        ))}
+                      </select>
+                      <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                        Set this to where the location actually is — it defaults to Adelaide, not wherever {bizName} itself is.
+                      </p>
                     </div>
                     <label className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer"
                       style={{ background: 'rgba(109,74,255,0.06)', border: '1px solid rgba(109,74,255,0.18)' }}>

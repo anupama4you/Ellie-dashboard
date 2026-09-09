@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getPlanUsage } from '@/lib/planUsage'
-import { formatInZone } from '@/lib/timezone'
+import { formatInZone, AU_TIMEZONES } from '@/lib/timezone'
 import { getSmsTemplatePreviews } from '@/lib/smsTemplates'
-import { Settings2, Building2, Phone, CreditCard, Mail, Info, PhoneCall, RefreshCw, MessageSquare } from 'lucide-react'
+import { isFeatureEnabled } from '@/lib/dashboardFeatures'
+import { Settings2, Building2, Phone, CreditCard, Mail, Info, PhoneCall, RefreshCw, MessageSquare, Clock } from 'lucide-react'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
   'Business Name':     {
@@ -41,6 +42,11 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
     bg:     'var(--amber-soft)',
     border: 'rgba(217,138,11,0.2)',
   },
+  'Timezone':          {
+    icon:   <Clock size={13} style={{ color: 'var(--rose)' }} />,
+    bg:     'rgba(158,123,255,0.1)',
+    border: 'rgba(158,123,255,0.2)',
+  },
 }
 
 export default async function SettingsPage() {
@@ -56,9 +62,12 @@ export default async function SettingsPage() {
       ).catch(() => null)
     : null
 
+  const timeZoneLabel = AU_TIMEZONES.find(t => t.value === timeZone)?.label ?? timeZone
+
   const fields = [
     { label: 'Business Name',    value: biz?.name              },
     { label: 'Phone Number',     value: biz?.phone             },
+    { label: 'Timezone',         value: biz ? timeZoneLabel : undefined },
     { label: 'Plan',             value: usage?.isTrial ? 'Free trial' : biz?.plan },
     {
       label: 'Calls used this month',
@@ -162,7 +171,7 @@ export default async function SettingsPage() {
                   reschedule: biz.sms_template_reschedule,
                   cancellation: biz.sms_template_cancellation,
                   bookingLink: biz.sms_template_booking_link,
-                }).map(({ label, body }) => (
+                }, isFeatureEnabled(biz, 'appointments')).map(({ label, body }) => (
                   <div key={label} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
                     <div className="px-3.5 py-2" style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
                       <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>{label}</span>

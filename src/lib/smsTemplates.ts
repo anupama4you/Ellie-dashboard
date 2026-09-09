@@ -117,10 +117,20 @@ export const SMS_TEMPLATE_DEFAULTS = {
  * Placeholder-filled previews for read-only display in Settings — shows
  * whatever's actually configured for this business (custom if set, else the
  * default), so the client sees literally what their customers will receive.
+ *
+ * `appointmentsEnabled` mirrors the business's own `appointments` dashboard
+ * feature flag: a business that takes real bookings (creates an appointment
+ * record) only ever sends the first three, while one that only texts a link
+ * to its own booking page (e.g. SASH Salon — see sendBookingLink) never
+ * creates an appointment at all, so the first three would just be dead,
+ * confusing previews for them. The two sets are mutually exclusive because
+ * the underlying tools are: a business is wired for one flow or the other,
+ * never both.
  */
 export function getSmsTemplatePreviews(
   businessName: string,
   custom?: { booking?: string | null; reschedule?: string | null; cancellation?: string | null; bookingLink?: string | null },
+  appointmentsEnabled = true,
 ): { label: string; body: string }[] {
   const shared: BookingSmsParams = {
     customerName: '[FirstName]',
@@ -130,13 +140,17 @@ export function getSmsTemplatePreviews(
     durationMinutes: '[Duration]',
     mapsLink: '[Location Link]',
   }
+
+  if (!appointmentsEnabled) {
+    return [{
+      label: 'Booking link',
+      body: bookingLinkSms({ customerName: shared.customerName, service: shared.service, businessName, bookingLink: '[Booking Link]' }, custom?.bookingLink),
+    }]
+  }
+
   return [
     { label: 'Booking confirmation', body: bookingConfirmationSms(shared, custom?.booking) },
     { label: 'Reschedule confirmation', body: rescheduleConfirmationSms(shared, custom?.reschedule) },
     { label: 'Cancellation confirmation', body: cancellationConfirmationSms({ ...shared }, custom?.cancellation) },
-    {
-      label: 'Booking link',
-      body: bookingLinkSms({ customerName: shared.customerName, service: shared.service, businessName, bookingLink: '[Booking Link]' }, custom?.bookingLink),
-    },
   ]
 }

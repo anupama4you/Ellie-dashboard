@@ -41,11 +41,26 @@ export async function POST(req: Request) {
           break
         }
 
+        const newSubscriptionId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id ?? null
+        const newCustomerId     = typeof session.customer === 'string' ? session.customer : session.customer?.id ?? null
+
+        const { data: existing } = await admin.from('businesses')
+          .select('plan_status, stripe_subscription_id')
+          .eq('id', businessId)
+          .single()
+
+        // Stripe can and does retry a webhook that already succeeded on our
+        // end (e.g. our 2xx response got lost in transit) — a redelivery of
+        // an event for a subscription we've already activated must not
+        // re-anchor the billing cycle by resetting plan_started_at to "now"
+        // a second time, which would silently shift the client's renewal day.
+        const alreadyActivated = !!newSubscriptionId && existing?.plan_status === 'active' && existing.stripe_subscription_id === newSubscriptionId
+
         const { error } = await admin.from('businesses').update({
-          stripe_customer_id:     typeof session.customer === 'string' ? session.customer : session.customer?.id ?? null,
-          stripe_subscription_id: typeof session.subscription === 'string' ? session.subscription : session.subscription?.id ?? null,
+          stripe_customer_id:     newCustomerId,
+          stripe_subscription_id: newSubscriptionId,
           plan_status:            'active',
-          plan_started_at:        new Date().toISOString(),
+          ...(alreadyActivated ? {} : { plan_started_at: new Date().toISOString() }),
         }).eq('id', businessId)
 
         if (error) console.error('Failed to activate business after checkout.session.completed:', error)
