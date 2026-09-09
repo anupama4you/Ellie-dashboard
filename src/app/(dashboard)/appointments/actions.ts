@@ -9,6 +9,7 @@ import { durationFor } from '@/lib/availability'
 import { mapsLink } from '@/lib/maps'
 import { sendSms } from '@/lib/twilio'
 import { rememberCustomerName } from '@/lib/customers'
+import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms } from '@/lib/smsTemplates'
 
 export type ManualAppointmentInput = {
   customerName: string
@@ -38,21 +39,45 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
   const [h, mi] = input.time.split(':').map(Number)
   if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(mi)) throw new Error('Invalid date or time.')
   const scheduledAt = zonedTimeToUtc(timeZone, y, mo, d, h, mi)
+  if (scheduledAt.getTime() <= Date.now()) throw new Error('Appointment time must be in the future.')
+
+  const customerPhone = input.customerPhone.trim()
+  const service = input.service.trim() || null
 
   const supabase = await createClient()
-  const { error } = await supabase.from('appointments').insert({
+  const { data: inserted, error } = await supabase.from('appointments').insert({
     business_id:    biz.id,
     customer_name:  customerName,
-    customer_phone: input.customerPhone.trim() || null,
-    service:        input.service.trim() || null,
+    customer_phone: customerPhone || null,
+    service,
     scheduled_at:   scheduledAt.toISOString(),
     status:         'confirmed',
     vapi_call_id:   null,
     staff_id:       input.staffId ?? null,
-  })
+  }).select('id').single()
   if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
 
   await rememberCustomerName(supabase, biz.id, input.customerPhone, customerName)
+
+  if (customerPhone) {
+    try {
+      const { data: services } = await supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id)
+      const durationMins = durationFor(service, services ?? [])
+      const smsBody = bookingConfirmationSms({
+        customerName,
+        service,
+        businessName: biz.name,
+        dateTimeLabel: formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }),
+        durationMinutes: durationMins,
+        mapsLink: mapsLink(biz),
+      }, biz.sms_template_booking)
+      await sendSms(customerPhone, smsBody, biz.twilio_phone_number)
+      await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)
+    } catch (err) {
+      // Appointment already saved — a text delivery hiccup shouldn't undo it, same as the AI-booking path.
+      console.error('Failed to send manual-booking confirmation SMS:', err)
+    }
+  }
 
   revalidatePath('/appointments')
   revalidatePath('/')
@@ -79,6 +104,7 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
   const [h, mi] = input.time.split(':').map(Number)
   if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(mi)) throw new Error('Invalid date or time.')
   const scheduledAt = zonedTimeToUtc(timeZone, y, mo, d, h, mi)
+  if (scheduledAt.getTime() <= Date.now()) throw new Error('Appointment time must be in the future.')
 
   const supabase = await createClient()
   const { data: existing, error: fetchError } = await supabase
@@ -101,17 +127,14 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
   let smsWarning: string | null = null
   if (existing.customer_phone) {
     try {
-      const link = mapsLink(biz)
-      const smsBody = [
-        `Hi ${existing.customer_name ?? ''} 👋`,
-        '',
-        `Your ${existing.service ?? 'appointment'} with ${biz.name} has been moved to:`,
-        `📅 ${formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })}`,
-        `⏱️ ${durationMins} minutes`,
-        ...(link ? ['', `📍 ${link}`] : []),
-        '',
-        'See you then! ✅',
-      ].join('\n')
+      const smsBody = rescheduleConfirmationSms({
+        customerName: existing.customer_name,
+        service: existing.service,
+        businessName: biz.name,
+        dateTimeLabel: formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }),
+        durationMinutes: durationMins,
+        mapsLink: mapsLink(biz),
+      }, biz.sms_template_reschedule)
       await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
       await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
     } catch (err) {
@@ -163,13 +186,12 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<{ 
   let smsWarning: string | null = null
   if (existing.customer_phone) {
     try {
-      const smsBody = [
-        `Hi ${existing.customer_name ?? ''} 👋`,
-        '',
-        `Your ${existing.service ?? 'appointment'} with ${biz.name} on ${formatInZone(new Date(existing.scheduled_at), timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' })} has been cancelled.`,
-        '',
-        "Let us know if you'd like to rebook.",
-      ].join('\n')
+      const smsBody = cancellationConfirmationSms({
+        customerName: existing.customer_name,
+        service: existing.service,
+        businessName: biz.name,
+        dateTimeLabel: formatInZone(new Date(existing.scheduled_at), timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }),
+      }, biz.sms_template_cancellation)
       await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
     } catch (err) {
       console.error('Failed to send cancellation SMS:', err)

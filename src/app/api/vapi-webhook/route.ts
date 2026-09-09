@@ -13,6 +13,7 @@ import { getPhoneNumber, listPhoneNumbers } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
 import { placeNextQueuedCall } from '@/lib/outboundCampaign'
+import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms } from '@/lib/smsTemplates'
 import { sendNotificationEmail } from '@/lib/notifications'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -412,12 +413,13 @@ export async function POST(req: Request) {
       id: string; name: string; hours: unknown; twilio_phone_number: string | null; timezone: string
       address: string | null; city: string | null; state: string | null; postcode: string | null; google_maps_url: string | null
       user_id: string; notification_preferences: import('@/lib/notifications').NotificationPreferences | null
+      sms_template_booking: string | null; sms_template_reschedule: string | null; sms_template_cancellation: string | null
     } | null> | null = null
     function getBiz() {
       if (!bizPromise) {
         bizPromise = supabase
           .from('businesses')
-          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation')
           .eq('vapi_assistant_id', assistantId)
           .single()
           .then(({ data }) => data)
@@ -636,17 +638,14 @@ export async function POST(req: Request) {
                   const phone = existing.customer_phone
                   if (phone) {
                     try {
-                      const link = mapsLink(biz)
-                      const smsBody = [
-                        `Hi ${existing.customer_name ?? ''} 👋`,
-                        '',
-                        `Your ${existing.service ?? 'appointment'} with ${biz.name} has been moved to:`,
-                        `📅 ${fmtDate(resolvedSlot.iso, biz.timezone)}`,
-                        `⏱️ ${durationMins} minutes`,
-                        ...(link ? ['', `📍 ${link}`] : []),
-                        '',
-                        'See you then! ✅',
-                      ].join('\n')
+                      const smsBody = rescheduleConfirmationSms({
+                        customerName: existing.customer_name,
+                        service: existing.service,
+                        businessName: biz.name,
+                        dateTimeLabel: fmtDate(resolvedSlot.iso, biz.timezone),
+                        durationMinutes: durationMins,
+                        mapsLink: mapsLink(biz),
+                      }, biz.sms_template_reschedule)
 
                       await sendSms(phone, smsBody, biz.twilio_phone_number)
                       await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
@@ -722,13 +721,12 @@ export async function POST(req: Request) {
                 const phone = existing.customer_phone
                 if (phone) {
                   try {
-                    const smsBody = [
-                      `Hi ${existing.customer_name ?? ''} 👋`,
-                      '',
-                      `Your ${existing.service ?? 'appointment'} with ${biz.name} on ${fmtDate(existing.scheduled_at, biz.timezone)} has been cancelled.`,
-                      '',
-                      "Let us know if you'd like to rebook.",
-                    ].join('\n')
+                    const smsBody = cancellationConfirmationSms({
+                      customerName: existing.customer_name,
+                      service: existing.service,
+                      businessName: biz.name,
+                      dateTimeLabel: fmtDate(existing.scheduled_at, biz.timezone),
+                    }, biz.sms_template_cancellation)
 
                     await sendSms(phone, smsBody, biz.twilio_phone_number)
                   } catch (smsError) {
@@ -1039,17 +1037,14 @@ export async function POST(req: Request) {
               await rememberCustomerName(supabase, biz.id, phone, args.customerName as string | undefined)
 
               try {
-                const link = mapsLink(biz)
-                const smsBody = [
-                  `Hi ${args.customerName ?? ''} 👋`,
-                  '',
-                  `Your ${args.service ?? 'appointment'} with ${biz.name} is confirmed for:`,
-                  `📅 ${fmtDate(resolvedSlot.iso, biz.timezone)}`,
-                  `⏱️ ${durationMins} minutes`,
-                  ...(link ? ['', `📍 ${link}`] : []),
-                  '',
-                  'See you then! ✅',
-                ].join('\n')
+                const smsBody = bookingConfirmationSms({
+                  customerName: args.customerName as string | undefined,
+                  service: args.service as string | undefined,
+                  businessName: biz.name,
+                  dateTimeLabel: fmtDate(resolvedSlot.iso, biz.timezone),
+                  durationMinutes: durationMins,
+                  mapsLink: mapsLink(biz),
+                }, biz.sms_template_booking)
 
                 await sendSms(phone, smsBody, biz.twilio_phone_number)
                 await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)

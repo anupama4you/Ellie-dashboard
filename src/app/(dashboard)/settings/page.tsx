@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { getCurrentBusiness } from '@/lib/business'
 import { getPlanUsage } from '@/lib/planUsage'
 import { formatInZone } from '@/lib/timezone'
-import { Settings2, Building2, Phone, CreditCard, Mail, Info, PhoneCall, RefreshCw } from 'lucide-react'
+import { getSmsTemplatePreviews } from '@/lib/smsTemplates'
+import { Settings2, Building2, Phone, CreditCard, Mail, Info, PhoneCall, RefreshCw, MessageSquare } from 'lucide-react'
 
 const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: string }> = {
   'Business Name':     {
@@ -132,6 +133,44 @@ export default async function SettingsPage() {
               })}
             </div>
           </section>
+
+          {/* Message templates — read-only, sent automatically on booking/reschedule/cancellation */}
+          {biz && (
+            <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+              <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
+                <MessageSquare size={14} style={{ color: 'var(--violet)' }} />
+                <h2 className="text-sm font-bold flex-1" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Message templates</h2>
+              </div>
+
+              <div
+                className="mx-5 mt-4 mb-1 flex items-start gap-2.5 px-3.5 py-3 rounded-xl"
+                style={{ background: 'var(--violet-soft)', border: '1px solid rgba(109,74,255,0.15)' }}
+              >
+                <Info size={13} style={{ color: 'var(--violet)', flexShrink: 0, marginTop: 1 }} />
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-2)' }}>
+                  These texts are sent automatically to your customers on every booking, reschedule and cancellation — shown here so
+                  you know exactly what they receive. Contact your Ellie account manager if you&apos;d like the wording changed.
+                </p>
+              </div>
+
+              <div className="mt-3 pb-4 px-5 flex flex-col gap-3">
+                {getSmsTemplatePreviews(biz.name, {
+                  booking: biz.sms_template_booking,
+                  reschedule: biz.sms_template_reschedule,
+                  cancellation: biz.sms_template_cancellation,
+                }).map(({ label, body }) => (
+                  <div key={label} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
+                    <div className="px-3.5 py-2" style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>{label}</span>
+                    </div>
+                    <p className="text-xs font-mono whitespace-pre-wrap px-3.5 py-3" style={{ color: 'var(--ink-3)' }}>
+                      {body}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         <div className="flex items-center justify-center gap-2">

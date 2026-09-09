@@ -18,6 +18,13 @@ export default function AddAppointmentModal({ services, staff, defaultDate }: { 
   const [isPending, startTransition] = useTransition()
   const [error, setError]       = useState('')
 
+  // Soft client-side guard using the browser's own local date — the server
+  // action is the real, business-timezone-aware source of truth for "is
+  // this actually in the future," this just stops the picker from
+  // encouraging an obviously-wrong choice before that check even runs.
+  const todayLocal = new Date()
+  const minDate = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, '0')}-${String(todayLocal.getDate()).padStart(2, '0')}`
+
   function close() {
     setOpen(false)
     setError('')
@@ -130,6 +137,7 @@ export default function AddAppointmentModal({ services, staff, defaultDate }: { 
                 <input
                   type="date"
                   value={date}
+                  min={minDate}
                   onChange={e => setDate(e.target.value)}
                   className="text-sm rounded-lg px-3 py-2"
                   style={{ border: '1px solid var(--line)', color: 'var(--ink)' }}

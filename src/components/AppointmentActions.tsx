@@ -35,6 +35,9 @@ export default function AppointmentActions({
 
   const [date, setDate]       = useState(() => dateStrInZone(apptDate, timeZone))
   const [time, setTime]       = useState(() => timeStrInZone(apptDate, timeZone))
+  // Soft client-side guard, business-timezone-aware since it's available here — the
+  // server action is still the real source of truth for "is this actually in the future."
+  const minDate = dateStrInZone(new Date(), timeZone)
 
   const [editName, setEditName]   = useState(customerName)
   const [editPhone, setEditPhone] = useState(customerPhone ?? '')
@@ -148,7 +151,7 @@ export default function AppointmentActions({
                     <div className="grid grid-cols-2 gap-3">
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>Date</label>
-                        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                        <input type="date" value={date} min={minDate} onChange={e => setDate(e.target.value)}
                           className="text-sm rounded-lg px-3 py-2" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
                       </div>
                       <div className="flex flex-col gap-1.5">

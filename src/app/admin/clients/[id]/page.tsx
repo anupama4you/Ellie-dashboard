@@ -14,6 +14,7 @@ import { assertAdmin } from '@/lib/adminAuth'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 import { FEATURE_REGISTRY, resolveDashboardFeatures } from '@/lib/dashboardFeatures'
+import { SMS_TEMPLATE_DEFAULTS } from '@/lib/smsTemplates'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -62,6 +63,9 @@ export default async function EditClientPage({
   const dashboardFeatures        = resolveDashboardFeatures(biz)
   const bizAvgCustomerValueCents = biz.avg_customer_value_cents as number | null
   const bizEnquiryConversionRate = biz.enquiry_conversion_rate as number | null
+  const bizSmsTemplateBooking      = biz.sms_template_booking as string | null
+  const bizSmsTemplateReschedule   = biz.sms_template_reschedule as string | null
+  const bizSmsTemplateCancellation = biz.sms_template_cancellation as string | null
 
   const { data: siblingLocations } = await admin
     .from('businesses')
@@ -299,6 +303,27 @@ export default async function EditClientPage({
     )
     await admin.from('businesses').update({ dashboard_features }).eq('id', bizId)
     await logAdminAction({ action: 'dashboard_features_updated', businessId: bizId, metadata: { dashboard_features } })
+    redirect(`/admin/clients/${bizId}?saved=1`)
+  }
+
+  /** Blank field -> null (falls back to the built-in default in src/lib/smsTemplates.ts) — never stores an empty string as "the customer's actual template." */
+  async function updateSmsTemplatesAction(formData: FormData) {
+    'use server'
+    await assertAdmin()
+    const admin = createAdminClient()
+    const booking      = (formData.get('sms_template_booking') as string).trim()
+    const reschedule   = (formData.get('sms_template_reschedule') as string).trim()
+    const cancellation = (formData.get('sms_template_cancellation') as string).trim()
+    await admin.from('businesses').update({
+      sms_template_booking:      booking || null,
+      sms_template_reschedule:   reschedule || null,
+      sms_template_cancellation: cancellation || null,
+    }).eq('id', bizId)
+    await logAdminAction({
+      action: 'sms_templates_updated',
+      businessId: bizId,
+      metadata: { customBooking: !!booking, customReschedule: !!reschedule, customCancellation: !!cancellation },
+    })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
@@ -763,6 +788,52 @@ export default async function EditClientPage({
               </div>
             </details>
           </div>
+        </div>
+
+        {/* SMS templates — admin-editable, client sees a read-only preview on their own Settings page */}
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+          <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--b3)' }}>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>SMS Templates</h2>
+            <p className="text-xs mt-1" style={{ color: 'var(--t5)' }}>
+              Sent automatically on booking/reschedule/cancellation, from the phone assistant and from the client&apos;s own
+              dashboard. Leave a field blank to use the default shown as its placeholder. The client can see these (read-only)
+              on their Settings page, but can&apos;t edit them.
+            </p>
+            <p className="text-xs mt-2 font-mono" style={{ color: 'var(--t4)' }}>
+              Placeholders: {'{{customerName}}'} {'{{service}}'} {'{{businessName}}'} {'{{dateTime}}'} {'{{duration}}'} {'{{mapsLink}}'}
+              <span style={{ color: 'var(--t5)' }}> (duration/mapsLink are ignored in the cancellation template)</span>
+            </p>
+          </div>
+          <form action={updateSmsTemplatesAction} className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Booking confirmation</label>
+              <textarea name="sms_template_booking" rows={8}
+                defaultValue={bizSmsTemplateBooking ?? ''}
+                placeholder={SMS_TEMPLATE_DEFAULTS.booking}
+                className="admin-input font-mono text-xs" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Reschedule confirmation</label>
+              <textarea name="sms_template_reschedule" rows={8}
+                defaultValue={bizSmsTemplateReschedule ?? ''}
+                placeholder={SMS_TEMPLATE_DEFAULTS.reschedule}
+                className="admin-input font-mono text-xs" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Cancellation confirmation</label>
+              <textarea name="sms_template_cancellation" rows={8}
+                defaultValue={bizSmsTemplateCancellation ?? ''}
+                placeholder={SMS_TEMPLATE_DEFAULTS.cancellation}
+                className="admin-input font-mono text-xs" />
+            </div>
+            <AdminSubmitButton
+              pendingLabel="Saving…"
+              className="w-full rounded-xl py-2.5 text-sm font-semibold transition-all"
+              style={{ gridColumn: '1 / -1', color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
+              Save SMS Templates
+            </AdminSubmitButton>
+          </form>
         </div>
       </div>
     </div>
