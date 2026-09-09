@@ -77,7 +77,7 @@ export default async function SettingsPage() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="p-3 sm:p-6 max-w-[900px] mx-auto flex flex-col gap-5">
+      <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-5">
         <div>
           <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
             Settings
@@ -85,9 +85,12 @@ export default async function SettingsPage() {
           <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>Your account, your Ellie number and your plan</p>
         </div>
 
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'minmax(0, 560px)' }}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           {/* Account details */}
-          <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+          <section
+            className="rounded-2xl"
+            style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)', gridColumn: biz ? 'auto' : '1 / -1' }}
+          >
             <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
               <Settings2 size={14} style={{ color: 'var(--violet)' }} />
               <h2 className="text-sm font-bold flex-1" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Account details</h2>

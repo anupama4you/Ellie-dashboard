@@ -801,8 +801,13 @@ export default async function EditClientPage({
               on their Settings page, but can&apos;t edit them.
             </p>
             <p className="text-xs mt-2 font-mono" style={{ color: 'var(--t4)' }}>
-              Placeholders: {'{{customerName}}'} {'{{service}}'} {'{{businessName}}'} {'{{dateTime}}'} {'{{duration}}'} {'{{mapsLink}}'}
+              Placeholders: {'{{FirstName}}'} {'{{service}}'} {'{{businessName}}'} {'{{dateTime}}'} {'{{duration}}'} {'{{mapsLink}}'}
               <span style={{ color: 'var(--t5)' }}> (duration/mapsLink are ignored in the cancellation template)</span>
+            </p>
+            <p className="text-xs mt-2" style={{ color: 'var(--t5)' }}>
+              Use {'{{FirstName}}'} merge fields to personalise. Messages up to 160 chars = 1 credit. Longer messages split
+              into 153-char parts, each costing 1 credit. Messages with emojis or special characters use Unicode encoding
+              (70/67 chars) — same cost per part, so avoid them if you want to stay in 1 part.
             </p>
           </div>
           <form action={updateSmsTemplatesAction} className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">

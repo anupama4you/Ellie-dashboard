@@ -11,33 +11,29 @@
  * edit these; only the admin panel writes to those columns.
  */
 
-const DEFAULT_BOOKING_TEMPLATE = `Hi {{customerName}} 👋
+// Plain text, no emoji, kept short so a typical fill stays within one 160-char
+// GSM-7 SMS segment — emoji/special characters force Unicode encoding, which
+// drops the per-segment budget to 70 chars and costs more for the same message.
+const DEFAULT_BOOKING_TEMPLATE =
+  `Hi {{FirstName}}, your {{service}} with {{businessName}} is confirmed for {{dateTime}} ({{duration}} min). {{mapsLink}}`
 
-Your {{service}} with {{businessName}} is confirmed for:
-📅 {{dateTime}}
-⏱️ {{duration}} minutes
-{{mapsLink}}
-See you then! ✅`
+const DEFAULT_RESCHEDULE_TEMPLATE =
+  `Hi {{FirstName}}, your {{service}} with {{businessName}} has moved to {{dateTime}} ({{duration}} min). {{mapsLink}}`
 
-const DEFAULT_RESCHEDULE_TEMPLATE = `Hi {{customerName}} 👋
-
-Your {{service}} with {{businessName}} has been moved to:
-📅 {{dateTime}}
-⏱️ {{duration}} minutes
-{{mapsLink}}
-See you then! ✅`
-
-const DEFAULT_CANCELLATION_TEMPLATE = `Hi {{customerName}} 👋
-
-Your {{service}} with {{businessName}} on {{dateTime}} has been cancelled.
-
-Let us know if you'd like to rebook.`
+const DEFAULT_CANCELLATION_TEMPLATE =
+  `Hi {{FirstName}}, your {{service}} with {{businessName}} on {{dateTime}} has been cancelled. Let us know if you'd like to rebook.`
 
 /** Every placeholder a template may reference; substitution is unconditional — an unused or unrecognised {{token}} just becomes ''. */
 type SmsPlaceholderValues = Record<string, string | undefined>
 
 function renderTemplate(template: string, values: SmsPlaceholderValues): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => values[key] ?? '')
+}
+
+/** First token of a full name, for the {{FirstName}} merge field — falls back to 'there' when there's no name on file. */
+function firstNameOf(fullName: string | null | undefined): string {
+  const trimmed = (fullName ?? '').trim()
+  return trimmed ? trimmed.split(/\s+/)[0] : 'there'
 }
 
 export type BookingSmsParams = {
@@ -49,15 +45,15 @@ export type BookingSmsParams = {
   mapsLink?: string | null
 }
 
-/** `mapsLink` is the bare URL — folded into one placeholder value (with its own emoji/spacing) so a template with no configured address collapses to a clean blank line instead of a dangling "📍 " fragment. */
+/** `mapsLink` is the bare URL, or '' when there's no configured address (a template referencing it just collapses to a clean blank). */
 function bookingPlaceholders(p: BookingSmsParams): SmsPlaceholderValues {
   return {
-    customerName: p.customerName ?? '',
+    FirstName: firstNameOf(p.customerName),
     service: p.service ?? 'appointment',
     businessName: p.businessName,
     dateTime: p.dateTimeLabel,
     duration: String(p.durationMinutes),
-    mapsLink: p.mapsLink ? `📍 ${p.mapsLink}` : '',
+    mapsLink: p.mapsLink ?? '',
   }
 }
 
@@ -78,7 +74,7 @@ export type CancellationSmsParams = {
 
 export function cancellationConfirmationSms(p: CancellationSmsParams, customTemplate?: string | null): string {
   const values: SmsPlaceholderValues = {
-    customerName: p.customerName ?? '',
+    FirstName: firstNameOf(p.customerName),
     service: p.service ?? 'appointment',
     businessName: p.businessName,
     dateTime: p.dateTimeLabel,
@@ -103,7 +99,7 @@ export function getSmsTemplatePreviews(
   custom?: { booking?: string | null; reschedule?: string | null; cancellation?: string | null },
 ): { label: string; body: string }[] {
   const shared: BookingSmsParams = {
-    customerName: '[Customer Name]',
+    customerName: '[FirstName]',
     service: '[Service]',
     businessName,
     dateTimeLabel: '[Date & Time]',
