@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
 import { Megaphone, CheckCircle2 } from 'lucide-react'
+import { assertAdmin } from '@/lib/adminAuth'
 
 const STATUS_STYLE: Record<string, { color: string; bg: string }> = {
   draft:     { color: 'var(--t5)',     bg: 'var(--b4)' },
@@ -49,6 +50,7 @@ export default async function AdminClientCampaignsPage({
    */
   async function saveDefaultsAction(formData: FormData) {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
     const firstMessage = (formData.get('firstMessage') as string).trim()
     const systemPrompt = (formData.get('systemPrompt') as string).trim()

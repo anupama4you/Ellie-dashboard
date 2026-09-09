@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
+import { timingSafeEqual } from 'node:crypto'
 import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { startCampaignNow } from '@/lib/outboundCampaign'
+import { captureError } from '@/lib/monitoring'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,6 +11,13 @@ const supabase = createClient(
 
 function json(data: unknown, init?: ResponseInit) {
   return Response.json(data, init)
+}
+
+/** Constant-time string comparison for the scheduler secret — a plain `!==` leaks timing info proportional to the matching prefix length. */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB)
 }
 
 /**
@@ -24,9 +33,17 @@ function json(data: unknown, init?: ResponseInit) {
 export async function POST(req: Request) {
   const secret = process.env.CAMPAIGN_SCHEDULER_SECRET
   if (secret) {
-    if (req.headers.get('x-scheduler-secret') !== secret) {
+    const provided = req.headers.get('x-scheduler-secret')
+    if (!provided || !timingSafeStringEqual(provided, secret)) {
       return json({ error: 'Unauthorized' }, { status: 401 })
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    // Fail closed in production — this endpoint can trigger real outbound
+    // calls/SMS to customers for any business, so silently accepting
+    // unauthenticated requests here is a genuine abuse vector, not just a
+    // data-read gap.
+    console.error('CAMPAIGN_SCHEDULER_SECRET is not set in production — rejecting request rather than accepting it unauthenticated.')
+    return json({ error: 'Server misconfigured' }, { status: 503 })
   } else {
     console.warn('CAMPAIGN_SCHEDULER_SECRET is not set — campaign-scheduler is accepting unauthenticated requests.')
   }
@@ -40,8 +57,8 @@ export async function POST(req: Request) {
     .eq('running', false)
 
   if (dueError) {
-    console.error('campaign-scheduler: failed to query due campaigns:', dueError)
-    return json({ error: dueError.message }, { status: 500 })
+    captureError(dueError, { handler: 'campaign-scheduler' })
+    return json({ error: 'Something went wrong' }, { status: 500 })
   }
 
   let started = 0

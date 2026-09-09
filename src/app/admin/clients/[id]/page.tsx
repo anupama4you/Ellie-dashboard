@@ -10,6 +10,7 @@ import AdminSubmitButton from '@/components/AdminSubmitButton'
 import CopyLinkButton from '@/components/CopyLinkButton'
 import { generateInviteLinkAction, generatePaymentLinkAction, generateImpersonationLinkAction } from './actions'
 import { logAdminAction } from '@/lib/adminAudit'
+import { assertAdmin } from '@/lib/adminAuth'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 import { FEATURE_REGISTRY, resolveDashboardFeatures } from '@/lib/dashboardFeatures'
@@ -77,6 +78,7 @@ export default async function EditClientPage({
 
   async function updateBusiness(formData: FormData) {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
 
     const newEmail = (formData.get('email') as string).trim()
@@ -121,6 +123,7 @@ export default async function EditClientPage({
 
   async function sendPasswordReset() {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
 
     // Generate the link ourselves and send via Resend rather than Supabase's
@@ -168,6 +171,7 @@ export default async function EditClientPage({
 
   async function deleteClient() {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
 
     // businesses.user_id cascades on auth-user delete, so deleting the login
@@ -211,6 +215,7 @@ export default async function EditClientPage({
   /** Starts (or restarts, e.g. after a cancellation) a fresh trial — resets the billing anchor to now. */
   async function startTrialAction() {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
     const now = new Date().toISOString()
     await admin.from('businesses').update({ plan_status: 'trial', trial_started_at: now, plan_started_at: now }).eq('id', bizId)
@@ -230,6 +235,7 @@ export default async function EditClientPage({
    */
   async function sendPaymentLinkAction() {
     'use server'
+    await assertAdmin()
     if (!clientEmail) redirect(`/admin/clients/${bizId}?paymentLink=error`)
 
     const result = await generatePaymentLinkAction(bizId, bizName, bizPlan, clientEmail, bizStripeCustomerId)
@@ -255,6 +261,7 @@ export default async function EditClientPage({
 
   async function cancelPlanAction() {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
 
     if (bizStripeSubscriptionId) {
@@ -273,6 +280,7 @@ export default async function EditClientPage({
   /** The one real access gate — see (dashboard)/layout.tsx. Unlike plan_status, this actually blocks the client's dashboard. */
   async function toggleAccountDisabledAction() {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
     await admin.from('businesses').update({ account_disabled: !bizAccountDisabled }).eq('id', bizId)
     await logAdminAction({ action: bizAccountDisabled ? 'account_enabled' : 'account_disabled', businessId: bizId })
@@ -282,6 +290,7 @@ export default async function EditClientPage({
   /** Only explicit `false`s are stored — an unchecked box disables that key, a checked one is simply omitted (absent = enabled). */
   async function updateDashboardFeaturesAction(formData: FormData) {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
     const dashboard_features = Object.fromEntries(
       FEATURE_REGISTRY
@@ -301,6 +310,7 @@ export default async function EditClientPage({
    */
   async function addLocationAction(formData: FormData) {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
 
     const startTrial = formData.get('start_trial') === 'on'

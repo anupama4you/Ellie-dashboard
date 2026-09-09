@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getStripe, priceIdForPlan } from '@/lib/stripe'
 import { siteUrl } from '@/lib/siteUrl'
 import { logAdminAction } from '@/lib/adminAudit'
+import { assertAdmin } from '@/lib/adminAuth'
 
 /**
  * Top-level 'use server' exports, not inline closures inside the page
@@ -15,6 +16,7 @@ import { logAdminAction } from '@/lib/adminAudit'
  * fn.bind(null, ...) at the call site instead.
  */
 export async function generateInviteLinkAction(bizId: string, email: string): Promise<{ url: string } | { error: string }> {
+  await assertAdmin()
   const admin = createAdminClient()
 
   const { data: linkData, error: linkErr } = await admin.auth.admin.generateLink({
@@ -49,6 +51,7 @@ export async function generateImpersonationLinkAction(
   clientEmail: string,
   clientName: string,
 ): Promise<{ url: string } | { error: string }> {
+  await assertAdmin()
   if (!clientEmail) return { error: 'This client has no email on file' }
 
   const admin = createAdminClient()
@@ -81,6 +84,7 @@ export async function generatePaymentLinkAction(
   stripeCustomerId: string | null,
 ): Promise<{ url: string } | { error: string }> {
   try {
+    await assertAdmin()
     const admin = createAdminClient()
     const stripe = getStripe()
 

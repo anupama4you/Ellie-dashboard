@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
+import { assertAdmin } from '@/lib/adminAuth'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -24,6 +25,7 @@ export default async function NewClientPage({
 
   async function createClientAction(formData: FormData) {
     'use server'
+    await assertAdmin()
     const admin = createAdminClient()
     const email        = (formData.get('email') as string).trim()
     const businessName = (formData.get('name') as string).trim()

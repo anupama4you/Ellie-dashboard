@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { timingSafeEqual } from 'node:crypto'
 import { sendSms } from '@/lib/twilio'
 import { phoneDigitsKey, toE164Au } from '@/lib/sms'
 import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, hasConflictingAppointment, encodeSlotRef, decodeSlotRef, DEFAULT_SLOT_COUNT } from '@/lib/availability'
@@ -14,6 +15,13 @@ import { captureError } from '@/lib/monitoring'
 import { placeNextQueuedCall } from '@/lib/outboundCampaign'
 import { sendNotificationEmail } from '@/lib/notifications'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
+
+/** Constant-time string comparison for the webhook secret — a plain `!==` leaks timing info proportional to the matching prefix length. */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB)
+}
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -339,9 +347,17 @@ export async function POST(req: Request) {
     // `Authorization: Bearer` header. Getting this wrong doesn't fail loud:
     // it just silently 401s every real call. See VAPI_WEBHOOK_SETUP.md.
     const provided = req.headers.get('x-vapi-secret')
-    if (provided !== secret) {
+    if (!provided || !timingSafeStringEqual(provided, secret)) {
       return json({ error: 'Unauthorized' }, { status: 401 })
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    // Fail closed in production — silently accepting unauthenticated
+    // requests here means anyone can trigger booking/reschedule/cancel logic
+    // or forge end-of-call-report data for any business. Local dev without
+    // the secret configured still works (warn-and-continue below), since
+    // there's no real client data at risk there.
+    console.error('VAPI_WEBHOOK_SECRET is not set in production — rejecting request rather than accepting it unauthenticated.')
+    return json({ error: 'Server misconfigured' }, { status: 503 })
   } else {
     console.warn('VAPI_WEBHOOK_SECRET is not set — webhook is accepting unauthenticated requests.')
   }

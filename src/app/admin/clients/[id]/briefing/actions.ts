@@ -2,10 +2,12 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { assertAdmin } from '@/lib/adminAuth'
 import type { BriefingPayload, CompanyInfo } from '@/app/(dashboard)/briefing/actions'
 
 /** Discards the client's pending draft without touching live data — for changes the admin decides not to apply. Live businesses/business_services/business_faqs columns are left exactly as they are. */
 export async function rejectDraftBriefing(businessId: string) {
+  await assertAdmin()
   const admin = createAdminClient()
   await admin.from('businesses').update({ draft_briefing: null, briefing_needs_review: false }).eq('id', businessId)
   revalidatePath(`/admin/clients/${businessId}/briefing`)
@@ -22,6 +24,7 @@ export async function rejectDraftBriefing(businessId: string) {
  * atomic path as everything else.
  */
 export async function updateDraftCompanyInfo(businessId: string, companyInfo: CompanyInfo) {
+  await assertAdmin()
   const admin = createAdminClient()
   const { data: biz } = await admin.from('businesses').select('draft_briefing').eq('id', businessId).single()
   if (!biz?.draft_briefing) throw new Error('No pending draft to correct')
@@ -48,6 +51,7 @@ export async function updateDraftCompanyInfo(businessId: string, companyInfo: Co
  * section needs to reflect the update.
  */
 export async function updateLiveCompanyInfo(businessId: string, companyInfo: CompanyInfo) {
+  await assertAdmin()
   const admin = createAdminClient()
   const { error } = await admin
     .from('businesses')

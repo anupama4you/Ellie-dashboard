@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { getSelectedBusinessId } from '@/lib/business'
+import { captureError } from '@/lib/monitoring'
 import type { NextRequest } from 'next/server'
 
 export async function GET(request: NextRequest) {
@@ -27,7 +28,10 @@ export async function GET(request: NextRequest) {
   if (endedReason) query = query.eq('ended_reason', endedReason)
 
   const { data: calls, count, error } = await query
-  if (error) return Response.json({ error: error.message }, { status: 500 })
+  if (error) {
+    captureError(error, { handler: 'api/client/calls' })
+    return Response.json({ error: 'Something went wrong' }, { status: 500 })
+  }
 
   return Response.json({ calls: calls ?? [], total: count ?? (calls ?? []).length, page, limit })
 }

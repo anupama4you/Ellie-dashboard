@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { syncAssistantPrompt } from '@/lib/vapi'
+import { assertAdmin } from '@/lib/adminAuth'
 import type { BriefingPayload } from '@/app/(dashboard)/briefing/actions'
 
 /** Prompt-only push — for wording tweaks that don't correspond to any pending client draft. Never touches draft_briefing/briefing_needs_review; use applyDraftAndPushPrompt to reconcile a pending draft. */
@@ -10,6 +11,7 @@ export async function adminSaveSystemPrompt(
   businessId: string,
   payload: { firstMessage: string; systemPrompt: string },
 ): Promise<void> {
+  await assertAdmin()
   const admin = createAdminClient()
   const { data: biz } = await admin.from('businesses').select('vapi_assistant_id').eq('id', businessId).single()
   if (!biz?.vapi_assistant_id) throw new Error('No Vapi assistant connected to this business')
@@ -35,6 +37,7 @@ export async function applyDraftAndPushPrompt(
   payload: { firstMessage: string; systemPrompt: string },
   expectedBriefingUpdatedAt: string | null,
 ): Promise<void> {
+  await assertAdmin()
   const admin = createAdminClient()
 
   const { data: biz } = await admin

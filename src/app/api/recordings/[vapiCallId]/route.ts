@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getCurrentBusiness } from '@/lib/business'
+import { getSelectedBusinessId } from '@/lib/business'
 
 /**
  * Vapi's call recording storage is now access-controlled — the URL that used
@@ -17,16 +17,24 @@ export async function GET(
 ) {
   const { vapiCallId } = await params
 
+  // Deliberately not getCurrentBusiness() — that trusts an x-verified-user-id
+  // header set by proxy.ts's middleware, but proxy.ts's matcher excludes
+  // /api/* routes (this one included), so that header is never actually set
+  // here. A real auth check against Supabase directly is the only correct
+  // option on this path.
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return new NextResponse('Unauthorized', { status: 401 })
+
+  const businessId = await getSelectedBusinessId(supabase, user.id)
+  if (!businessId) return new NextResponse('Unauthorized', { status: 401 })
+
   // Only let a signed-in business fetch a recording that actually belongs to
   // one of their own calls — the vapi_call_id alone shouldn't be enough.
-  const { business: biz } = await getCurrentBusiness()
-  if (!biz) return new NextResponse('Unauthorized', { status: 401 })
-
-  const supabase = await createClient()
   const { data: call } = await supabase
     .from('calls')
     .select('id')
-    .eq('business_id', biz.id)
+    .eq('business_id', businessId)
     .eq('vapi_call_id', vapiCallId)
     .single()
   if (!call) return new NextResponse('Not found', { status: 404 })
