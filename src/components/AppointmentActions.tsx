@@ -63,38 +63,38 @@ export default function AppointmentActions({
   function submitReschedule() {
     setError('')
     startTransition(async () => {
-      try {
-        const result = await rescheduleAppointmentAction({ appointmentId, date, time })
-        if (result.smsWarning) setSmsWarning(result.smsWarning)
-        else setModal(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to reschedule')
+      const result = await rescheduleAppointmentAction({ appointmentId, date, time })
+      if (result.error) {
+        setError(result.error)
+        return
       }
+      if (result.smsWarning) setSmsWarning(result.smsWarning)
+      else setModal(null)
     })
   }
 
   function submitEdit() {
     setError('')
     startTransition(async () => {
-      try {
-        await editAppointmentAction({ appointmentId, customerName: editName, customerPhone: editPhone, service: editService, notes: editNotes, staffId: editStaffId || null })
-        setModal(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to save changes')
+      const result = await editAppointmentAction({ appointmentId, customerName: editName, customerPhone: editPhone, service: editService, notes: editNotes, staffId: editStaffId || null })
+      if (result.error) {
+        setError(result.error)
+        return
       }
+      setModal(null)
     })
   }
 
   function submitCancel() {
     setError('')
     startTransition(async () => {
-      try {
-        const result = await cancelAppointmentAction(appointmentId)
-        if (result.smsWarning) setSmsWarning(result.smsWarning)
-        else setModal(null)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to cancel')
+      const result = await cancelAppointmentAction(appointmentId)
+      if (result.error) {
+        setError(result.error)
+        return
       }
+      if (result.smsWarning) setSmsWarning(result.smsWarning)
+      else setModal(null)
     })
   }
 

@@ -33,13 +33,13 @@ export default function AddAppointmentModal({ services, staff, defaultDate }: { 
   function submit() {
     setError('')
     startTransition(async () => {
-      try {
-        await createManualAppointment({ customerName: name, customerPhone: phone, service, date, time, staffId: staffId || null })
-        setOpen(false)
-        setName(''); setPhone(''); setService(''); setStaffId('')
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to add appointment')
+      const result = await createManualAppointment({ customerName: name, customerPhone: phone, service, date, time, staffId: staffId || null })
+      if (result.error) {
+        setError(result.error)
+        return
       }
+      setOpen(false)
+      setName(''); setPhone(''); setService(''); setStaffId('')
     })
   }
 

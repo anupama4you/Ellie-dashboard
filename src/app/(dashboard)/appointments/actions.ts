@@ -26,21 +26,26 @@ export type ManualAppointmentInput = {
  * they took directly) rather than ones Ellie booked. Deliberately leaves
  * `vapi_call_id` null — that's the existing signal the Appointments page
  * already uses to distinguish "Booked by Ellie" from "Booked by you".
+ *
+ * Returns `{ error }` instead of throwing for expected/validation failures —
+ * in production this Next.js version strips the .message off any error
+ * thrown across the Server Action boundary (only a bare digest reaches the
+ * client), so a thrown Error here would render as a message-less crash.
  */
-export async function createManualAppointment(input: ManualAppointmentInput): Promise<void> {
+export async function createManualAppointment(input: ManualAppointmentInput): Promise<{ error: string | null }> {
   const { user, business: biz } = await getCurrentBusiness()
-  if (!biz) throw new Error('No business profile found.')
+  if (!biz) return { error: 'No business profile found.' }
 
   const customerName = input.customerName.trim()
-  if (!customerName) throw new Error('Customer name is required.')
-  if (!input.date || !input.time) throw new Error('Date and time are required.')
+  if (!customerName) return { error: 'Customer name is required.' }
+  if (!input.date || !input.time) return { error: 'Date and time are required.' }
 
   const timeZone = biz.timezone ?? 'Australia/Adelaide'
   const [y, mo, d] = input.date.split('-').map(Number)
   const [h, mi] = input.time.split(':').map(Number)
-  if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(mi)) throw new Error('Invalid date or time.')
+  if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(mi)) return { error: 'Invalid date or time.' }
   const scheduledAt = zonedTimeToUtc(timeZone, y, mo, d, h, mi)
-  if (scheduledAt.getTime() <= Date.now()) throw new Error('Appointment time must be in the future.')
+  if (scheduledAt.getTime() <= Date.now()) return { error: 'Appointment time must be in the future.' }
 
   const customerPhone = input.customerPhone.trim()
   const service = input.service.trim() || null
@@ -56,7 +61,7 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
     vapi_call_id:   null,
     staff_id:       input.staffId ?? null,
   }).select('id').single()
-  if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
+  if (error) return { error: error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message }
 
   await rememberCustomerName(supabase, biz.id, input.customerPhone, customerName)
 
@@ -87,6 +92,8 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
 
   revalidatePath('/appointments')
   revalidatePath('/')
+
+  return { error: null }
 }
 
 export type RescheduleAppointmentInput = {
@@ -99,18 +106,21 @@ export type RescheduleAppointmentInput = {
  * Business-owner-triggered reschedule — mirrors the rescheduleAppointment
  * tool call Ellie uses on the phone (same SMS + Google Calendar sync), just
  * triggered from the dashboard instead of a call.
+ *
+ * Returns `{ error }` instead of throwing for expected/validation failures —
+ * see the note on createManualAppointment above.
  */
-export async function rescheduleAppointmentAction(input: RescheduleAppointmentInput): Promise<{ smsWarning: string | null }> {
+export async function rescheduleAppointmentAction(input: RescheduleAppointmentInput): Promise<{ error: string | null; smsWarning: string | null }> {
   const { user, business: biz } = await getCurrentBusiness()
-  if (!biz) throw new Error('No business profile found.')
-  if (!input.date || !input.time) throw new Error('Date and time are required.')
+  if (!biz) return { error: 'No business profile found.', smsWarning: null }
+  if (!input.date || !input.time) return { error: 'Date and time are required.', smsWarning: null }
 
   const timeZone = biz.timezone ?? 'Australia/Adelaide'
   const [y, mo, d] = input.date.split('-').map(Number)
   const [h, mi] = input.time.split(':').map(Number)
-  if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(mi)) throw new Error('Invalid date or time.')
+  if (!y || !mo || !d || Number.isNaN(h) || Number.isNaN(mi)) return { error: 'Invalid date or time.', smsWarning: null }
   const scheduledAt = zonedTimeToUtc(timeZone, y, mo, d, h, mi)
-  if (scheduledAt.getTime() <= Date.now()) throw new Error('Appointment time must be in the future.')
+  if (scheduledAt.getTime() <= Date.now()) return { error: 'Appointment time must be in the future.', smsWarning: null }
 
   const supabase = await createClient()
   const { data: existing, error: fetchError } = await supabase
@@ -119,13 +129,13 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
     .eq('id', input.appointmentId)
     .eq('business_id', biz.id)
     .single()
-  if (fetchError || !existing) throw new Error('Appointment not found.')
+  if (fetchError || !existing) return { error: 'Appointment not found.', smsWarning: null }
 
   const { error } = await supabase.from('appointments').update({
     scheduled_at: scheduledAt.toISOString(),
     status: 'rescheduled',
   }).eq('id', existing.id)
-  if (error) throw new Error(error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message)
+  if (error) return { error: error.code === '23505' ? 'That time slot is already booked — pick a different time.' : error.message, smsWarning: null }
 
   const { data: services } = await supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id)
   const durationMins = durationFor(existing.service, services ?? [])
@@ -169,16 +179,19 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
   revalidatePath('/appointments')
   revalidatePath('/')
 
-  return { smsWarning }
+  return { error: null, smsWarning }
 }
 
 /**
  * Business-owner-triggered cancellation — mirrors the cancelAppointment tool
  * call Ellie uses on the phone (same SMS + Google Calendar event removal).
+ *
+ * Returns `{ error }` instead of throwing for expected failures — see the
+ * note on createManualAppointment above.
  */
-export async function cancelAppointmentAction(appointmentId: string): Promise<{ smsWarning: string | null }> {
+export async function cancelAppointmentAction(appointmentId: string): Promise<{ error: string | null; smsWarning: string | null }> {
   const { user, business: biz } = await getCurrentBusiness()
-  if (!biz) throw new Error('No business profile found.')
+  if (!biz) return { error: 'No business profile found.', smsWarning: null }
 
   const supabase = await createClient()
   const { data: existing, error: fetchError } = await supabase
@@ -187,10 +200,10 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<{ 
     .eq('id', appointmentId)
     .eq('business_id', biz.id)
     .single()
-  if (fetchError || !existing) throw new Error('Appointment not found.')
+  if (fetchError || !existing) return { error: 'Appointment not found.', smsWarning: null }
 
   const { error } = await supabase.from('appointments').update({ status: 'cancelled' }).eq('id', existing.id)
-  if (error) throw new Error(error.message)
+  if (error) return { error: error.message, smsWarning: null }
 
   const timeZone = biz.timezone ?? 'Australia/Adelaide'
 
@@ -229,7 +242,7 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<{ 
   revalidatePath('/appointments')
   revalidatePath('/')
 
-  return { smsWarning }
+  return { error: null, smsWarning }
 }
 
 export type EditAppointmentInput = {
@@ -241,13 +254,18 @@ export type EditAppointmentInput = {
   staffId?: string | null
 }
 
-/** Edits the booking's details (name/phone/service/notes) — doesn't touch the time; use rescheduleAppointmentAction for that. */
-export async function editAppointmentAction(input: EditAppointmentInput): Promise<void> {
+/**
+ * Edits the booking's details (name/phone/service/notes) — doesn't touch the time; use rescheduleAppointmentAction for that.
+ *
+ * Returns `{ error }` instead of throwing for expected failures — see the
+ * note on createManualAppointment above.
+ */
+export async function editAppointmentAction(input: EditAppointmentInput): Promise<{ error: string | null }> {
   const { business: biz } = await getCurrentBusiness()
-  if (!biz) throw new Error('No business profile found.')
+  if (!biz) return { error: 'No business profile found.' }
 
   const customerName = input.customerName.trim()
-  if (!customerName) throw new Error('Customer name is required.')
+  if (!customerName) return { error: 'Customer name is required.' }
 
   const supabase = await createClient()
   const { error } = await supabase.from('appointments').update({
@@ -257,10 +275,12 @@ export async function editAppointmentAction(input: EditAppointmentInput): Promis
     notes: input.notes.trim() || null,
     staff_id: input.staffId ?? null,
   }).eq('id', input.appointmentId).eq('business_id', biz.id)
-  if (error) throw new Error(error.message)
+  if (error) return { error: error.message }
 
   await rememberCustomerName(supabase, biz.id, input.customerPhone, customerName)
 
   revalidatePath('/appointments')
   revalidatePath('/')
+
+  return { error: null }
 }
