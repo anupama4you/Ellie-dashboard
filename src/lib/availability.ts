@@ -159,6 +159,18 @@ export function findNextAvailableSlots(opts: {
       }
     }
 
+    if (candidate < earliestStart) {
+      // Same grid-aligned jump as the busy-interval skip inside the loop
+      // below — closes the gap up to the minimum lead time in one step
+      // instead of walking every 30-minute mark (each with its own busy-
+      // overlap check against every existing appointment) between opening
+      // and "now + 30 minutes" only to discard all of them anyway. Matters
+      // most for long-hours businesses checked early in the day, and for a
+      // roster search that repeats this per staff member.
+      const stepsAhead = Math.ceil((earliestStart.getTime() - candidate.getTime()) / (SLOT_STEP_MINUTES * 60_000))
+      candidate.setTime(candidate.getTime() + stepsAhead * SLOT_STEP_MINUTES * 60_000)
+    }
+
     while (candidate.getTime() + duration * 60_000 <= close.getTime()) {
       const candidateEnd = new Date(candidate.getTime() + duration * 60_000)
       const overlapping = busy.filter(b => candidate < b.end && b.start < candidateEnd)

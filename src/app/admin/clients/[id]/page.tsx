@@ -66,6 +66,7 @@ export default async function EditClientPage({
   const bizSmsTemplateBooking      = biz.sms_template_booking as string | null
   const bizSmsTemplateReschedule   = biz.sms_template_reschedule as string | null
   const bizSmsTemplateCancellation = biz.sms_template_cancellation as string | null
+  const bizSmsTemplateBookingLink  = biz.sms_template_booking_link as string | null
 
   const { data: siblingLocations } = await admin
     .from('businesses')
@@ -314,15 +315,17 @@ export default async function EditClientPage({
     const booking      = (formData.get('sms_template_booking') as string).trim()
     const reschedule   = (formData.get('sms_template_reschedule') as string).trim()
     const cancellation = (formData.get('sms_template_cancellation') as string).trim()
+    const bookingLink  = (formData.get('sms_template_booking_link') as string).trim()
     await admin.from('businesses').update({
       sms_template_booking:      booking || null,
       sms_template_reschedule:   reschedule || null,
       sms_template_cancellation: cancellation || null,
+      sms_template_booking_link: bookingLink || null,
     }).eq('id', bizId)
     await logAdminAction({
       action: 'sms_templates_updated',
       businessId: bizId,
-      metadata: { customBooking: !!booking, customReschedule: !!reschedule, customCancellation: !!cancellation },
+      metadata: { customBooking: !!booking, customReschedule: !!reschedule, customCancellation: !!cancellation, customBookingLink: !!bookingLink },
     })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
@@ -801,8 +804,8 @@ export default async function EditClientPage({
               on their Settings page, but can&apos;t edit them.
             </p>
             <p className="text-xs mt-2 font-mono" style={{ color: 'var(--t4)' }}>
-              Placeholders: {'{{FirstName}}'} {'{{service}}'} {'{{businessName}}'} {'{{dateTime}}'} {'{{duration}}'} {'{{mapsLink}}'}
-              <span style={{ color: 'var(--t5)' }}> (duration/mapsLink are ignored in the cancellation template)</span>
+              Placeholders: {'{{FirstName}}'} {'{{service}}'} {'{{businessName}}'} {'{{dateTime}}'} {'{{duration}}'} {'{{mapsLink}}'} {'{{bookingLink}}'}
+              <span style={{ color: 'var(--t5)' }}> (each template only uses the placeholders relevant to it — see the defaults below)</span>
             </p>
             <p className="text-xs mt-2" style={{ color: 'var(--t5)' }}>
               Use {'{{FirstName}}'} merge fields to personalise. Messages up to 160 chars = 1 credit. Longer messages split
@@ -810,7 +813,7 @@ export default async function EditClientPage({
               (70/67 chars) — same cost per part, so avoid them if you want to stay in 1 part.
             </p>
           </div>
-          <form action={updateSmsTemplatesAction} className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <form action={updateSmsTemplatesAction} className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Booking confirmation</label>
               <textarea name="sms_template_booking" rows={8}
@@ -830,6 +833,16 @@ export default async function EditClientPage({
               <textarea name="sms_template_cancellation" rows={8}
                 defaultValue={bizSmsTemplateCancellation ?? ''}
                 placeholder={SMS_TEMPLATE_DEFAULTS.cancellation}
+                className="admin-input font-mono text-xs" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>
+                Booking link
+                <span className="font-normal" style={{ color: 'var(--t5)' }}> (sendBookingLink tool only)</span>
+              </label>
+              <textarea name="sms_template_booking_link" rows={8}
+                defaultValue={bizSmsTemplateBookingLink ?? ''}
+                placeholder={SMS_TEMPLATE_DEFAULTS.bookingLink}
                 className="admin-input font-mono text-xs" />
             </div>
             <AdminSubmitButton

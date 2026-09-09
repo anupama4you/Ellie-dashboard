@@ -161,6 +161,7 @@ export default async function SettingsPage() {
                   booking: biz.sms_template_booking,
                   reschedule: biz.sms_template_reschedule,
                   cancellation: biz.sms_template_cancellation,
+                  bookingLink: biz.sms_template_booking_link,
                 }).map(({ label, body }) => (
                   <div key={label} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
                     <div className="px-3.5 py-2" style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>

@@ -23,6 +23,12 @@ const DEFAULT_RESCHEDULE_TEMPLATE =
 const DEFAULT_CANCELLATION_TEMPLATE =
   `Hi {{FirstName}}, your {{service}} with {{businessName}} on {{dateTime}} has been cancelled. Let us know if you'd like to rebook.`
 
+// For businesses that text a booking link instead of taking the booking over
+// the phone (no appointment record — see sendBookingLink in the webhook) —
+// a different flow to the three above, so it gets its own template.
+const DEFAULT_BOOKING_LINK_TEMPLATE =
+  `Hi {{FirstName}}, thanks for calling {{businessName}}! Book your {{service}} here: {{bookingLink}}`
+
 /** Every placeholder a template may reference; substitution is unconditional — an unused or unrecognised {{token}} just becomes ''. */
 type SmsPlaceholderValues = Record<string, string | undefined>
 
@@ -82,11 +88,29 @@ export function cancellationConfirmationSms(p: CancellationSmsParams, customTemp
   return renderTemplate(customTemplate?.trim() || DEFAULT_CANCELLATION_TEMPLATE, values)
 }
 
+export type BookingLinkSmsParams = {
+  customerName: string | null | undefined
+  service: string | null | undefined
+  businessName: string
+  bookingLink: string
+}
+
+export function bookingLinkSms(p: BookingLinkSmsParams, customTemplate?: string | null): string {
+  const values: SmsPlaceholderValues = {
+    FirstName: firstNameOf(p.customerName),
+    service: p.service ?? 'appointment',
+    businessName: p.businessName,
+    bookingLink: p.bookingLink,
+  }
+  return renderTemplate(customTemplate?.trim() || DEFAULT_BOOKING_LINK_TEMPLATE, values)
+}
+
 /** Raw default templates, for the admin panel's textarea placeholder text and "reset to default" behaviour — never mutated. */
 export const SMS_TEMPLATE_DEFAULTS = {
   booking: DEFAULT_BOOKING_TEMPLATE,
   reschedule: DEFAULT_RESCHEDULE_TEMPLATE,
   cancellation: DEFAULT_CANCELLATION_TEMPLATE,
+  bookingLink: DEFAULT_BOOKING_LINK_TEMPLATE,
 } as const
 
 /**
@@ -96,7 +120,7 @@ export const SMS_TEMPLATE_DEFAULTS = {
  */
 export function getSmsTemplatePreviews(
   businessName: string,
-  custom?: { booking?: string | null; reschedule?: string | null; cancellation?: string | null },
+  custom?: { booking?: string | null; reschedule?: string | null; cancellation?: string | null; bookingLink?: string | null },
 ): { label: string; body: string }[] {
   const shared: BookingSmsParams = {
     customerName: '[FirstName]',
@@ -110,5 +134,9 @@ export function getSmsTemplatePreviews(
     { label: 'Booking confirmation', body: bookingConfirmationSms(shared, custom?.booking) },
     { label: 'Reschedule confirmation', body: rescheduleConfirmationSms(shared, custom?.reschedule) },
     { label: 'Cancellation confirmation', body: cancellationConfirmationSms({ ...shared }, custom?.cancellation) },
+    {
+      label: 'Booking link',
+      body: bookingLinkSms({ customerName: shared.customerName, service: shared.service, businessName, bookingLink: '[Booking Link]' }, custom?.bookingLink),
+    },
   ]
 }

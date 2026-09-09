@@ -13,7 +13,7 @@ import { getPhoneNumber, listPhoneNumbers } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
 import { captureError } from '@/lib/monitoring'
 import { placeNextQueuedCall } from '@/lib/outboundCampaign'
-import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms } from '@/lib/smsTemplates'
+import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms, bookingLinkSms } from '@/lib/smsTemplates'
 import { sendNotificationEmail } from '@/lib/notifications'
 import type { Hours } from '@/app/(dashboard)/briefing/actions'
 
@@ -29,32 +29,45 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+type ExternalCalendarEvent = { id: string; start: Date; end: Date }
+
 /**
- * Busy intervals from the business's connected Google Calendar — a single
+ * Raw events from the business's connected Google Calendar — a single
  * calendar shared across every staff member, not one per person. Uses the
- * full events list (not the privacy-preserving freeBusy endpoint) so events
- * that are actually one of our own tracked appointments can be excluded via
- * `ownEventIds`: those are already correctly represented, staff-scoped, by
- * the local `appointments` table (see computeAvailableSlots) — counting them
- * again here too would double-block, and since this whole calendar is shared,
- * it would incorrectly mark every OTHER staff member busy at that time as
- * well (e.g. Amanda's own booking making Sarah look unavailable). What's left
- * after excluding our own events is genuinely external (e.g. manually added
- * in Google Calendar directly) — those have no staff attribution available
- * from the API at all, so they conservatively still block the whole team.
+ * full events list (not the privacy-preserving freeBusy endpoint) because
+ * some of them may actually be one of our own tracked appointments, which
+ * need to be identified (by id, via `excludeOwnEvents` below) and excluded
+ * rather than counted twice. Split out from that exclusion step so this can
+ * be kicked off in parallel with the local DB queries `computeAvailableSlots`
+ * needs — it doesn't actually depend on any of their results, only the final
+ * filtering does — instead of only starting once they've all resolved.
  */
-async function getExternalBusy(bizId: string, now: Date, lookout: Date, ownEventIds: Set<string>): Promise<{ start: Date; end: Date }[]> {
+async function fetchExternalEvents(bizId: string, now: Date, lookout: Date): Promise<ExternalCalendarEvent[]> {
   try {
     const google = await getValidAccessToken(supabase, bizId)
     if (!google) return []
     const events = await listEvents(google.accessToken, google.calendarId, now, lookout)
     return events
-      .filter(e => e.start?.dateTime && e.end?.dateTime && !ownEventIds.has(e.id))
-      .map(e => ({ start: new Date(e.start!.dateTime!), end: new Date(e.end!.dateTime!) }))
+      .filter(e => e.start?.dateTime && e.end?.dateTime)
+      .map(e => ({ id: e.id, start: new Date(e.start!.dateTime!), end: new Date(e.end!.dateTime!) }))
   } catch (calErr) {
     console.error('Google Calendar events check failed — falling back to local availability only:', calErr)
     return []
   }
+}
+
+/**
+ * `ownEventIds` are already correctly represented, staff-scoped, by the local
+ * `appointments` table (see computeAvailableSlots) — counting them again here
+ * too would double-block, and since the whole calendar is shared, it would
+ * incorrectly mark every OTHER staff member busy at that time as well (e.g.
+ * Amanda's own booking making Sarah look unavailable). What's left after
+ * excluding our own events is genuinely external (e.g. manually added in
+ * Google Calendar directly) — those have no staff attribution available from
+ * the API at all, so they conservatively still block the whole team.
+ */
+function excludeOwnEvents(events: ExternalCalendarEvent[], ownEventIds: Set<string>): { start: Date; end: Date }[] {
+  return events.filter(e => !ownEventIds.has(e.id)).map(e => ({ start: e.start, end: e.end }))
 }
 
 /**
@@ -174,12 +187,22 @@ function fmtDate(iso: string, timeZone: string) {
 }
 
 type ResolvedStaff = { id: string; name: string; hours: Hours | null }
+type RosterRow = { id: string; name: string; hours: unknown }
 
-/** Case-insensitive lookup against the business's active roster — an unmatched/unresolved name is not an error, callers just fall through to unfiltered. */
-async function resolveStaffMember(bizId: string, name: string | undefined): Promise<ResolvedStaff | null> {
+/**
+ * Case-insensitive name match against an already-fetched active roster — no
+ * DB round trip. Every call site that needs this (computeAvailableSlots,
+ * bookAppointment) already loads the active roster in the same breath for
+ * its own "assign whoever's free" fallback, so resolving the caller's named
+ * staff member from that same array instead of a second `business_staff`
+ * query removes a wholly redundant fetch of the exact same table on both the
+ * checkAvailability and booking hot paths. An unmatched/unresolved name is
+ * not an error, callers just fall through to unfiltered.
+ */
+function matchStaffByName(roster: RosterRow[], name: string | undefined): ResolvedStaff | null {
   if (!name?.trim()) return null
-  const { data } = await supabase.from('business_staff').select('id, name, active, hours').eq('business_id', bizId)
-  const match = (data ?? []).find(s => s.active && s.name.toLowerCase() === name.trim().toLowerCase())
+  const trimmed = name.trim().toLowerCase()
+  const match = roster.find(s => s.name.toLowerCase() === trimmed)
   return match ? { id: match.id, name: match.name, hours: match.hours as Hours | null } : null
 }
 
@@ -194,6 +217,24 @@ async function getStaffById(bizId: string, staffId: string): Promise<ResolvedSta
  * recovery (two callers offered the same slot at once — see the unique
  * index on appointments(business_id, staff_id, scheduled_at)) — both need
  * the same "what's actually free right now" computation.
+ *
+ * Every data source this needs (three local queries + the Google Calendar
+ * fetch) is independent of the others, so all four are kicked off together
+ * rather than the Calendar fetch — typically the slowest, being an external
+ * network call — only starting once the local queries have all resolved.
+ * Only the very last step (excluding our own already-tracked events from the
+ * external list) has a real dependency, on `existing`, so that's the one
+ * thing that happens after the Promise.all instead of inside it.
+ *
+ * A failure on any of the three local queries is treated as fatal (thrown,
+ * not silently defaulted to an empty array): defaulting `existing` to "no
+ * appointments" on a transient DB error would let this offer a slot that's
+ * actually already booked, and defaulting `services` would silently assume
+ * the wrong duration for whatever's being booked — both are worse than the
+ * caller hearing "let me confirm and call you back." A Google Calendar
+ * failure, by contrast, already degrades gracefully inside fetchExternalEvents
+ * (returns no external events, same as a business with no calendar connected)
+ * since losing that one external cross-check doesn't put local data at risk.
  */
 async function computeAvailableSlots(
   biz: { id: string; hours: unknown; timezone: string },
@@ -203,24 +244,43 @@ async function computeAvailableSlots(
   preferredDate?: string,
   preferredTime?: string,
 ): Promise<{ slots: Date[]; resolvedStaffName: string | null; resolvedStaffId: string | null }> {
-  const [{ data: services }, resolvedStaff, { data: existing }, { data: activeRoster }] = await Promise.all([
+  const now = new Date()
+  const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
+
+  const [
+    { data: services, error: servicesErr },
+    { data: existing, error: existingErr },
+    { data: activeRoster, error: rosterErr },
+    staffById,
+    externalEvents,
+  ] = await Promise.all([
     supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
-    requestedStaffId ? getStaffById(biz.id, requestedStaffId) : resolveStaffMember(biz.id, requestedStaffMember),
+    // Bounded to the same 14-day window the search actually walks (not just
+    // "the next 100 appointments") — a business booked out past 100
+    // appointments within that window would otherwise have its later days
+    // silently missing conflict data, risking a double-booked offer. 500 is
+    // a generous safety cap against pathological data, not the real limit.
     supabase.from('appointments')
       .select('scheduled_at, service, staff_id, calendar_event_id')
       .eq('business_id', biz.id)
       .neq('status', 'cancelled')
-      .gte('scheduled_at', new Date().toISOString())
+      .gte('scheduled_at', now.toISOString())
+      .lte('scheduled_at', lookout.toISOString())
       .order('scheduled_at')
-      .limit(100),
+      .limit(500),
     supabase.from('business_staff').select('id, name, hours, sort_order').eq('business_id', biz.id).eq('active', true).order('sort_order'),
+    requestedStaffId ? getStaffById(biz.id, requestedStaffId) : Promise.resolve(null),
+    fetchExternalEvents(biz.id, now, lookout),
   ])
 
-  const now = new Date()
-  const lookout = new Date(now.getTime() + 14 * 24 * 60 * 60_000)
+  if (servicesErr || existingErr || rosterErr) {
+    throw new Error(`computeAvailableSlots: ${(servicesErr ?? existingErr ?? rosterErr)?.message ?? 'query failed'}`)
+  }
+
+  const resolvedStaff = requestedStaffId ? staffById : matchStaffByName(activeRoster ?? [], requestedStaffMember)
 
   const ownEventIds = new Set((existing ?? []).map(a => a.calendar_event_id).filter((id): id is string => !!id))
-  const externalBusy = await getExternalBusy(biz.id, now, lookout, ownEventIds)
+  const externalBusy = excludeOwnEvents(externalEvents, ownEventIds)
 
   const baseOpts = {
     hours: biz.hours as Hours,
@@ -414,12 +474,13 @@ export async function POST(req: Request) {
       address: string | null; city: string | null; state: string | null; postcode: string | null; google_maps_url: string | null
       user_id: string; notification_preferences: import('@/lib/notifications').NotificationPreferences | null
       sms_template_booking: string | null; sms_template_reschedule: string | null; sms_template_cancellation: string | null
+      sms_template_booking_link: string | null
     } | null> | null = null
     function getBiz() {
       if (!bizPromise) {
         bizPromise = supabase
           .from('businesses')
-          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation, sms_template_booking_link')
           .eq('vapi_assistant_id', assistantId)
           .single()
           .then(({ data }) => data)
@@ -818,6 +879,48 @@ export async function POST(req: Request) {
         continue
       }
 
+      // For businesses that text a link to their own booking page instead of
+      // taking the booking over the phone (e.g. SASH Salon) — no appointment
+      // record gets created, so this is deliberately separate from
+      // bookAppointment. Unlike the generic sendSms tool, the message itself
+      // is admin-controlled (sms_template_booking_link, editable in the admin
+      // panel and visible read-only in the client's own Settings) rather than
+      // composed fresh by the model every time — the model only supplies the
+      // link itself and whatever it already knows about the caller.
+      if (name === 'sendBookingLink') {
+        const args = toolArgs(toolCall)
+        const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+        const bookingLink = (args.bookingLink as string | undefined)?.trim()
+        let resultText: string
+
+        try {
+          const biz = await getBiz()
+
+          if (!biz) {
+            resultText = "I couldn't find this business's account — let the caller know you'll follow up another way."
+          } else if (!phone) {
+            resultText = "There's no phone number to text — ask the caller to confirm the number they'd like the link sent to."
+          } else if (!bookingLink) {
+            resultText = "No booking link was given — pass the exact link from your own instructions as bookingLink, then call this tool again."
+          } else {
+            const smsBody = bookingLinkSms({
+              customerName: args.customerName as string | undefined,
+              service: args.service as string | undefined,
+              businessName: biz.name,
+              bookingLink,
+            }, biz.sms_template_booking_link)
+            await sendSms(phone, smsBody, biz.twilio_phone_number)
+            resultText = "Text message sent."
+          }
+        } catch (err) {
+          captureError(err, { handler: 'sendBookingLink' })
+          resultText = "Something went wrong sending that text — let the caller know you'll follow up another way."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
       // Also does not look anything up in `businesses` — validates against
       // the real Australian address database (GNAF, via Addressr) rather
       // than trusting whatever the caller said, and flags genuinely
@@ -902,16 +1005,16 @@ export async function POST(req: Request) {
         } else if (!resolvedSlot) {
           resultText = "There's no valid time to book — call checkAvailability again and pass the ref it returns to bookAppointment."
         } else {
-          const [{ data: services }, resolvedStaff, { data: activeRoster }] = await Promise.all([
+          const [{ data: services }, staffById, { data: activeRoster }] = await Promise.all([
             supabase.from('business_services').select('name, duration_minutes').eq('business_id', biz.id),
-            resolvedSlot.staffId ? getStaffById(biz.id, resolvedSlot.staffId) : resolveStaffMember(biz.id, args.staffMember as string | undefined),
+            resolvedSlot.staffId ? getStaffById(biz.id, resolvedSlot.staffId) : Promise.resolve(null),
             supabase.from('business_staff').select('id, name, hours, sort_order').eq('business_id', biz.id).eq('active', true).order('sort_order'),
           ])
           const durationMins = durationFor(args.service as string | undefined, services ?? [])
           const requestedStart = new Date(resolvedSlot.iso)
           const requestedEnd = new Date(requestedStart.getTime() + durationMins * 60_000)
 
-          let finalStaff = resolvedStaff
+          let finalStaff = resolvedSlot.staffId ? staffById : matchStaffByName(activeRoster ?? [], args.staffMember as string | undefined)
 
           if (!finalStaff && activeRoster && activeRoster.length > 0) {
             // No staff preference given — assign whichever active team member
@@ -965,7 +1068,7 @@ export async function POST(req: Request) {
             try {
               const { preferredDate, preferredTime } = preferredFromInstant(requestedStart, biz.timezone)
               const { slots, resolvedStaffName, resolvedStaffId } = await computeAvailableSlots(
-                biz, args.service as string | undefined, undefined, finalStaff?.id ?? resolvedStaff?.id, preferredDate, preferredTime,
+                biz, args.service as string | undefined, undefined, finalStaff?.id, preferredDate, preferredTime,
               )
               if (slots.length) {
                 recoveryText = `That time isn't actually available${resolvedStaffName ? ` for ${resolvedStaffName}` : ''}. Apologise briefly, then offer these instead: ${fmtSlots(slots, biz.timezone, resolvedStaffId)}. Don't read out the times as a raw timestamp — pass the exact ref to bookAppointment for whichever they choose.`
