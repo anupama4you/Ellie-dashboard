@@ -22,5 +22,9 @@
     "additionalDirectories": [
       "c:\\Users\\dilshana\\Documents\\projects\\ellie-dashboard\\src\\app\\admin\\clients"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
+  "enableAllProjectMcpServers": true
 }
