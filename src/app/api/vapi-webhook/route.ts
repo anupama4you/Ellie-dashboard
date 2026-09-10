@@ -474,13 +474,13 @@ export async function POST(req: Request) {
       address: string | null; city: string | null; state: string | null; postcode: string | null; google_maps_url: string | null
       user_id: string; notification_preferences: import('@/lib/notifications').NotificationPreferences | null
       sms_template_booking: string | null; sms_template_reschedule: string | null; sms_template_cancellation: string | null
-      sms_template_booking_link: string | null
+      sms_template_booking_link: string | null; website: string | null
     } | null> | null = null
     function getBiz() {
       if (!bizPromise) {
         bizPromise = supabase
           .from('businesses')
-          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation, sms_template_booking_link')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation, sms_template_booking_link, website')
           .eq('vapi_assistant_id', assistantId)
           .single()
           .then(({ data }) => data)
@@ -919,6 +919,38 @@ export async function POST(req: Request) {
           }
         } catch (err) {
           captureError(err, { handler: 'sendBookingLink' })
+          resultText = "Something went wrong sending that text — let the caller know you'll follow up another way."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      // Texts the business's own website URL — offered at the end of a call
+      // for callers who want more detail than the assistant can give over
+      // the phone. `website` comes from the business's own record, not
+      // something the model supplies, so the only model-controlled input is
+      // an optional alternate number to text.
+      if (name === 'sendWebsiteLink') {
+        const args = toolArgs(toolCall)
+        const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+        let resultText: string
+
+        try {
+          const biz = await getBiz()
+
+          if (!biz) {
+            resultText = "I couldn't find this business's account — let the caller know you'll follow up another way."
+          } else if (!phone) {
+            resultText = "There's no phone number to text — ask the caller to confirm the number they'd like the link sent to."
+          } else if (!biz.website) {
+            resultText = "No website is on file for this business — let the caller know you'll follow up with the details another way."
+          } else {
+            await sendSms(phone, `Hi, here's the ${biz.name} website: ${biz.website}`, biz.twilio_phone_number)
+            resultText = "Text message sent."
+          }
+        } catch (err) {
+          captureError(err, { handler: 'sendWebsiteLink' })
           resultText = "Something went wrong sending that text — let the caller know you'll follow up another way."
         }
 
