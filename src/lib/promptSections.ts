@@ -74,3 +74,57 @@ export function compileSystemPrompt(sections: PromptSection[], structured: Struc
     .map(s => `${'#'.repeat(s.headingLevel)} ${s.title}\n\n${renderSectionBody(s, structured)}`)
     .join('\n\n')
 }
+
+export type SplitSection = { title: string; headingLevel: 1 | 2 | 3; content: string }
+
+const HEADING_RE = /^(#{1,3})\s+(.+)$/
+
+/**
+ * One-time migration helper: turns an existing hand-authored prompt into an
+ * ordered section list by splitting on markdown headings. Text before the
+ * first heading becomes an "Introduction" section rather than being
+ * dropped. A heading-less, empty-preamble input yields no sections.
+ */
+export function splitPromptIntoSections(promptText: string): SplitSection[] {
+  const lines = promptText.split('\n')
+  const sections: SplitSection[] = []
+  let current: SplitSection | null = null
+  let preamble: string[] = []
+
+  const flushPreamble = () => {
+    const text = preamble.join('\n').trim()
+    if (text) sections.push({ title: 'Introduction', headingLevel: 1, content: text })
+    preamble = []
+  }
+
+  for (const line of lines) {
+    const m = line.match(HEADING_RE)
+    if (m) {
+      if (current) sections.push({ ...current, content: current.content.trim() })
+      else flushPreamble()
+      current = { title: m[2].trim(), headingLevel: m[1].length as 1 | 2 | 3, content: '' }
+    } else if (current) {
+      current.content += (current.content ? '\n' : '') + line
+    } else {
+      preamble.push(line)
+    }
+  }
+  if (current) sections.push({ ...current, content: current.content.trim() })
+  else flushPreamble()
+
+  return sections
+}
+
+export function joinSections(sections: SplitSection[]): string {
+  return sections.map(s => `${'#'.repeat(s.headingLevel)} ${s.title}\n\n${s.content}`).join('\n\n')
+}
+
+/** Line-ending/blank-line noise normalized away — used to compare prompt text before/after a migration split without demanding byte-identical whitespace. */
+export function normalizeWhitespace(text: string): string {
+  return text
+    .split('\n')
+    .map(l => l.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
