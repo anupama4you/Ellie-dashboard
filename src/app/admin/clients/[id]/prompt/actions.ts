@@ -165,7 +165,8 @@ export async function applyPendingChanges(businessId: string, expectedBriefingUp
     systemPrompt,
   })
 
-  await admin.from('businesses').update({ draft_briefing: null, briefing_needs_review: false }).eq('id', businessId)
+  const { error: clearError } = await admin.from('businesses').update({ draft_briefing: null, briefing_needs_review: false }).eq('id', businessId)
+  if (clearError) throw new Error(clearError.message)
 
   revalidatePath(`/admin/clients/${businessId}/prompt`)
   revalidatePath('/admin/clients')
