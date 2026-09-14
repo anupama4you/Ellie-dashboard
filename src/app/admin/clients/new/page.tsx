@@ -80,6 +80,22 @@ export default async function NewClientPage({
       redirect('/admin/clients/new?error=biz')
     }
 
+    const STARTER_SECTIONS: { key: string; title: string; headingLevel: 1 | 2 | 3; kind: 'text' | 'hours_table' | 'services_table' | 'staff_table'; content: string | null; clientEditable: boolean }[] = [
+      { key: 'identity',   title: 'Identity',        headingLevel: 1, kind: 'text', content: `You are Ellie, the AI receptionist for ${businessName}.`, clientEditable: false },
+      { key: 'contact',    title: 'Contact',         headingLevel: 2, kind: 'text', content: (formData.get('phone') as string)?.trim() ? `Phone: ${(formData.get('phone') as string).trim()}` : '', clientEditable: true },
+      { key: 'disclosure', title: 'AI Disclosure',   headingLevel: 2, kind: 'text', content: `If asked: "Yes, I'm ${businessName}'s AI receptionist. I'm here to help however I can."`, clientEditable: true },
+      { key: 'hours',      title: 'Hours',           headingLevel: 2, kind: 'hours_table', content: null, clientEditable: true },
+      { key: 'services',   title: 'Services',        headingLevel: 2, kind: 'services_table', content: null, clientEditable: true },
+    ]
+    const { error: sectionsErr } = await admin.from('prompt_sections').insert(
+      STARTER_SECTIONS.map((s, i) => ({ business_id: biz.id, key: s.key, title: s.title, heading_level: s.headingLevel, kind: s.kind, content: s.content, client_editable: s.clientEditable, sort_order: i }))
+    )
+    if (sectionsErr) {
+      // Non-fatal — the business record and invite already succeeded; the
+      // admin can add sections manually from the Agent Details tab.
+      console.error('Failed to seed starter prompt_sections:', sectionsErr)
+    }
+
     const inviteUrl = `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=invite`
     let emailWarning = false
     try {
