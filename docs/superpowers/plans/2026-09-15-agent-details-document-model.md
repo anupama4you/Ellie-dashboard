@@ -317,7 +317,7 @@ import { fmtCustomInstructions } from './assistantPrompt'
 - [ ] **Step 7: Run the full test suite**
 
 Run: `npx vitest run src/lib/assistantPrompt.test.ts src/lib/promptSections.test.ts`
-Expected: PASS, no failures, no reference to deleted exports anywhere else yet (later tasks fix remaining importers).
+Expected: PASS, no failures. Note: `src/components/SystemPromptEditor.tsx` now has a broken import (`buildAssistantConfig`/`patchPromptSections` no longer exported) — this is expected and does not fail `npm test` (vitest only runs `.test.ts` files, and this component has none); it's fixed by Task 9 replacing this component's usage entirely. Don't attempt to fix `SystemPromptEditor.tsx` in this task.
 
 - [ ] **Step 8: Commit**
 
@@ -778,7 +778,7 @@ export async function applyPendingChanges(businessId: string, expectedBriefingUp
 - [ ] **Step 2: Type-check**
 
 Run: `npx tsc --noEmit`
-Expected: no errors from this file (other files still referencing deleted names from Task 4 are expected to still error until Tasks 6/9/12 land — confirm the error list only mentions files not yet touched: `src/app/(dashboard)/briefing/*`, `src/app/admin/clients/[id]/briefing/*`, `src/app/admin/clients/[id]/prompt/page.tsx`).
+Expected: no errors from this file (other files still referencing deleted/renamed names are expected to still error until later tasks land — confirm the error list only mentions files not yet touched: `src/app/(dashboard)/briefing/*` and `src/app/admin/clients/[id]/briefing/*` (fixed by Task 12's deletion), `src/app/admin/clients/[id]/prompt/page.tsx` (fixed by Task 9 — it still imports the old `adminSaveSystemPrompt`/`applyDraftAndPushPrompt` this task just removed), and `src/components/SystemPromptEditor.tsx` (already broken since Task 2 for unrelated reasons, now also missing `adminSaveSystemPrompt`/`applyDraftAndPushPrompt`; fixed by Task 9 dropping its usage entirely — do not fix this component itself in this task).
 
 - [ ] **Step 3: Commit**
 
@@ -1430,9 +1430,30 @@ export default function AdminDocumentEditor({ businessId, sections: initialSecti
               </button>
             </div>
           )}
-          {s.kind === 'hours_table' && <div className="p-5"><HoursSectionField title="Live hours" hours={liveStructured.hours} onChange={() => {}} /></div>}
-          {s.kind === 'services_table' && <div className="p-5"><ServicesSectionField title="Live services" services={liveStructured.services} onChange={() => {}} /></div>}
-          {s.kind === 'staff_table' && <div className="p-5"><StaffSectionField title="Live team" staff={liveStructured.staff} businessHours={liveStructured.hours} onChange={() => {}} /></div>}
+          {s.kind === 'hours_table' && (
+            <div className="p-5 flex flex-col gap-3">
+              <HoursSectionField title="Live hours" hours={liveStructured.hours} onChange={() => {}} />
+              {structuredChanged && JSON.stringify(draftStructured.hours) !== JSON.stringify(liveStructured.hours) && (
+                <HoursSectionField title="Pending (client's edit)" hours={draftStructured.hours} onChange={() => {}} />
+              )}
+            </div>
+          )}
+          {s.kind === 'services_table' && (
+            <div className="p-5 flex flex-col gap-3">
+              <ServicesSectionField title="Live services" services={liveStructured.services} onChange={() => {}} />
+              {structuredChanged && JSON.stringify(draftStructured.services) !== JSON.stringify(liveStructured.services) && (
+                <ServicesSectionField title="Pending (client's edit)" services={draftStructured.services} onChange={() => {}} />
+              )}
+            </div>
+          )}
+          {s.kind === 'staff_table' && (
+            <div className="p-5 flex flex-col gap-3">
+              <StaffSectionField title="Live team" staff={liveStructured.staff} businessHours={liveStructured.hours} onChange={() => {}} />
+              {structuredChanged && JSON.stringify(draftStructured.staff) !== JSON.stringify(liveStructured.staff) && (
+                <StaffSectionField title="Pending (client's edit)" staff={draftStructured.staff} businessHours={draftStructured.hours} onChange={() => {}} />
+              )}
+            </div>
+          )}
 
           <SectionDiff section={s} />
         </div>
