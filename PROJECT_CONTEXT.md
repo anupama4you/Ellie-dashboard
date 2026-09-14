@@ -6,8 +6,8 @@ AI receptionist SaaS. Each client business gets a Vapi voice assistant ("Ellie")
 
 ## Architecture at a glance
 
-- `(dashboard)` route group — client-facing: Today/Calls/Appointments/Analytics/Briefing/Settings. Scoped to `getCurrentBusiness()` (the logged-in user's own `businesses` row).
-- `admin/` — internal-only: create clients, review Briefing submissions, hand-author each assistant's system prompt. Uses `createAdminClient()` (service-role key, bypasses RLS).
+- `(dashboard)` route group — client-facing: Today/Calls/Appointments/Analytics/Agent Details/Settings. Scoped to `getCurrentBusiness()` (the logged-in user's own `businesses` row).
+- `admin/` — internal-only: create clients, review Agent Details submissions, hand-author each assistant's system prompt. Uses `createAdminClient()` (service-role key, bypasses RLS).
 - `api/vapi-webhook/route.ts` — the only inbound integration point from Vapi. Handles two message types:
   - `tool-calls`: `checkAvailability` (reads live `businesses.hours` + `business_services` + `appointments`, plus Google Calendar free/busy if connected) and `bookAppointment` (inserts `appointments`, sends Twilio SMS, creates a Google Calendar event).
   - `end-of-call-report`: upserts into the local `calls` table (`onConflict: vapi_call_id`). **This is the only thing that populates `calls`** — the Calls/Today/Analytics pages otherwise read call history live from Vapi's API, not this table.
@@ -21,24 +21,47 @@ Every business now has `plan_status` (`trial | active | cancelled`), `trial_star
 - Converting a trial to paid resets `plan_started_at` to the conversion date (new billing anchor); starting a trial (fresh or restarted after cancellation) resets both `trial_started_at` and `plan_started_at` to that moment.
 - None of this blocks calls — same as before, it's purely for visibility (usage bars, the admin "over usage threshold" alert in `getBusinessesOverUsageThreshold()`, which now skips trial businesses since they have no `pct` to threshold against).
 
-## The Briefing draft/live split (why it exists)
+## The Agent Details document model (why it exists)
 
-Client edits to hours/services/FAQs/company info used to write straight into the same columns the webhook reads live — meaning a client's change took effect on real calls instantly, while the hand-authored Vapi system prompt (what Ellie actually *says*) stayed stale until an admin manually noticed and pushed an update. Two sources of truth, no guaranteed sync.
+Client edits to hours/services/company info used to write into a
+different data shape than the hand-authored Vapi system prompt — a
+client filled in structured fields, and an admin separately maintained
+prompt prose that had to be manually kept in sync via HTML-comment
+markers (`<!-- briefing:KEY -->`). The two drifted, and real prompts
+carry nuance (location-alias disambiguation, catalogue caveats) no fixed
+schema could hold.
 
-Fixed by:
-- `businesses.draft_briefing` (jsonb) — client Briefing saves land here only (`saveDraftBriefing` in `src/lib/briefing.ts`), never touching live columns.
-- Admin reviews the draft read-only at `/admin/clients/[id]/briefing` (`resolveBriefing()` = draft-preferred, `liveBriefing()` = pure live baseline, diffed for "Changed" pills). Company Information is the one section that's admin-editable inline there (`AdminCompanyInfoEditor` — writes to the draft if one's pending, straight to live if not).
-- The **only** way live `businesses`/`business_services`/`business_faqs` change is `applyDraftAndPushPrompt()` (`admin/clients/[id]/prompt/actions.ts`), triggered by "Apply & Push" on the Prompt tab. It atomically copies draft → live columns *and* pushes the edited system prompt to Vapi in the same action, so tool behavior and prompt text can never drift apart again. DB write happens before the Vapi push (cheaper/safer call first); on Vapi-push failure the draft/review flag are deliberately left in place rather than rolled back — same "tools ahead of prompt" state the feature exists to surface.
-- "Reject changes" (`rejectDraftBriefing`) discards the draft, explicitly leaves live data untouched.
-- "Save & push to Vapi" (plain `adminSaveSystemPrompt`) is for prompt-only wording tweaks — deliberately does **not** touch `draft_briefing`/`briefing_needs_review`, so a routine edit can't silently dismiss a real pending client change.
+Fixed by treating the prompt itself as the data model: `prompt_sections`
+holds an ordered, per-business list of named sections whose
+concatenation (`compileSystemPrompt()` in `src/lib/promptSections.ts`) *is*
+the Vapi system prompt. Three section kinds (`hours_table`/
+`services_table`/`staff_table`) render from the existing structured
+tables (`businesses.hours`, `business_services`, `business_staff`) because
+`checkAvailability`/`bookAppointment` parse them programmatically and
+`appointments.staff_id` FKs into `business_staff` — every other section is
+free text, edited verbatim, no formatting layer.
 
-## Marker-based prompt patching (why "Regenerate" doesn't overwrite everything)
-
-Real system prompts are hand-authored per client and are far more detailed than `buildAssistantConfig()`'s generic template (custom booking-flow scripts, upsell handling, phrasing rules, etc.) — a full regenerate would destroy that. Instead, `patchPromptSections()` (`src/lib/assistantPrompt.ts`) does surgical replacement between `<!-- briefing:KEY -->` / `<!-- /briefing:KEY -->` markers only. Sections without markers present are left completely alone and reported as "missing," never guessed at.
-
-Keys: `description`, `location`, `website` (each independent — not appended together as one blob, so they can be placed/phrased wherever makes sense in a given prompt), `hours`, `services`, `faqs`, `transferRules`. `location`/`website` are **inline** (no forced newlines — meant to sit after a hand-written label like `Location: `); the rest are **block**-style (own paragraph).
-
-Existing clients' live prompts have none of these markers yet — an admin has to manually add them once per prompt (copy the relevant existing text between a marker pair) before "Regenerate from Briefing" can touch that section.
+- Client-facing: `/agent-details` (`src/app/(dashboard)/agent-details/`)
+  renders only `client_editable = true` sections. Edits stage as
+  `draft_content` per text row, or in `businesses.draft_briefing` for the
+  three structured kinds plus greeting/transfer number (same
+  `briefing_needs_review`/`briefing_updated_at` flags as before).
+- Admin-facing: `/admin/clients/[id]/prompt` (`AdminDocumentEditor`) is
+  the full document — add/remove/reorder sections, toggle
+  `client_editable`, edit any section directly, and "Apply & Push"
+  promotes every pending draft at once, recompiles, and pushes to Vapi in
+  one action (`applyPendingChanges` in
+  `src/app/admin/clients/[id]/prompt/actions.ts`) — same
+  DB-write-before-Vapi-push ordering as before, same "leave the pending
+  flag set on Vapi failure" behavior.
+- New clients are seeded with a handful of starter sections at creation
+  (`src/app/admin/clients/new/page.tsx`), including a one-time-only copy
+  of any operational field (e.g. phone) already typed on the creation
+  form into a starting section body — never re-synced afterward.
+- Existing clients' prompts were migrated once via
+  `scripts/migrate-existing-prompts-to-sections.mjs`, splitting their live
+  hand-authored prompt into sections by markdown heading — see
+  `docs/superpowers/specs/2026-09-15-agent-details-document-model-design.md`.
 
 ## Known footguns / things that look fine but silently aren't
 

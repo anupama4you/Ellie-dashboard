@@ -7,7 +7,7 @@ import { isAfterHours } from '@/lib/availability'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { PhoneOff, Search } from 'lucide-react'
 import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
-import type { Hours } from '@/app/(dashboard)/briefing/actions'
+import type { Hours } from '@/lib/promptSections'
 
 function fmtTime(iso: string, timeZone: string) {
   const d = new Date(iso)

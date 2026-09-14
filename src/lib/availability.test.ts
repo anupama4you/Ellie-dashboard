@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { findNextAvailableSlots, encodeSlotRef, decodeSlotRef } from './availability'
 import { dateStrInZone } from '@/lib/timezone'
-import type { Hours } from '@/app/(dashboard)/briefing/actions'
+import type { Hours } from '@/lib/promptSections'
 
 const ALL_OPEN: Hours = {
   mon: { open: true, opensAt: '09:00', closesAt: '17:00' },

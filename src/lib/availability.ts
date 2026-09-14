@@ -1,4 +1,4 @@
-import type { Hours } from '@/app/(dashboard)/briefing/actions'
+import type { Hours } from '@/lib/promptSections'
 import { zonedTimeToUtc, dateStrInZone, dayOfWeekInZone, formatInZone } from '@/lib/timezone'
 
 const DAY_KEYS: (keyof Hours)[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']

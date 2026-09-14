@@ -18,7 +18,7 @@ const NAV = [
   { href: '/sms',          label: 'Messages',            icon: MessageSquare,  feature: 'sms' as FeatureKey },
   { href: '/campaigns',    label: 'Campaigns',           icon: Megaphone,      feature: 'campaigns' as FeatureKey },
   { href: '/analytics',    label: 'Analytics',           icon: BarChart3       },
-  { href: '/briefing',     label: 'Business', icon: Building2       },
+  { href: '/agent-details', label: 'Agent Details', icon: Building2      },
   { href: '/integrations', label: 'Integrations',        icon: Plug            },
   { href: '/notifications', label: 'Notifications',      icon: Bell,           feature: 'notifications' as FeatureKey },
   { href: '/settings',     label: 'Settings',            icon: Settings        },

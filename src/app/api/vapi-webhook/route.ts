@@ -15,7 +15,7 @@ import { captureError } from '@/lib/monitoring'
 import { placeNextQueuedCall } from '@/lib/outboundCampaign'
 import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms, bookingLinkSms } from '@/lib/smsTemplates'
 import { sendNotificationEmail } from '@/lib/notifications'
-import type { Hours } from '@/app/(dashboard)/briefing/actions'
+import type { Hours } from '@/lib/promptSections'
 
 /** Constant-time string comparison for the webhook secret — a plain `!==` leaks timing info proportional to the matching prefix length. */
 function timingSafeStringEqual(a: string, b: string): boolean {

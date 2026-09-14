@@ -112,10 +112,10 @@ function ClientRow({ biz, usage, email, isLast, hasHealthIssue }: { biz: ClientB
         {hasAssistant ? 'Connected' : 'Not connected'}
       </span>
       <div className="flex items-center gap-1.5 justify-end">
-        <Link href={`/admin/clients/${biz.id}/briefing`}
+        <Link href={`/admin/clients/${biz.id}/prompt`}
           className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors btn-ghost shrink-0"
           style={{ color: 'var(--t7)' }}
-          title="Company Information">
+          title="Agent Details">
           <Building2 size={13} />
         </Link>
         <Link href={`/admin/clients/${biz.id}`}

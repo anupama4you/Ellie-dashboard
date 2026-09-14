@@ -7,7 +7,7 @@ import {
 import { Clock, TrendingUp, AlarmClockOff, ArrowUp, ArrowDown } from 'lucide-react'
 import type { LocalCallListItem } from '@/lib/calls'
 import type { PlanUsage } from '@/lib/planUsage'
-import type { Hours } from '@/app/(dashboard)/briefing/actions'
+import type { Hours } from '@/lib/promptSections'
 import { isAfterHours } from '@/lib/availability'
 import { dateStrInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
 
