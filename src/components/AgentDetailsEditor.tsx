@@ -24,11 +24,12 @@ export default function AgentDetailsEditor({ businessId, businessName, initialSt
     Object.fromEntries(sections.filter(s => s.kind === 'text').map(s => [s.id, s.draftContent ?? s.content ?? '']))
   )
   const [isPending, startTransition] = useTransition()
-  const [saved, setSaved] = useState(false)
 
   const currentSnapshot = JSON.stringify({ structured, textContent })
   const initialSnapshot = JSON.stringify({ structured: initialStructured, textContent: Object.fromEntries(sections.filter(s => s.kind === 'text').map(s => [s.id, s.draftContent ?? s.content ?? ''])) })
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState(initialSnapshot)
   const isDirty = currentSnapshot !== initialSnapshot
+  const isClean = currentSnapshot === lastSavedSnapshot
 
   const { setIsBlocked } = useNavigationBlocker()
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function AgentDetailsEditor({ businessId, businessName, initialSt
 
     startTransition(async () => {
       await saveAgentDetails(businessId, { structured, sectionEdits })
-      setSaved(true)
+      setLastSavedSnapshot(currentSnapshot)
     })
   }
 
@@ -84,8 +85,8 @@ export default function AgentDetailsEditor({ businessId, businessName, initialSt
           style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
           {isPending ? 'Saving…' : 'Save changes'}
         </button>
-        {saved && !isPending && <span className="text-xs" style={{ color: 'var(--signal)' }}>Saved — pending review.</span>}
-        {isDirty && !isPending && !saved && <span className="text-xs" style={{ color: 'var(--t5)' }}>Unsaved changes</span>}
+        {isClean && !isPending && <span className="text-xs" style={{ color: 'var(--signal)' }}>Saved — pending review.</span>}
+        {!isClean && !isPending && <span className="text-xs" style={{ color: 'var(--t5)' }}>Unsaved changes</span>}
       </div>
     </div>
   )
