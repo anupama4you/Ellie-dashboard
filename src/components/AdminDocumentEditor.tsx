@@ -24,6 +24,21 @@ const KIND_LABEL: Record<SectionKind, string> = {
   text: 'Text', hours_table: 'Hours (structured)', services_table: 'Services (structured)', staff_table: 'Team (structured)',
 }
 
+/**
+ * Sorts object keys recursively before stringifying, so a live JS object
+ * literal (fixed key order) and a value round-tripped through jsonb
+ * (Postgres-canonicalized, possibly different key order) compare equal
+ * when their actual content is identical. Without this, JSON.stringify
+ * diffs on services/staff produce false positives on every draft.
+ */
+function canon(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canon)
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b)).map(([k, val]) => [k, canon(val)]))
+  }
+  return v
+}
+
 function SectionDiff({ section }: { section: PromptSection }) {
   if (section.draftContent === null) return null
   return (
@@ -56,7 +71,9 @@ export default function AdminDocumentEditor({ businessId, sections: initialSecti
   function handleAdd() {
     if (!newTitle.trim()) return
     startTransition(async () => {
-      await addSection(businessId, { title: newTitle.trim(), headingLevel: 2, kind: 'text', clientEditable: false })
+      const newSection = await addSection(businessId, { title: newTitle.trim(), headingLevel: 2, kind: 'text', clientEditable: false })
+      setSections(prev => [...prev, newSection])
+      setDrafts(prev => ({ ...prev, [newSection.id]: newSection.content ?? '' }))
       setNewTitle('')
     })
   }
@@ -123,7 +140,7 @@ export default function AdminDocumentEditor({ businessId, sections: initialSecti
           {s.kind === 'hours_table' && (
             <div className="p-5 flex flex-col gap-3">
               <HoursSectionField title="Live hours" hours={liveStructured.hours} onChange={() => {}} />
-              {structuredChanged && JSON.stringify(draftStructured.hours) !== JSON.stringify(liveStructured.hours) && (
+              {structuredChanged && JSON.stringify(canon(draftStructured.hours)) !== JSON.stringify(canon(liveStructured.hours)) && (
                 <HoursSectionField title="Pending (client's edit)" hours={draftStructured.hours} onChange={() => {}} />
               )}
             </div>
@@ -131,7 +148,7 @@ export default function AdminDocumentEditor({ businessId, sections: initialSecti
           {s.kind === 'services_table' && (
             <div className="p-5 flex flex-col gap-3">
               <ServicesSectionField title="Live services" services={liveStructured.services} onChange={() => {}} />
-              {structuredChanged && JSON.stringify(draftStructured.services) !== JSON.stringify(liveStructured.services) && (
+              {structuredChanged && JSON.stringify(canon(draftStructured.services)) !== JSON.stringify(canon(liveStructured.services)) && (
                 <ServicesSectionField title="Pending (client's edit)" services={draftStructured.services} onChange={() => {}} />
               )}
             </div>
@@ -139,7 +156,7 @@ export default function AdminDocumentEditor({ businessId, sections: initialSecti
           {s.kind === 'staff_table' && (
             <div className="p-5 flex flex-col gap-3">
               <StaffSectionField title="Live team" staff={liveStructured.staff} businessHours={liveStructured.hours} onChange={() => {}} />
-              {structuredChanged && JSON.stringify(draftStructured.staff) !== JSON.stringify(liveStructured.staff) && (
+              {structuredChanged && JSON.stringify(canon(draftStructured.staff)) !== JSON.stringify(canon(liveStructured.staff)) && (
                 <StaffSectionField title="Pending (client's edit)" staff={draftStructured.staff} businessHours={draftStructured.hours} onChange={() => {}} />
               )}
             </div>

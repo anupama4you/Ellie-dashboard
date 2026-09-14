@@ -39,7 +39,8 @@ export async function saveSectionDirect(businessId: string, sectionId: string, c
   revalidatePath(`/admin/clients/${businessId}/prompt`)
 }
 
-export async function addSection(businessId: string, input: { title: string; headingLevel: 1 | 2 | 3; kind: SectionKind; clientEditable: boolean }): Promise<void> {
+/** Returns the inserted row (rather than void) so the client can optimistically append it to local state without a full page reload. */
+export async function addSection(businessId: string, input: { title: string; headingLevel: 1 | 2 | 3; kind: SectionKind; clientEditable: boolean }): Promise<PromptSection> {
   await assertAdmin()
   const admin = createAdminClient()
 
@@ -47,7 +48,7 @@ export async function addSection(businessId: string, input: { title: string; hea
   const nextSortOrder = (existing?.[0]?.sort_order ?? -1) + 1
   const key = `${input.kind}_${Date.now()}`
 
-  const { error } = await admin.from('prompt_sections').insert({
+  const { data: inserted, error } = await admin.from('prompt_sections').insert({
     business_id: businessId,
     key,
     title: input.title,
@@ -56,10 +57,11 @@ export async function addSection(businessId: string, input: { title: string; hea
     content: input.kind === 'text' ? '' : null,
     client_editable: input.clientEditable,
     sort_order: nextSortOrder,
-  })
+  }).select().single()
   if (error) throw new Error(error.message)
 
   revalidatePath(`/admin/clients/${businessId}/prompt`)
+  return mapSectionRow(inserted)
 }
 
 export async function removeSection(businessId: string, sectionId: string): Promise<void> {
