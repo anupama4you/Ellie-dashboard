@@ -54,7 +54,16 @@ async function main() {
 
   const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
 
-  const { data: existing } = await supabase.from('prompt_sections').select('id').eq('business_id', businessId).limit(1)
+  // Cross-check: verify the provided assistantId actually belongs to this business
+  const { data: business, error: businessError } = await supabase.from('businesses').select('vapi_assistant_id').eq('id', businessId).single()
+  if (businessError) throw new Error(`Failed to look up business ${businessId}: ${businessError.message}`)
+  if (!business) throw new Error(`Business ${businessId} not found`)
+  if (business.vapi_assistant_id !== assistantId) {
+    throw new Error(`Assistant ID mismatch for business ${businessId}: expected ${business.vapi_assistant_id}, got ${assistantId}. This is likely a CLI argument error — double-check the business ID and assistant ID pairing.`)
+  }
+
+  const { data: existing, error } = await supabase.from('prompt_sections').select('id').eq('business_id', businessId).limit(1)
+  if (error) throw new Error(`Failed to check for existing prompt_sections for ${businessId}: ${error.message}`)
   if (existing && existing.length > 0) {
     console.log(`Business ${businessId} already has prompt_sections — skipping (idempotent guard).`)
     return
@@ -91,8 +100,8 @@ async function main() {
     sort_order: i,
   }))
 
-  const { error } = await supabase.from('prompt_sections').insert(rows)
-  if (error) throw new Error(error.message)
+  const { error: insertError } = await supabase.from('prompt_sections').insert(rows)
+  if (insertError) throw new Error(insertError.message)
 
   console.log(`Inserted ${rows.length} sections for business ${businessId}. All client_editable=false — flip individual sections on from the admin Agent Details tab.`)
 }
