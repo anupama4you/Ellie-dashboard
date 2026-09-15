@@ -5,6 +5,7 @@ import { sendNotificationEmail, type NotificationPreferences } from '@/lib/notif
 
 type Biz = {
   id: string
+  name: string
   vapi_assistant_id: string | null
   twilio_phone_number: string | null
   user_id: string
@@ -78,6 +79,7 @@ export async function placeNextQueuedCall(
       systemPrompt: campaign.system_prompt,
       variableValues: {
         customerName: next.name,
+        businessName: biz.name,
         ...(next.note ? { note: next.note } : {}),
         ...(next.extra_fields as Record<string, string> | null ?? {}),
       },

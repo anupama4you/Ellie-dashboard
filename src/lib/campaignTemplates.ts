@@ -3,11 +3,16 @@
  * both the opening line and behavior fields, same as typing them by hand;
  * nothing here is saved anywhere, it's purely a client-side starting point.
  *
- * `[Business]` is a literal placeholder for the client to replace with
- * their own name — createOutboundCall() (src/lib/outboundCampaign.ts)
- * REPLACES the assistant's entire system prompt for the call, so unlike a
- * normal inbound call, none of the business's identity/name from its usual
- * prompt carries over automatically.
+ * Uses {{businessName}} (a real Vapi merge field — outboundCampaign.ts
+ * passes it as `biz.name` in every call's variableValues, same mechanism
+ * as {{customerName}}) rather than a literal `[Business]` bracket a client
+ * has to remember to hand-edit. That's what this used to be — a real
+ * client campaign shipped with it unedited, and since createOutboundCall()
+ * REPLACES the assistant's entire system prompt for an outbound call
+ * (unlike a normal inbound call, none of the business's identity carries
+ * over automatically), the model had nothing real to fall back on and
+ * invented a plausible-sounding fake business name rather than reading
+ * "[Business]" aloud verbatim.
  *
  * The review-request template's Google review link is likewise a literal
  * placeholder — there's no businesses.google_review_link column (nothing
@@ -29,7 +34,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     key: 'reviewRequest',
     label: 'Feedback & review request',
     description: 'Ask how a recent visit went — text a Google review link if it was positive, otherwise just thank them.',
-    firstMessage: 'Hi {{customerName}}, this is Ellie calling on behalf of [Business] — have you got a quick minute to share how your recent visit went?',
+    firstMessage: 'Hi {{customerName}}, this is Ellie calling on behalf of {{businessName}} — have you got a quick minute to share how your recent visit went?',
     systemPrompt: `Ask how their recent visit or experience was. Keep it to one open question — don't interrogate them with a checklist.
 
 If their answer is positive (great, excellent, happy, etc.):
@@ -44,7 +49,7 @@ Keep the whole call short — this is a quick check-in, not a long conversation.
     key: 'winBack',
     label: 'We miss you / re-engagement',
     description: "For customers who haven't been in for a while — check in and offer to book them back in.",
-    firstMessage: "Hi {{customerName}}, this is Ellie calling from [Business] — it's been a little while since your last visit, so I thought I'd check in.",
+    firstMessage: "Hi {{customerName}}, this is Ellie calling from {{businessName}} — it's been a little while since your last visit, so I thought I'd check in.",
     systemPrompt: `Mention it's been a while since {{customerName}}'s last visit and ask if they'd like to book back in.
 
 If they're interested, help them choose what they'd like and offer to book them in or text the booking link.
@@ -55,7 +60,7 @@ If they're not interested right now, thank them for their time and end the call 
     key: 'promotion',
     label: 'Promotion / new service',
     description: 'Let past customers know about a current offer or something new — light-touch, not salesy.',
-    firstMessage: 'Hi {{customerName}}, this is Ellie calling from [Business] with a quick update.',
+    firstMessage: 'Hi {{customerName}}, this is Ellie calling from {{businessName}} with a quick update.',
     systemPrompt: `Let {{customerName}} know about [describe the promotion or new service here] — keep it brief and conversational, not a sales pitch.
 
 If they're interested, offer to book them in or text the booking link.
@@ -66,7 +71,7 @@ If they're not interested, thank them for their time and end the call politely �
     key: 'reminder',
     label: 'Appointment reminder',
     description: 'Confirm an upcoming booking is still on, with an easy way to reschedule if not.',
-    firstMessage: 'Hi {{customerName}}, this is Ellie calling from [Business] with a quick reminder about your upcoming appointment.',
+    firstMessage: 'Hi {{customerName}}, this is Ellie calling from {{businessName}} with a quick reminder about your upcoming appointment.',
     systemPrompt: `Confirm {{customerName}} is still able to make their upcoming appointment.
 
 If yes, thank them and let them know you'll see them then — keep it brief.

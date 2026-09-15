@@ -8,6 +8,7 @@ import CsvDropzone from './CsvDropzone'
 
 const FIXED_VARIABLES = [
   { key: 'customerName', label: 'Customer name' },
+  { key: 'businessName', label: 'Business name' },
   { key: 'note', label: 'Note' },
 ]
 
