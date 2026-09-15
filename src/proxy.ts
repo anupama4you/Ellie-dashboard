@@ -56,5 +56,8 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.png|logo.png|dark-logo.png|api/|auth/).*)'],
+  // `l/` (short links, src/app/l/[code]/route.ts) is public by design —
+  // clicked from an SMS by an anonymous customer, never a signed-in user —
+  // same reasoning as excluding `api/`/`auth/` here.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|favicon.png|logo.png|dark-logo.png|api/|auth/|l/).*)'],
 }
