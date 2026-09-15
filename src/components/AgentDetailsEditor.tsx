@@ -59,8 +59,10 @@ export default function AgentDetailsEditor({ businessId, businessName, initialSt
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Agent Details</h1>
-        <p className="text-xs mt-1" style={{ color: 'var(--t5)' }}>
+        <h1 className="font-extrabold" style={{ fontFamily: 'var(--font-display)', fontSize: '1.5rem', color: 'var(--ink)' }}>
+          Agent Details
+        </h1>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--ink-3)' }}>
           This is what Ellie actually says on calls for {businessName}. Changes here are reviewed by our team before going live.
         </p>
       </div>
