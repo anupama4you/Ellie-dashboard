@@ -89,7 +89,8 @@ export default function AgentDetailsEditor({ businessId, businessName, initialSt
         })}
       </div>
 
-      <div className="flex items-center gap-3 sticky bottom-0 py-3 px-1" style={{ background: 'var(--bg1)' }}>
+      <div className="flex items-center gap-3 sticky bottom-3 z-20 py-3 px-4 rounded-2xl"
+        style={{ background: 'var(--bg3)', border: '1px solid var(--border)', boxShadow: 'var(--shadow)' }}>
         <button onClick={handleSave} disabled={isPending}
           className="rounded-xl px-5 py-2.5 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}>
