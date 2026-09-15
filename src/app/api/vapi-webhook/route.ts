@@ -826,9 +826,10 @@ export async function POST(req: Request) {
       // Sends from whichever number the caller actually dialled rather than
       // a business's configured Twilio number, since there may not be one.
       if (name === 'sendSms') {
-        const args  = toolArgs(toolCall)
-        const phone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
-        const body  = args.message as string | undefined
+        const args     = toolArgs(toolCall)
+        const phone    = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+        const body     = args.message as string | undefined
+        const linkType = args.linkType as string | undefined
         let resultText: string
 
         try {
@@ -869,6 +870,26 @@ export async function POST(req: Request) {
           } else {
             await sendSms(phone, body, from)
             resultText = "Text message sent."
+
+            // Vapi's own end-of-call structured-data analysis (the only
+            // other source for this) is an LLM guess from the transcript
+            // and has been observed to say false on a call where this send
+            // just succeeded. Record the ground truth now, keyed by call
+            // id, so end-of-call-report can OR it in rather than trust the
+            // analysis alone — same reasoning as hasBooking's appointments
+            // correlation, just for businesses with no appointment row to
+            // correlate against. Best-effort: no business row (a demo
+            // assistant) or no callId (a non-phone session) just skips this.
+            if (linkType === 'booking') {
+              const callId = message.call?.id as string | undefined
+              const biz = await getBiz()
+              if (biz && callId) {
+                const { error: linkErr } = await supabase
+                  .from('calls')
+                  .upsert({ business_id: biz.id, vapi_call_id: callId, booking_link_sent: true }, { onConflict: 'vapi_call_id', ignoreDuplicates: false })
+                if (linkErr) console.error('Failed to record booking_link_sent for call', callId, linkErr)
+              }
+            }
           }
         } catch (err) {
           captureError(err, { handler: 'sendSms(tool)' })
@@ -1267,7 +1288,18 @@ export async function POST(req: Request) {
         .limit(1)
       const hasBooking     = !!correlated?.length
       const hasReschedule  = correlated?.[0]?.status === 'rescheduled'
-      const hasBookingLink = !!report.analysis?.structuredData?.bookingLinkSent
+
+      // Vapi's own analysis is an LLM guess from the transcript and can say
+      // false on a call where sendSms actually succeeded (observed on a
+      // real call) — OR it with the ground-truth flag the sendSms handler
+      // itself sets at tool-call-success time (see the `linkType === 'booking'`
+      // branch above) rather than trusting the analysis alone.
+      const { data: existingCallRow } = await supabase
+        .from('calls')
+        .select('booking_link_sent')
+        .eq('vapi_call_id', callId)
+        .maybeSingle()
+      const hasBookingLink = !!existingCallRow?.booking_link_sent || !!report.analysis?.structuredData?.bookingLinkSent
 
       // Priority: Vapi's own customer metadata (rare for phone calls) > the
       // name confirmed out loud during a booking/reschedule/cancellation on
@@ -1302,6 +1334,7 @@ export async function POST(req: Request) {
         duration_seconds:   eocDurationSeconds(report, startedAt, endedAt) ?? null,
         ended_reason:       endedReason ?? null,
         outcome,
+        booking_link_sent:  hasBookingLink,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
