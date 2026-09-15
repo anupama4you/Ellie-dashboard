@@ -22,6 +22,8 @@ export async function GET(request: Request) {
   const type       = url.searchParams.get('type')
   const next       = safeNextPath(url.searchParams.get('next') ?? '/')
 
+  let verifyError: string | null = null
+
   if (code || (token_hash && type)) {
     const cookieStore = await cookies()
     const supabase = createServerClient(
@@ -36,10 +38,23 @@ export async function GET(request: Request) {
     )
 
     if (code) {
-      await supabase.auth.exchangeCodeForSession(code)
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      verifyError = error?.message ?? null
     } else if (token_hash && type) {
-      await supabase.auth.verifyOtp({ token_hash, type: type as Parameters<typeof supabase.auth.verifyOtp>[0]['type'] })
+      const { error } = await supabase.auth.verifyOtp({ token_hash, type: type as Parameters<typeof supabase.auth.verifyOtp>[0]['type'] })
+      verifyError = error?.message ?? null
     }
+  }
+
+  // /auth/set-password already shows a friendly "this link has expired" state
+  // on its own (it checks for a session client-side) — redirecting those
+  // failures elsewhere would just replace one graceful empty state with a
+  // worse one. Every other `next` (e.g. the admin's "View as Client"
+  // impersonation link, which is one-time-use and ~1hr-lived) had no such
+  // handling — it silently landed on `next` with no session, which the
+  // middleware then silently bounced to /login with zero explanation.
+  if (verifyError && !next.startsWith('/auth/set-password')) {
+    return NextResponse.redirect(new URL('/login?error=link_expired', url.origin))
   }
 
   return NextResponse.redirect(new URL(next, url.origin))

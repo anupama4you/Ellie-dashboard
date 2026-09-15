@@ -1,13 +1,31 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import { Loader2, Mail, Lock } from 'lucide-react'
 
+const CALLBACK_ERROR_MESSAGES: Record<string, string> = {
+  link_expired: 'That link has expired or has already been used — request a new one, or sign in below.',
+}
+
 export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-dvh flex items-center justify-center" style={{ background: 'var(--night)' }}>
+        <Loader2 size={20} className="animate-spin" style={{ color: 'var(--t4)' }} />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
+  )
+}
+
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const callbackError = CALLBACK_ERROR_MESSAGES[searchParams.get('error') ?? '']
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
@@ -119,11 +137,12 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Error */}
-              {error && (
+              {/* Error — a manual sign-in error takes precedence once attempted;
+                 otherwise show why the callback bounced them here, if it did */}
+              {(error || callbackError) && (
                 <div className="rounded-xl px-4 py-3 flex items-center gap-2"
                   style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
-                  <p className="text-xs" style={{ color: 'var(--coral)' }}>{error}</p>
+                  <p className="text-xs" style={{ color: 'var(--coral)' }}>{error || callbackError}</p>
                 </div>
               )}
 
