@@ -73,21 +73,38 @@ export default function AgentDetailsEditor({ businessId, businessName, initialSt
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+      {/* CSS columns, not grid — a two-column grid sizes every row to its
+         tallest card, so a short card leaves dead space above the next row.
+         Columns pack each card directly under the previous one instead. */}
+      <div className="columns-1 md:columns-2 gap-4">
         {sections.map(s => {
           if (s.kind === 'text') {
             return (
-              <TextSectionField key={s.id} title={s.title} value={textContent[s.id] ?? ''}
-                onChange={next => setTextContent(prev => ({ ...prev, [s.id]: next }))} />
+              <div key={s.id} className="mb-4 break-inside-avoid-column">
+                <TextSectionField title={s.title} value={textContent[s.id] ?? ''}
+                  onChange={next => setTextContent(prev => ({ ...prev, [s.id]: next }))} />
+              </div>
             )
           }
           if (s.kind === 'hours_table') {
-            return <HoursSectionField key={s.id} title={s.title} hours={structured.hours} onChange={next => setStructured(prev => ({ ...prev, hours: next }))} />
+            return (
+              <div key={s.id} className="mb-4 break-inside-avoid-column">
+                <HoursSectionField title={s.title} hours={structured.hours} onChange={next => setStructured(prev => ({ ...prev, hours: next }))} />
+              </div>
+            )
           }
           if (s.kind === 'services_table') {
-            return <ServicesSectionField key={s.id} title={s.title} services={structured.services} onChange={next => setStructured(prev => ({ ...prev, services: next }))} />
+            return (
+              <div key={s.id} className="mb-4 break-inside-avoid-column">
+                <ServicesSectionField title={s.title} services={structured.services} onChange={next => setStructured(prev => ({ ...prev, services: next }))} />
+              </div>
+            )
           }
-          return <StaffSectionField key={s.id} title={s.title} staff={structured.staff} businessHours={structured.hours} onChange={next => setStructured(prev => ({ ...prev, staff: next }))} />
+          return (
+            <div key={s.id} className="mb-4 break-inside-avoid-column">
+              <StaffSectionField title={s.title} staff={structured.staff} businessHours={structured.hours} onChange={next => setStructured(prev => ({ ...prev, staff: next }))} />
+            </div>
+          )
         })}
       </div>
 
