@@ -7,7 +7,7 @@ import { findNextAvailableSlots, formatSlot, durationFor, isWithinOpenHours, has
 import { classifyCall } from '@/lib/callClassify'
 import { getValidAccessToken, listEvents, createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { formatInZone, dateStrInZone, zonedTimeToUtc } from '@/lib/timezone'
-import { mapsLink } from '@/lib/maps'
+import { shortMapsLink } from '@/lib/maps'
 import { rememberCustomerName } from '@/lib/customers'
 import { getPhoneNumber, listPhoneNumbers } from '@/lib/vapi'
 import { lookupAddress } from '@/lib/addressr'
@@ -28,6 +28,17 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+/**
+ * This app's own public base URL, for minting short links (see
+ * shortMapsLink) — env-based rather than siteUrl()'s request-header
+ * detection, since a webhook has no real "browser" request to trust and
+ * siteUrl()'s next/headers() call throws outside a real request scope
+ * (breaks unit tests that invoke this route's handlers directly). Matches
+ * the same APP_URL-first convention used elsewhere in this codebase
+ * (src/app/(dashboard)/actions.ts, lib/googleCalendar.ts).
+ */
+const APP_BASE_URL = (process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://app.callellie.com').replace(/\/$/, '')
 
 type ExternalCalendarEvent = { id: string; start: Date; end: Date }
 
@@ -705,7 +716,7 @@ export async function POST(req: Request) {
                         businessName: biz.name,
                         dateTimeLabel: fmtDate(resolvedSlot.iso, biz.timezone),
                         durationMinutes: durationMins,
-                        mapsLink: mapsLink(biz),
+                        mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
                       }, biz.sms_template_reschedule)
 
                       await sendSms(phone, smsBody, biz.twilio_phone_number)
@@ -1256,7 +1267,7 @@ export async function POST(req: Request) {
                   businessName: biz.name,
                   dateTimeLabel: fmtDate(resolvedSlot.iso, biz.timezone),
                   durationMinutes: durationMins,
-                  mapsLink: mapsLink(biz),
+                  mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
                 }, biz.sms_template_booking)
 
                 await sendSms(phone, smsBody, biz.twilio_phone_number)

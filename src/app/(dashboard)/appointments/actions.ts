@@ -6,11 +6,16 @@ import { getCurrentBusiness } from '@/lib/business'
 import { zonedTimeToUtc, formatInZone } from '@/lib/timezone'
 import { getValidAccessToken, updateCalendarEvent, deleteCalendarEvent } from '@/lib/googleCalendar'
 import { durationFor } from '@/lib/availability'
-import { mapsLink } from '@/lib/maps'
+import { shortMapsLink } from '@/lib/maps'
 import { sendSms } from '@/lib/twilio'
 import { rememberCustomerName } from '@/lib/customers'
 import { bookingConfirmationSms, rescheduleConfirmationSms, cancellationConfirmationSms } from '@/lib/smsTemplates'
 import { sendNotificationEmail } from '@/lib/notifications'
+
+/** Env-based, not siteUrl()'s request-header detection — matches the same
+ *  APP_URL-first convention used in src/app/(dashboard)/actions.ts and the
+ *  vapi webhook, for minting a short link's stable public base URL. */
+const APP_BASE_URL = (process.env.APP_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://app.callellie.com').replace(/\/$/, '')
 
 export type ManualAppointmentInput = {
   customerName: string
@@ -80,7 +85,7 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
         businessName: biz.name,
         dateTimeLabel: formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }),
         durationMinutes: durationMins,
-        mapsLink: mapsLink(biz),
+        mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
       }, biz.sms_template_booking)
       await sendSms(customerPhone, smsBody, biz.twilio_phone_number)
       await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)
@@ -154,7 +159,7 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
         businessName: biz.name,
         dateTimeLabel: formatInZone(scheduledAt, timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }),
         durationMinutes: durationMins,
-        mapsLink: mapsLink(biz),
+        mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
       }, biz.sms_template_reschedule)
       await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
       await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
