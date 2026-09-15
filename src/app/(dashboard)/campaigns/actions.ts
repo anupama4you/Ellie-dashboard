@@ -162,7 +162,12 @@ export async function startCallingAction(campaignId: string, contactIds: string[
     .eq('business_id', biz.id)
     .single()
   if (!campaign) throw new Error('Campaign not found.')
-  if (campaign.status !== 'active') throw new Error('Confirm consent before placing calls.')
+  // 'completed' is a normal, expected status here now that a finished
+  // campaign's contacts can be recalled — it only means every contact had
+  // *a* result, not that the campaign can never place another call. Only
+  // the legacy pre-consent 'draft' status (never produced by the app
+  // anymore, but still a real historical DB value) actually blocks this.
+  if (campaign.status === 'draft') throw new Error('Confirm consent before placing calls.')
   if (campaign.running) throw new Error('This campaign is already running.')
 
   const { data: otherRunning } = await supabase
@@ -193,9 +198,12 @@ export async function startCallingAction(campaignId: string, contactIds: string[
     .in('id', selected.map(c => c.id))
   if (queueError) throw new Error(queueError.message)
 
+  // A 'completed' campaign genuinely has more work now (a recall) — flip it
+  // back to 'active' along with `running`, or it would sit in this run
+  // still labeled "completed" everywhere it's displayed.
   const { error: runError } = await supabase
     .from('outbound_campaigns')
-    .update({ running: true, stopped_reason: null })
+    .update({ running: true, stopped_reason: null, status: 'active' })
     .eq('id', campaignId)
   if (runError) throw new Error(runError.message)
 
