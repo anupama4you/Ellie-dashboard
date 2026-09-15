@@ -62,6 +62,11 @@ export default function AddContactsPanel({ campaignId }: { campaignId: string })
     setResult(null)
     const formData = new FormData(formRef.current)
     formData.set('manualContacts', JSON.stringify(manualFilled))
+    // The checkbox below is controlled by `consented` state with no `name`
+    // attribute, so it's never part of the form's own DOM-derived
+    // FormData — has to be set explicitly, same as CampaignComposer does
+    // for the equivalent checkbox at creation time.
+    formData.set('consent', consented ? 'true' : 'false')
     startTransition(async () => {
       try {
         const res = await addContactsAction(campaignId, formData)
