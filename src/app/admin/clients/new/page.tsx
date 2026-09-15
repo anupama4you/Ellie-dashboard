@@ -8,6 +8,8 @@ import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 import { assertAdmin } from '@/lib/adminAuth'
 import { AU_TIMEZONES } from '@/lib/timezone'
+import { getAssistant } from '@/lib/vapi'
+import { splitPromptIntoSections } from '@/lib/promptSections'
 
 const PLANS = [
   { value: 'starter',      label: 'Starter — 50 calls/mo'       },
@@ -62,17 +64,38 @@ export default async function NewClientPage({
 
     const startTrial = formData.get('start_trial') === 'on'
     const now = new Date().toISOString()
+    const assistantId = (formData.get('assistant_id') as string).trim() || null
+
+    // If this business is being pointed at a Vapi assistant that already
+    // exists (as opposed to a brand-new one with no prompt yet), load its
+    // live system prompt/greeting now so the admin lands on the Agent
+    // Details tab seeing what Ellie is *actually* configured to say for
+    // this client, not an unrelated generic template. Best-effort: a bad
+    // assistant ID or a Vapi hiccup here must not block client creation —
+    // falls through to the generic starter template below.
+    let liveSystemPrompt: string | null = null
+    let liveFirstMessage: string | null = null
+    if (assistantId) {
+      try {
+        const assistant = await getAssistant(assistantId)
+        liveSystemPrompt = assistant.model?.messages?.find(m => m.role === 'system')?.content?.trim() || null
+        liveFirstMessage = assistant.firstMessage?.trim() || null
+      } catch (err) {
+        console.error(`Failed to load existing config from Vapi assistant ${assistantId}:`, err)
+      }
+    }
 
     const { data: biz, error: bizErr } = await admin.from('businesses').insert({
       user_id:           user.id,
       name:              businessName,
       phone:             (formData.get('phone') as string).trim() || null,
       plan:              formData.get('plan') as string,
-      vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
+      vapi_assistant_id: assistantId,
       timezone:          (formData.get('timezone') as string) || 'Australia/Adelaide',
       plan_status:       startTrial ? 'trial' : 'active',
       trial_started_at:  startTrial ? now : null,
       plan_started_at:   now,
+      greeting_script:   liveFirstMessage,
     }).select('id').single()
 
     if (bizErr || !biz) {
@@ -80,15 +103,40 @@ export default async function NewClientPage({
       redirect('/admin/clients/new?error=biz')
     }
 
-    const STARTER_SECTIONS: { key: string; title: string; headingLevel: 1 | 2 | 3; kind: 'text' | 'hours_table' | 'services_table' | 'staff_table'; content: string | null; clientEditable: boolean }[] = [
+    type SeedSection = { key: string; title: string; headingLevel: 1 | 2 | 3; kind: 'text' | 'hours_table' | 'services_table' | 'staff_table'; content: string | null; clientEditable: boolean }
+
+    // Mirrors scripts/migrate-existing-prompts-to-sections.mjs's split, but
+    // falls back to one single section (rather than aborting) when the
+    // live prompt has no markdown headings to split on — some content is
+    // always better than silently discarding the assigned assistant's
+    // actual prompt in favor of the unrelated generic template.
+    const split = liveSystemPrompt ? splitPromptIntoSections(liveSystemPrompt) : []
+    const loadedSections: SeedSection[] | null = liveSystemPrompt
+      ? (split.length > 0 ? split : [{ title: 'System Prompt', headingLevel: 1 as const, content: liveSystemPrompt }])
+        .map((s, i) => ({
+          key: `loaded_${i}_${s.title.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 40)}`,
+          title: s.title,
+          headingLevel: s.headingLevel,
+          kind: 'text',
+          content: s.content,
+          // Existing assistant's prompt was hand-authored by an admin
+          // elsewhere — nothing here is known to be client-safe yet, same
+          // caution as the one-off migration script.
+          clientEditable: false,
+        }))
+      : null
+
+    const STARTER_SECTIONS: SeedSection[] = [
       { key: 'identity',   title: 'Identity',        headingLevel: 1, kind: 'text', content: `You are Ellie, the AI receptionist for ${businessName}.`, clientEditable: false },
       { key: 'contact',    title: 'Contact',         headingLevel: 2, kind: 'text', content: (formData.get('phone') as string)?.trim() ? `Phone: ${(formData.get('phone') as string).trim()}` : '', clientEditable: true },
       { key: 'disclosure', title: 'AI Disclosure',   headingLevel: 2, kind: 'text', content: `If asked: "Yes, I'm ${businessName}'s AI receptionist. I'm here to help however I can."`, clientEditable: true },
       { key: 'hours',      title: 'Hours',           headingLevel: 2, kind: 'hours_table', content: null, clientEditable: true },
       { key: 'services',   title: 'Services',        headingLevel: 2, kind: 'services_table', content: null, clientEditable: true },
     ]
+
+    const sectionsToSeed = loadedSections ?? STARTER_SECTIONS
     const { error: sectionsErr } = await admin.from('prompt_sections').insert(
-      STARTER_SECTIONS.map((s, i) => ({ business_id: biz.id, key: s.key, title: s.title, heading_level: s.headingLevel, kind: s.kind, content: s.content, client_editable: s.clientEditable, sort_order: i }))
+      sectionsToSeed.map((s, i) => ({ business_id: biz.id, key: s.key, title: s.title, heading_level: s.headingLevel, kind: s.kind, content: s.content, client_editable: s.clientEditable, sort_order: i }))
     )
     if (sectionsErr) {
       // Non-fatal — the business record and invite already succeeded; the
@@ -226,7 +274,7 @@ export default async function NewClientPage({
                 placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 className="admin-input" />
               <p className="text-xs" style={{ color: 'var(--t6)' }}>
-                Can be set later — client won&apos;t have call data until this is assigned.
+                Can be set later — client won&apos;t have call data until this is assigned. If this assistant already has a live prompt on Vapi, it&apos;s loaded into Agent Details as sections (not client-editable yet) instead of the generic starter template.
               </p>
             </div>
 
