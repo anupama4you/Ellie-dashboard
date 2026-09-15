@@ -121,11 +121,18 @@ export const SMS_TEMPLATE_DEFAULTS = {
  * `appointmentsEnabled` mirrors the business's own `appointments` dashboard
  * feature flag: a business that takes real bookings (creates an appointment
  * record) only ever sends the first three, while one that only texts a link
- * to its own booking page (e.g. SASH Salon — see sendBookingLink) never
- * creates an appointment at all, so the first three would just be dead,
- * confusing previews for them. The two sets are mutually exclusive because
- * the underlying tools are: a business is wired for one flow or the other,
- * never both.
+ * to its own booking page never creates an appointment at all, so the first
+ * three would just be dead, confusing previews for them. The two sets are
+ * mutually exclusive because the underlying tools are: a business is wired
+ * for one flow or the other, never both.
+ *
+ * The "Booking link" preview itself only appears when a custom
+ * `bookingLink` template is actually configured — that's only true for a
+ * business still wired to the fixed-template `sendBookingLink` tool. A
+ * business using the generic `sendSms` tool instead composes that message
+ * freely from its own prompt with no fixed template at all, so falling
+ * back to `DEFAULT_BOOKING_LINK_TEMPLATE` here would show a preview that
+ * has nothing to do with what customers actually receive.
  */
 export function getSmsTemplatePreviews(
   businessName: string,
@@ -142,9 +149,10 @@ export function getSmsTemplatePreviews(
   }
 
   if (!appointmentsEnabled) {
+    if (!custom?.bookingLink?.trim()) return []
     return [{
       label: 'Booking link',
-      body: bookingLinkSms({ customerName: shared.customerName, service: shared.service, businessName, bookingLink: '[Booking Link]' }, custom?.bookingLink),
+      body: bookingLinkSms({ customerName: shared.customerName, service: shared.service, businessName, bookingLink: '[Booking Link]' }, custom.bookingLink),
     }]
   }
 

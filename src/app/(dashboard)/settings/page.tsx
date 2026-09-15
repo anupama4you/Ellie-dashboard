@@ -84,6 +84,15 @@ export default async function SettingsPage() {
     { label: 'Account Email',    value: user?.email            },
   ]
 
+  const smsTemplatePreviews = biz
+    ? getSmsTemplatePreviews(biz.name, {
+        booking: biz.sms_template_booking,
+        reschedule: biz.sms_template_reschedule,
+        cancellation: biz.sms_template_cancellation,
+        bookingLink: biz.sms_template_booking_link,
+      }, isFeatureEnabled(biz, 'appointments'))
+    : []
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-3 sm:p-6 max-w-[1220px] mx-auto flex flex-col gap-5">
@@ -147,7 +156,7 @@ export default async function SettingsPage() {
           </section>
 
           {/* Message templates — read-only, sent automatically on booking/reschedule/cancellation */}
-          {biz && (
+          {biz && smsTemplatePreviews.length > 0 && (
             <section className="rounded-2xl" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
               <div className="flex items-center gap-2.5 px-5 pt-4 pb-3" style={{ borderBottom: '1px solid var(--line)' }}>
                 <MessageSquare size={14} style={{ color: 'var(--violet)' }} />
@@ -166,12 +175,7 @@ export default async function SettingsPage() {
               </div>
 
               <div className="mt-3 pb-4 px-5 flex flex-col gap-3">
-                {getSmsTemplatePreviews(biz.name, {
-                  booking: biz.sms_template_booking,
-                  reschedule: biz.sms_template_reschedule,
-                  cancellation: biz.sms_template_cancellation,
-                  bookingLink: biz.sms_template_booking_link,
-                }, isFeatureEnabled(biz, 'appointments')).map(({ label, body }) => (
+                {smsTemplatePreviews.map(({ label, body }) => (
                   <div key={label} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--line)' }}>
                     <div className="px-3.5 py-2" style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
                       <span className="text-xs font-semibold" style={{ color: 'var(--ink-2)' }}>{label}</span>
