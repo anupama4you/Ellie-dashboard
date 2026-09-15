@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { CalendarClock } from 'lucide-react'
-import { resumeCallingAction } from '../actions'
+import { CalendarClock, Square } from 'lucide-react'
+import { resumeCallingAction, stopCampaignAction } from '../actions'
 
 type Props = {
   campaignId: string
@@ -20,6 +20,7 @@ export default function CampaignDetailActions({ campaignId, status, running, sto
   const [isPending, startTransition] = useTransition()
   const [message, setMessage] = useState('')
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showStopConfirm, setShowStopConfirm] = useState(false)
 
   function resume(overrideWindow: boolean) {
     setMessage('')
@@ -40,16 +41,61 @@ export default function CampaignDetailActions({ campaignId, status, running, sto
     else setShowConfirm(true)
   }
 
+  function stop() {
+    setMessage('')
+    startTransition(async () => {
+      try {
+        await stopCampaignAction(campaignId)
+        setShowStopConfirm(false)
+        router.refresh()
+      } catch (err) {
+        setShowStopConfirm(false)
+        setMessage(err instanceof Error ? err.message : 'Failed to stop.')
+      }
+    })
+  }
+
   if (status !== 'active') return null
 
   if (running) {
     return (
-      <div className="rounded-2xl p-5 flex items-center gap-2.5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--violet)' }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--violet)' }} />
-        </span>
-        <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>Calling one contact at a time in the background — you can leave this page.</p>
+      <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--violet)' }} />
+              <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: 'var(--violet)' }} />
+            </span>
+            <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>Calling one contact at a time in the background — you can leave this page.</p>
+          </div>
+          <button onClick={() => setShowStopConfirm(true)} disabled={isPending}
+            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold shrink-0 disabled:opacity-50 transition-opacity hover:opacity-90"
+            style={{ color: 'var(--coral)', background: 'var(--coral-soft)' }}>
+            <Square size={11} /> Stop
+          </button>
+        </div>
+        {message && <p className="text-xs" style={{ color: 'var(--coral)' }}>{message}</p>}
+
+        {showStopConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+            <div className="rounded-2xl p-5 max-w-md w-full flex flex-col gap-3" style={{ background: 'var(--card)' }}>
+              <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Stop this campaign?</h3>
+              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+                Any call in progress right now will finish normally, but no further calls will go out. Contacts still queued stay queued — you can resume later to continue with them.
+              </p>
+              <div className="flex justify-end gap-2 mt-2">
+                <button onClick={() => setShowStopConfirm(false)} className="rounded-lg px-3 py-2 text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>
+                  Cancel
+                </button>
+                <button onClick={stop} disabled={isPending}
+                  className="rounded-lg px-4 py-2 text-xs font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+                  style={{ background: 'var(--coral)' }}>
+                  {isPending ? 'Stopping…' : 'Stop campaign'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
   }

@@ -180,12 +180,16 @@ export async function startCallingAction(campaignId: string, contactIds: string[
     .select('id')
     .eq('campaign_id', campaignId)
     .in('id', contactIds)
-    .in('status', ['pending', 'failed'])
+    .in('status', ['pending', 'failed', 'done'])
   if (!selected || selected.length === 0) throw new Error('None of the selected contacts are callable.')
 
+  // Resets outcome/vapi_call_id for anything being re-run (a 'done' contact
+  // selected again — a recall) — otherwise the old result would keep
+  // showing until the new call actually completes. A no-op for
+  // pending/failed contacts, which never had either set.
   const { error: queueError } = await supabase
     .from('outbound_campaign_contacts')
-    .update({ status: 'queued' })
+    .update({ status: 'queued', outcome: null, vapi_call_id: null })
     .in('id', selected.map(c => c.id))
   if (queueError) throw new Error(queueError.message)
 
@@ -246,6 +250,175 @@ export async function resumeCallingAction(campaignId: string, overrideWindow = f
   if (runError) throw new Error(runError.message)
 
   await placeNextQueuedCall(supabase, biz, campaign, async () => user?.email ?? null, overrideWindow)
+
+  revalidatePath(`/campaigns/${campaignId}`)
+}
+
+/**
+ * Manually interrupts a running campaign. Only stops the CHAIN — a call
+ * already in progress (status 'calling') finishes naturally, since there's
+ * no "hang up this call" API call here; end-of-call-report's chaining check
+ * (src/app/api/vapi-webhook/route.ts) already reads `running` fresh before
+ * placing the next call, so flipping this is sufficient to prevent it.
+ * Contacts still `queued` stay queued so Resume can pick the run back up.
+ */
+export async function stopCampaignAction(campaignId: string): Promise<void> {
+  const { business: biz } = await getCurrentBusiness()
+  if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
+
+  const supabase = await createClient()
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('id, running')
+    .eq('id', campaignId)
+    .eq('business_id', biz.id)
+    .single()
+  if (!campaign) throw new Error('Campaign not found.')
+  if (!campaign.running) throw new Error('This campaign is not currently running.')
+
+  const { error } = await supabase
+    .from('outbound_campaigns')
+    .update({ running: false, stopped_reason: 'Stopped manually.' })
+    .eq('id', campaignId)
+  if (error) throw new Error(error.message)
+
+  revalidatePath(`/campaigns/${campaignId}`)
+}
+
+/**
+ * Adds more contacts (CSV and/or manual, same parsing as campaign creation)
+ * to an existing campaign — new rows start `pending`, same as any contact
+ * would at creation time. Requires re-confirming consent: the campaign's
+ * original `consent_confirmed_at` only covered the contacts present when it
+ * was created, so this reaffirms it (overwrites the timestamp) rather than
+ * silently extending the original consent to people it never covered.
+ */
+export async function addContactsAction(campaignId: string, formData: FormData): Promise<{ added: number; skipped: number }> {
+  const { business: biz } = await getCurrentBusiness()
+  if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
+  if (formData.get('consent') !== 'true') throw new Error('Confirm you have the right to contact these customers.')
+
+  const supabase = await createClient()
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('id')
+    .eq('id', campaignId)
+    .eq('business_id', biz.id)
+    .single()
+  if (!campaign) throw new Error('Campaign not found.')
+
+  const file = formData.get('csv')
+  const csvText = file instanceof File && file.size > 0 ? await file.text() : ''
+  const { valid: csvValid, skipped } = csvText ? parseContactsCsv(csvText) : { valid: [] as ParsedContact[], skipped: 0 }
+
+  const manualContactsRaw = formData.get('manualContacts')
+  let manualContactsInput: { name: string; phone: string; note: string }[] = []
+  if (typeof manualContactsRaw === 'string' && manualContactsRaw) {
+    try {
+      manualContactsInput = JSON.parse(manualContactsRaw)
+    } catch {
+      manualContactsInput = []
+    }
+  }
+  const manualValid = manualContactsInput
+    .map(c => parseManualContact(c.name ?? '', c.phone ?? '', c.note ?? ''))
+    .filter((c): c is ParsedContact => c !== null)
+
+  const valid = [...csvValid, ...manualValid]
+  if (valid.length === 0) throw new Error('No valid contacts to add — check names, phone numbers, and the CSV format.')
+
+  const { error: insertError } = await supabase.from('outbound_campaign_contacts').insert(
+    valid.map(c => ({ campaign_id: campaignId, name: c.name, phone: c.phone, note: c.note, extra_fields: c.extra })),
+  )
+  if (insertError) throw new Error(insertError.message)
+
+  const { error: consentError } = await supabase
+    .from('outbound_campaigns')
+    .update({ consent_confirmed_at: new Date().toISOString() })
+    .eq('id', campaignId)
+  if (consentError) console.error('Failed to update consent timestamp after adding contacts:', consentError)
+
+  revalidatePath(`/campaigns/${campaignId}`)
+  return { added: valid.length, skipped }
+}
+
+/**
+ * Edits one contact's name/phone/note. Blocked while the campaign is
+ * running (a call chain reading contact rows mid-flight shouldn't race an
+ * edit) and for a contact that's already 'calling' or 'queued' for this
+ * run — same validation (parseManualContact) as adding one by hand.
+ */
+export async function updateContactAction(campaignId: string, contactId: string, formData: FormData): Promise<void> {
+  const { business: biz } = await getCurrentBusiness()
+  if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
+
+  const supabase = await createClient()
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('id, running')
+    .eq('id', campaignId)
+    .eq('business_id', biz.id)
+    .single()
+  if (!campaign) throw new Error('Campaign not found.')
+  if (campaign.running) throw new Error('Stop the campaign before editing contacts.')
+
+  const { data: contact } = await supabase
+    .from('outbound_campaign_contacts')
+    .select('id, status')
+    .eq('id', contactId)
+    .eq('campaign_id', campaignId)
+    .single()
+  if (!contact) throw new Error('Contact not found.')
+  if (contact.status === 'calling' || contact.status === 'queued') throw new Error('This contact is already queued or being called.')
+
+  const name = String(formData.get('name') ?? '')
+  const phone = String(formData.get('phone') ?? '')
+  const note = String(formData.get('note') ?? '')
+  const parsed = parseManualContact(name, phone, note)
+  if (!parsed) throw new Error('Enter a valid name and Australian phone number.')
+
+  const { error } = await supabase
+    .from('outbound_campaign_contacts')
+    .update({ name: parsed.name, phone: parsed.phone, note: parsed.note })
+    .eq('id', contactId)
+  if (error) throw new Error(error.message)
+
+  revalidatePath(`/campaigns/${campaignId}`)
+}
+
+/** Edits the campaign's own name/opening line/behavior. Blocked while
+ * running — first_message/system_prompt are read fresh from this row for
+ * every call in the chain (not frozen once at creation), so changing them
+ * mid-run would silently give some contacts a different script than
+ * others. */
+export async function updateCampaignAction(campaignId: string, formData: FormData): Promise<void> {
+  const { business: biz } = await getCurrentBusiness()
+  if (!biz) throw new Error('No business profile found.')
+  if (!isFeatureEnabled(biz, 'campaigns')) throw new Error('Campaigns are not enabled for this location.')
+
+  const supabase = await createClient()
+  const { data: campaign } = await supabase
+    .from('outbound_campaigns')
+    .select('id, running')
+    .eq('id', campaignId)
+    .eq('business_id', biz.id)
+    .single()
+  if (!campaign) throw new Error('Campaign not found.')
+  if (campaign.running) throw new Error('Stop the campaign before editing its details.')
+
+  const name = String(formData.get('name') ?? '').trim()
+  const firstMessage = String(formData.get('firstMessage') ?? '').trim()
+  const systemPrompt = String(formData.get('systemPrompt') ?? '').trim()
+  if (!firstMessage || !systemPrompt) throw new Error("Opening line and behavior can't be empty.")
+
+  const { error } = await supabase
+    .from('outbound_campaigns')
+    .update({ name: name || 'Untitled campaign', first_message: firstMessage, system_prompt: systemPrompt })
+    .eq('id', campaignId)
+  if (error) throw new Error(error.message)
 
   revalidatePath(`/campaigns/${campaignId}`)
 }

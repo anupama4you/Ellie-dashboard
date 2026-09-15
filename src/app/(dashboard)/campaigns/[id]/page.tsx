@@ -6,6 +6,8 @@ import { isWithinOutboundCallingWindow } from '@/lib/outboundWindow'
 import { formatInZone } from '@/lib/timezone'
 import { categoryStyle } from '@/lib/callClassify'
 import CampaignDetailActions from './CampaignDetailActions'
+import CampaignDetailsCard from './CampaignDetailsCard'
+import AddContactsPanel from './AddContactsPanel'
 import CampaignContactsTable from './CampaignContactsTable'
 import CampaignPolling from '../CampaignPolling'
 
@@ -98,16 +100,13 @@ export default async function CampaignDetailPage({
           scheduledAtLabel={campaign.scheduled_at ? formatInZone(new Date(campaign.scheduled_at), biz.timezone, { dateStyle: 'medium', timeStyle: 'short' }) : null}
         />
 
-        <section className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
-          <div>
-            <p className="text-xs font-medium mb-1" style={{ color: 'var(--ink-3)' }}>Opening line</p>
-            <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{campaign.first_message}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium mb-1" style={{ color: 'var(--ink-3)' }}>How Ellie will behave on these calls</p>
-            <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--ink)' }}>{campaign.system_prompt}</p>
-          </div>
-        </section>
+        <CampaignDetailsCard
+          campaignId={campaign.id}
+          name={campaign.name}
+          firstMessage={campaign.first_message}
+          systemPrompt={campaign.system_prompt}
+          canEdit={!campaign.running}
+        />
 
         {allContacts.length > 0 && (
           <section className="rounded-2xl p-5" style={{ background: 'var(--card)', border: '1px solid var(--line)', boxShadow: 'var(--shadow)' }}>
@@ -142,6 +141,8 @@ export default async function CampaignDetailPage({
             )}
           </section>
         )}
+
+        {!campaign.running && <AddContactsPanel campaignId={campaign.id} />}
 
         <CampaignContactsTable
           campaignId={campaign.id}

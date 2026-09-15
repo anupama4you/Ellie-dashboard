@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Pencil } from 'lucide-react'
 import { categoryStyle } from '@/lib/callClassify'
-import { startCallingAction } from '../actions'
+import { startCallingAction, updateContactAction } from '../actions'
 
 type Contact = {
   id: string
@@ -28,7 +29,9 @@ type Props = {
   highlightContactId?: string
 }
 
-const SELECTABLE_STATUSES = new Set(['pending', 'failed'])
+// 'done' is included so a completed contact can be re-selected — a recall.
+const SELECTABLE_STATUSES = new Set(['pending', 'failed', 'done'])
+const EDITABLE_STATUSES = new Set(['pending', 'failed', 'done'])
 
 function prettifyColumnKey(key: string): string {
   return key.split('_').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ')
@@ -53,6 +56,14 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
+  const [editingContact, setEditingContact] = useState<Contact | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editNote, setEditNote] = useState('')
+  const [editError, setEditError] = useState('')
+  const [isEditPending, startEditTransition] = useTransition()
+
+  const recallingCount = useMemo(() => [...selected].filter(id => contacts.find(c => c.id === id)?.status === 'done').length, [selected, contacts])
 
   // Arriving from a call's "View contact" link — scroll straight to the row
   // that call belongs to instead of leaving the client to hunt for it.
@@ -90,6 +101,32 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
     setSelected(allSelected ? new Set() : new Set(selectable.map(c => c.id)))
   }
 
+  function openEdit(c: Contact) {
+    setEditingContact(c)
+    setEditName(c.name)
+    setEditPhone(c.phone)
+    setEditNote(c.note ?? '')
+    setEditError('')
+  }
+
+  function saveEdit() {
+    if (!editingContact) return
+    setEditError('')
+    startEditTransition(async () => {
+      try {
+        const formData = new FormData()
+        formData.set('name', editName)
+        formData.set('phone', editPhone)
+        formData.set('note', editNote)
+        await updateContactAction(campaignId, editingContact.id, formData)
+        setEditingContact(null)
+        router.refresh()
+      } catch (err) {
+        setEditError(err instanceof Error ? err.message : 'Failed to save changes.')
+      }
+    })
+  }
+
   function confirmStart() {
     setError('')
     startTransition(async () => {
@@ -109,11 +146,13 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
     <div className="flex flex-col gap-3">
       {selected.size > 0 && !running && (
         <div className="flex items-center justify-between rounded-xl px-4 py-2.5" style={{ background: 'var(--violet-soft)' }}>
-          <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>{selected.size} selected</p>
+          <p className="text-sm font-semibold" style={{ color: 'var(--violet)' }}>
+            {selected.size} selected{recallingCount > 0 ? ` (${recallingCount} recall${recallingCount === 1 ? '' : 's'})` : ''}
+          </p>
           <button onClick={() => setShowConfirm(true)} disabled={isPending}
             className="rounded-lg px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
             style={{ background: 'var(--violet)' }}>
-            Start calling
+            {recallingCount > 0 ? 'Start calling & recall' : 'Start calling'}
           </button>
         </div>
       )}
@@ -142,6 +181,7 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                 ))}
                 <th className="text-left font-semibold px-5 py-2.5 whitespace-nowrap" style={{ color: 'var(--ink-3)' }}>Status</th>
                 <th className="text-left font-semibold px-5 py-2.5" style={{ color: 'var(--ink-3)' }}>Call summary</th>
+                <th className="px-5 py-2.5 w-8" />
               </tr>
             </thead>
             <tbody>
@@ -191,6 +231,14 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                         '—'
                       )}
                     </td>
+                    <td className="px-5 py-3">
+                      {EDITABLE_STATUSES.has(c.status) && !running && (
+                        <button onClick={() => openEdit(c)} aria-label={`Edit ${c.name}`}
+                          className="p-1 rounded-lg transition-opacity hover:opacity-70" style={{ color: 'var(--ink-3)' }}>
+                          <Pencil size={13} />
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
@@ -213,6 +261,11 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                 If the run reaches the end of the 9am–8pm window it pauses until you resume it manually. If a call
                 can&apos;t be placed because of a system issue, the run stops there and we&apos;ll email you.
               </p>
+              {recallingCount > 0 && (
+                <p className="rounded-lg px-3 py-2" style={{ color: 'var(--violet)', background: 'var(--violet-soft)' }}>
+                  {recallingCount} of these already {recallingCount === 1 ? 'has' : 'have'} a result from a previous call — recalling will replace it with the new outcome.
+                </p>
+              )}
               {!withinWindow && (
                 <p className="rounded-lg px-3 py-2" style={{ color: 'var(--amber)', background: 'var(--amber-soft)' }}>
                   It&apos;s currently outside the usual 9am–8pm calling window. The first call will go out right away
@@ -228,6 +281,45 @@ export default function CampaignContactsTable({ campaignId, contacts, running, w
                 className="rounded-lg px-4 py-2 text-xs font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
                 style={{ background: 'var(--violet)' }}>
                 {isPending ? 'Starting…' : 'Confirm & start'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingContact && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.4)' }}>
+          <div className="rounded-2xl p-5 max-w-sm w-full flex flex-col gap-3" style={{ background: 'var(--card)' }}>
+            <h3 className="text-sm font-bold" style={{ fontFamily: 'var(--font-display)', color: 'var(--ink)' }}>Edit contact</h3>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Name</label>
+              <input value={editName} onChange={e => setEditName(e.target.value)}
+                className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Phone</label>
+              <input value={editPhone} onChange={e => setEditPhone(e.target.value)}
+                className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Note</label>
+              <input value={editNote} onChange={e => setEditNote(e.target.value)}
+                className="rounded-lg px-3 py-2 text-sm" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
+            </div>
+            {editingContact.extra_fields && Object.keys(editingContact.extra_fields).length > 0 && (
+              <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+                Custom CSV columns ({Object.keys(editingContact.extra_fields).join(', ')}) aren&apos;t editable here — re-upload a CSV to change those.
+              </p>
+            )}
+            {editError && <p className="text-xs" style={{ color: 'var(--coral)' }}>{editError}</p>}
+            <div className="flex justify-end gap-2 mt-1">
+              <button onClick={() => setEditingContact(null)} className="rounded-lg px-3 py-2 text-xs font-semibold" style={{ color: 'var(--ink-3)' }}>
+                Cancel
+              </button>
+              <button onClick={saveEdit} disabled={isEditPending}
+                className="rounded-lg px-4 py-2 text-xs font-bold text-white disabled:opacity-50 transition-opacity hover:opacity-90"
+                style={{ background: 'var(--violet)' }}>
+                {isEditPending ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
