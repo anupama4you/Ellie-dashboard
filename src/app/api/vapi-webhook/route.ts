@@ -474,13 +474,13 @@ export async function POST(req: Request) {
       address: string | null; city: string | null; state: string | null; postcode: string | null; google_maps_url: string | null
       user_id: string; notification_preferences: import('@/lib/notifications').NotificationPreferences | null
       sms_template_booking: string | null; sms_template_reschedule: string | null; sms_template_cancellation: string | null
-      sms_template_booking_link: string | null; website: string | null
+      sms_template_booking_link: string | null; website: string | null; phone: string | null
     } | null> | null = null
     function getBiz() {
       if (!bizPromise) {
         bizPromise = supabase
           .from('businesses')
-          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation, sms_template_booking_link, website')
+          .select('id, name, hours, twilio_phone_number, timezone, address, city, state, postcode, google_maps_url, user_id, notification_preferences, sms_template_booking, sms_template_reschedule, sms_template_cancellation, sms_template_booking_link, website, phone')
           .eq('vapi_assistant_id', assistantId)
           .single()
           .then(({ data }) => data)
@@ -973,6 +973,51 @@ export async function POST(req: Request) {
         } catch (err) {
           captureError(err, { handler: 'sendWebsiteLink' })
           resultText = "Something went wrong sending that text — let the caller know you'll follow up another way."
+        }
+
+        results.push({ toolCallId: toolCall.id, result: resultText })
+        continue
+      }
+
+      // The backend action behind "we'll give you a callback" — previously
+      // a purely verbal promise with no follow-up mechanism at all. Texts
+      // the business's OWN phone (businesses.phone), not the caller's, with
+      // the caller's number so staff can actually call them back. A
+      // business whose `phone` isn't a real text-capable staff number
+      // (e.g. it's set to the same number Ellie answers on) won't receive
+      // this — that's a data-correctness issue for that business to fix,
+      // not something this handler can detect or work around.
+      if (name === 'requestCallback') {
+        const args = toolArgs(toolCall)
+        const customerPhone = (args.customerPhone as string | undefined) ?? message.call?.customer?.number
+        const reason = (args.reason as string | undefined)?.trim()
+        let resultText: string
+
+        try {
+          const biz = await getBiz()
+
+          if (!biz) {
+            resultText = "I couldn't find this business's account — let the caller know you'll still make a note and follow up."
+          } else if (!biz.phone) {
+            resultText = "No team phone number is on file to notify — let the caller know you'll still make a note and the team will follow up."
+          } else if (!customerPhone) {
+            resultText = "There's no caller phone number to pass along — ask the caller to confirm a number, then call this tool again."
+          } else {
+            const smsBody = `Callback requested: a caller wants to speak with the team. Their number: ${customerPhone}.${reason ? ` Reason: ${reason}.` : ''}`
+            await sendSms(biz.phone, smsBody, biz.twilio_phone_number)
+            resultText = "The team has been notified and will call back."
+
+            await sendNotificationEmail(biz, 'callbackRequested', () => getBizNotifyEmailFor(biz.user_id),
+              `Callback requested — ${customerPhone}`, `
+                <p>A caller asked to speak with your team instead of continuing with Ellie.</p>
+                <p>Their number: ${customerPhone}</p>
+                ${reason ? `<p>Reason: ${reason}</p>` : ''}
+                <p>An SMS with these details was also sent to your business phone.</p>
+              `)
+          }
+        } catch (err) {
+          captureError(err, { handler: 'requestCallback' })
+          resultText = "Something went wrong notifying the team — let the caller know you'll still make a note and follow up."
         }
 
         results.push({ toolCallId: toolCall.id, result: resultText })
