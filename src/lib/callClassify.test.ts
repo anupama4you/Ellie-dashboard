@@ -14,6 +14,10 @@ describe('categoryStyle', () => {
     expect(categoryStyle('declined')).toEqual({ label: 'Declined', color: 'var(--ink-3)', bg: 'var(--paper)' })
   })
 
+  it('returns the same label/colors classifyCall uses for a review-requested call', () => {
+    expect(categoryStyle('reviewRequested')).toEqual({ label: 'Review requested', color: 'var(--signal)', bg: 'var(--signal-soft)' })
+  })
+
   it('falls back to a neutral style for an unrecognised category', () => {
     expect(categoryStyle('not-a-real-category')).toEqual({ label: 'not-a-real-category', color: 'var(--ink-3)', bg: 'var(--paper)' })
   })
@@ -38,5 +42,23 @@ describe('classifyCall — declined', () => {
 
   it('a no-answer ended reason still wins over hasDeclined', () => {
     expect(classifyCall('customer-did-not-answer', false, false, false, true).category).toBe('missed')
+  })
+})
+
+describe('classifyCall — reviewRequested', () => {
+  it('classifies as reviewRequested when hasReviewRequested is true and nothing more specific happened', () => {
+    expect(classifyCall(undefined, false, false, false, false, true).category).toBe('reviewRequested')
+  })
+
+  it('takes priority over hasDeclined — a call that got a review link sent was not declined', () => {
+    expect(classifyCall(undefined, false, false, false, true, true).category).toBe('reviewRequested')
+  })
+
+  it('a sent booking link still wins over hasReviewRequested', () => {
+    expect(classifyCall(undefined, false, false, true, false, true).category).toBe('linked')
+  })
+
+  it('a real booking still wins over hasReviewRequested', () => {
+    expect(classifyCall(undefined, true, false, false, false, true).category).toBe('booked')
   })
 })

@@ -8,23 +8,14 @@ import { isAfterHours } from '@/lib/availability'
 import { estimatedLinkedRevenueCents } from '@/lib/revenue'
 import { formatAuPhone } from '@/lib/sms'
 import type { Hours } from '@/lib/promptSections'
+import { categoryStyle, type CallCategory } from '@/lib/callClassify'
 import Link from 'next/link'
-import RecentCallsCard, { type RecentCallItem, type RecentCallCategory } from '@/components/RecentCallsCard'
+import RecentCallsCard, { type RecentCallItem } from '@/components/RecentCallsCard'
 import WeeklyCallsChart, { type WeekDay } from '@/components/WeeklyCallsChart'
 import {
   CalendarDays, AlertCircle, CheckCircle2, DollarSign, Sparkles, AlertTriangle,
   Phone, ArrowUp, ArrowDown,
 } from 'lucide-react'
-
-const OUTCOME_STYLE: Record<string, { label: string; color: string; bg: string }> = {
-  booked:      { label: 'Booked',      color: 'var(--signal)', bg: 'var(--signal-soft)' },
-  rebooked:    { label: 'Rebooked',    color: 'var(--violet)', bg: 'var(--violet-soft)' },
-  linked:      { label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' },
-  enquiry:     { label: 'Enquiry',     color: 'var(--violet)', bg: 'var(--violet-soft)' },
-  transferred: { label: 'Transferred', color: 'var(--amber)',  bg: 'var(--amber-soft)'  },
-  missed:      { label: 'Missed',      color: 'var(--coral)',  bg: 'var(--coral-soft)'  },
-  errored:     { label: 'Error',       color: 'var(--coral)',  bg: 'var(--coral-soft)'  },
-}
 
 function getGreeting(hour: number) {
   if (hour < 12) return 'Good morning'
@@ -216,8 +207,8 @@ export default async function TodayPage() {
 
   const bizHours = (biz?.hours as Hours | undefined) ?? null
   const recentCallItems: RecentCallItem[] = recentCalls.map(call => {
-    const outcome = (call.outcome ?? 'enquiry') as RecentCallCategory
-    const style   = OUTCOME_STYLE[outcome] ?? OUTCOME_STYLE.enquiry
+    const outcome = (call.outcome ?? 'enquiry') as CallCategory
+    const style   = categoryStyle(outcome)
     const started = call.started_at ? new Date(call.started_at) : null
     const afterHours = started ? isAfterHours(started, bizHours, timeZone) : false
     const isToday     = started ? dateStrInZone(started, timeZone) === dateStrInZone(now, timeZone) : false

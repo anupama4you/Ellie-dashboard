@@ -38,7 +38,7 @@ export const CAMPAIGN_TEMPLATES: CampaignTemplate[] = [
     systemPrompt: `Ask how their recent visit or experience was. Keep it to one open question — don't interrogate them with a checklist.
 
 If their answer is positive (great, excellent, happy, etc.):
-Thank them warmly, then call sendSms with a short message containing this Google review link, and tell them on the call that you've sent it: [PASTE YOUR SHORTENED GOOGLE REVIEW LINK HERE]
+Thank them warmly, then call sendSms with a short message containing this Google review link (pass linkType: "review" so the call is correctly counted), and tell them on the call that you've sent it: [PASTE YOUR SHORTENED GOOGLE REVIEW LINK HERE]
 
 If their answer is mixed, negative, or they raise a concern:
 Do NOT ask for a review and do NOT send the link. Thank them for the honest feedback, apologise briefly if something went wrong, and let them know the team will follow up. Do not try to resolve the issue yourself on this call.

@@ -891,14 +891,15 @@ export async function POST(req: Request) {
             // correlation, just for businesses with no appointment row to
             // correlate against. Best-effort: no business row (a demo
             // assistant) or no callId (a non-phone session) just skips this.
-            if (linkType === 'booking') {
+            const groundTruthColumn = linkType === 'booking' ? 'booking_link_sent' : linkType === 'review' ? 'review_requested' : null
+            if (groundTruthColumn) {
               const callId = message.call?.id as string | undefined
               const biz = await getBiz()
               if (biz && callId) {
                 const { error: linkErr } = await supabase
                   .from('calls')
-                  .upsert({ business_id: biz.id, vapi_call_id: callId, booking_link_sent: true }, { onConflict: 'vapi_call_id', ignoreDuplicates: false })
-                if (linkErr) console.error('Failed to record booking_link_sent for call', callId, linkErr)
+                  .upsert({ business_id: biz.id, vapi_call_id: callId, [groundTruthColumn]: true }, { onConflict: 'vapi_call_id', ignoreDuplicates: false })
+                if (linkErr) console.error(`Failed to record ${groundTruthColumn} for call`, callId, linkErr)
               }
             }
           }
@@ -1355,14 +1356,20 @@ export async function POST(req: Request) {
       // Vapi's own analysis is an LLM guess from the transcript and can say
       // false on a call where sendSms actually succeeded (observed on a
       // real call) — OR it with the ground-truth flag the sendSms handler
-      // itself sets at tool-call-success time (see the `linkType === 'booking'`
+      // itself sets at tool-call-success time (see the `groundTruthColumn`
       // branch above) rather than trusting the analysis alone.
       const { data: existingCallRow } = await supabase
         .from('calls')
-        .select('booking_link_sent')
+        .select('booking_link_sent, review_requested')
         .eq('vapi_call_id', callId)
         .maybeSingle()
       const hasBookingLink = !!existingCallRow?.booking_link_sent || !!report.analysis?.structuredData?.bookingLinkSent
+      // No analysis-plan fallback for this one (unlike bookingLinkSent) — it's
+      // new enough that no business's structuredDataPlan judges it, and a
+      // review link is meaningfully different from a booking link, so
+      // conflating them into the same analysis question isn't worth it.
+      // Ground truth only, same as `declined`.
+      const hasReviewRequested = !!existingCallRow?.review_requested
 
       // Priority: Vapi's own customer metadata (rare for phone calls) > the
       // name confirmed out loud during a booking/reschedule/cancellation on
@@ -1381,7 +1388,7 @@ export async function POST(req: Request) {
       }
       callerName = callerName ?? report.analysis?.structuredData?.callerName ?? null
 
-      const outcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink).category
+      const outcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, undefined, hasReviewRequested).category
 
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,
@@ -1398,6 +1405,7 @@ export async function POST(req: Request) {
         ended_reason:       endedReason ?? null,
         outcome,
         booking_link_sent:  hasBookingLink,
+        review_requested:   hasReviewRequested,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
@@ -1439,7 +1447,7 @@ export async function POST(req: Request) {
         // signal to distinguish it from a real inbound-shaped enquiry —
         // both fell through to the same generic 'enquiry' bucket.
         const hasDeclined = !!report.analysis?.structuredData?.declined
-        const campaignOutcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, hasDeclined).category
+        const campaignOutcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, hasDeclined, hasReviewRequested).category
 
         const { error: contactUpdateError } = await supabase.from('outbound_campaign_contacts')
           .update({ status: 'done', outcome: campaignOutcome })

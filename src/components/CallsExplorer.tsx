@@ -69,7 +69,14 @@ export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls
   )
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: callsInDirection.length, booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0 }
+    // Every real CallCategory is pre-seeded (not just the ones with a chip
+    // below) so a category with no dedicated chip (e.g. 'declined',
+    // 'reviewRequested') still safely increments instead of going NaN —
+    // it just never matches a specific filter, only "All".
+    const c: Record<string, number> = {
+      all: callsInDirection.length,
+      booked: 0, rebooked: 0, linked: 0, reviewRequested: 0, declined: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
+    }
     for (const call of callsInDirection) c[call.category]++
     return c
   }, [callsInDirection])

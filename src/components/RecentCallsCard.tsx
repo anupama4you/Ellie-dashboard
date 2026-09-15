@@ -4,8 +4,14 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { AudioWaveform, FileText, Clock3 } from 'lucide-react'
 import { initials, avatarColor } from '@/lib/avatar'
+import type { CallCategory } from '@/lib/callClassify'
 
-export type RecentCallCategory = 'booked' | 'rebooked' | 'linked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+// A curated subset of CallCategory for the filter pills — a category not
+// listed here (e.g. 'declined', 'reviewRequested') just never matches a
+// specific filter and only shows under "All"; it still renders with its
+// own correct badge (see RecentCallItem.category, typed as the full
+// CallCategory further down), it's simply not filterable to on its own here.
+export type RecentCallCategory = CallCategory
 
 export type RecentCallItem = {
   id: string
@@ -45,7 +51,7 @@ export default function RecentCallsCard({ calls }: { calls: RecentCallItem[] }) 
 
   const counts: Record<'all' | RecentCallCategory, number> = {
     all: calls.length,
-    booked: 0, rebooked: 0, linked: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
+    booked: 0, rebooked: 0, linked: 0, reviewRequested: 0, declined: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
   }
   for (const c of calls) {
     counts[c.category]++

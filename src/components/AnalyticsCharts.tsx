@@ -92,9 +92,12 @@ const OUTCOME_LEGEND: { key: string; label: string; color: string }[] = [
   { key: 'missed',      label: 'Caller hung up early', color: 'var(--coral)' },
 ]
 
-/** A booking-link call (e.g. clients who book through an external platform like Timely) counts as a booking here — see classifyCall's doc comment. */
+/** A booking-link call (e.g. clients who book through an external platform like Timely) counts as a booking here — see classifyCall's doc comment.
+ *  A review-requested call is grouped in too — like a booking link, it's a
+ *  successful, concrete outcome (a text actually went out), not a generic
+ *  answered enquiry. */
 function isBookedOutcome(outcome: string | null): boolean {
-  return outcome === 'booked' || outcome === 'rebooked' || outcome === 'linked'
+  return outcome === 'booked' || outcome === 'rebooked' || outcome === 'linked' || outcome === 'reviewRequested'
 }
 
 function getOutcomeBreakdown(calls: LocalCallListItem[]) {
