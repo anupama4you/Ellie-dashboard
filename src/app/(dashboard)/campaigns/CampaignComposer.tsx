@@ -1,8 +1,9 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
-import { Check, ChevronLeft, ChevronRight, Plus, Send, CalendarClock, X } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Plus, Send, CalendarClock, X, Download, Sparkles } from 'lucide-react'
 import { extractCustomVariableNames, parseContactsCsv } from '@/lib/outboundCsv'
+import { CAMPAIGN_TEMPLATES } from '@/lib/campaignTemplates'
 import CsvDropzone from './CsvDropzone'
 
 const FIXED_VARIABLES = [
@@ -69,6 +70,15 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
   const [firstMessage, setFirstMessage] = useState(defaultFirstMessage)
   const [systemPrompt, setSystemPrompt] = useState(defaultSystemPrompt)
   const [activeField, setActiveField] = useState<'firstMessage' | 'systemPrompt'>('firstMessage')
+  const [appliedTemplateKey, setAppliedTemplateKey] = useState<string | null>(null)
+
+  function applyTemplate(key: string) {
+    const template = CAMPAIGN_TEMPLATES.find(t => t.key === key)
+    if (!template) return
+    setFirstMessage(template.firstMessage)
+    setSystemPrompt(template.systemPrompt)
+    setAppliedTemplateKey(key)
+  }
 
   const [sendOption, setSendOption] = useState<'now' | 'schedule'>('now')
   const [scheduleDate, setScheduleDate] = useState('')
@@ -211,11 +221,21 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
+          <div className="flex items-center justify-between">
+            <label htmlFor="campaign-csv" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Contacts CSV</label>
+            <a href="/sample-campaign-contacts.csv" download
+              className="flex items-center gap-1 text-xs font-semibold transition-opacity hover:opacity-80"
+              style={{ color: 'var(--violet)' }}>
+              <Download size={12} /> Download sample CSV
+            </a>
+          </div>
           <CsvDropzone inputId="campaign-csv" onFileSelected={handleFile} />
           {csvContactCount !== null && (
             <p className="text-xs" style={{ color: 'var(--ink-3)' }}>{csvContactCount} valid contact{csvContactCount === 1 ? '' : 's'} found in {fileName}.</p>
           )}
+          <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+            Needs <code>name</code> and <code>phone</code> columns — <code>note</code> and any other column (like &quot;last visit&quot;) are optional and become personal details you can drop into the script.
+          </p>
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -255,13 +275,36 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
       {/* Step 2 — Agent details */}
       <div className="flex flex-col gap-3" hidden={step !== 2}>
         <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <Sparkles size={12} style={{ color: 'var(--violet)' }} />
+            <p className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Start from a template</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+            {CAMPAIGN_TEMPLATES.map(t => (
+              <button key={t.key} type="button" onClick={() => applyTemplate(t.key)}
+                className="text-left rounded-lg px-3 py-2 text-xs transition-colors"
+                style={{
+                  border: `1px solid ${appliedTemplateKey === t.key ? 'var(--violet)' : 'var(--line)'}`,
+                  background: appliedTemplateKey === t.key ? 'var(--violet-soft)' : 'transparent',
+                }}>
+                <span className="font-semibold block" style={{ color: appliedTemplateKey === t.key ? 'var(--violet)' : 'var(--ink)' }}>{t.label}</span>
+                <span className="block mt-0.5" style={{ color: 'var(--ink-3)' }}>{t.description}</span>
+              </button>
+            ))}
+          </div>
+          <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
+            Picking one fills in both fields below — replace <code>[Business]</code> and any other bracketed placeholder with your own details before sending.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <label htmlFor="campaign-first-message" className="text-xs font-medium" style={{ color: 'var(--ink-3)' }}>Opening line</label>
           <textarea
             id="campaign-first-message" name="firstMessage" rows={2}
             ref={firstMessageRef}
             value={firstMessage}
             onFocus={() => setActiveField('firstMessage')}
-            onChange={e => setFirstMessage(e.target.value)}
+            onChange={e => { setFirstMessage(e.target.value); setAppliedTemplateKey(null) }}
             placeholder="Hi, this is Ellie calling from [Business]."
             className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
           <p className="text-xs" style={{ color: 'var(--ink-3)' }}>What Ellie says the moment the call connects.</p>
@@ -274,7 +317,7 @@ export default function CampaignComposer({ action, defaultFirstMessage, defaultS
             ref={systemPromptRef}
             value={systemPrompt}
             onFocus={() => setActiveField('systemPrompt')}
-            onChange={e => setSystemPrompt(e.target.value)}
+            onChange={e => { setSystemPrompt(e.target.value); setAppliedTemplateKey(null) }}
             placeholder="Mention it's been a while since their last visit, and offer to book them in this week."
             className="rounded-lg px-3 py-2 text-sm resize-y" style={{ border: '1px solid var(--line)', color: 'var(--ink)' }} />
           <p className="text-xs" style={{ color: 'var(--ink-3)' }}>Pre-filled with your usual script — edit it for this campaign if you want.</p>
