@@ -1,6 +1,7 @@
 import { AlertTriangle, ChevronRight, Clock3, PhoneOutgoing } from 'lucide-react'
 import CopyButton from './CopyButton'
 import { initials, avatarColor } from '@/lib/avatar'
+import type { CallCategory } from '@/lib/callClassify'
 
 function fmtDuration(secs: number) {
   if (!secs || !isFinite(secs) || secs <= 0) return '—'
@@ -18,7 +19,7 @@ export type CallRowProps = {
   startedDate?: string
   startedTime?: string
   durationSecs: number
-  category: 'booked' | 'rebooked' | 'linked' | 'transferred' | 'missed' | 'enquiry' | 'errored'
+  category: CallCategory
   badgeLabel: string
   badgeColor: string
   badgeBg: string

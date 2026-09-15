@@ -368,7 +368,7 @@ type EndOfCallReport = Record<string, unknown> & {
     phoneNumber?: { number?: string } | string
   }
   artifact?: { transcript?: string; recordingUrl?: string }
-  analysis?: { summary?: string; successEvaluation?: string; structuredData?: { callerName?: string | null; bookingLinkSent?: boolean | null } }
+  analysis?: { summary?: string; successEvaluation?: string; structuredData?: { callerName?: string | null; bookingLinkSent?: boolean | null; declined?: boolean | null } }
 }
 
 function eocCustomer(message: EndOfCallReport): { number?: string; name?: string } {
@@ -1431,8 +1431,18 @@ export async function POST(req: Request) {
         .maybeSingle()
 
       if (campaignContact) {
+        // Recomputed rather than reusing `outcome` above — hasDeclined only
+        // ever applies to a campaign-originated call (an inbound caller
+        // asking a question isn't "declining" anything), so the general
+        // `calls.outcome` used everywhere else stays exactly as before.
+        // Without this, an answered call where the contact said no had no
+        // signal to distinguish it from a real inbound-shaped enquiry —
+        // both fell through to the same generic 'enquiry' bucket.
+        const hasDeclined = !!report.analysis?.structuredData?.declined
+        const campaignOutcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, hasDeclined).category
+
         const { error: contactUpdateError } = await supabase.from('outbound_campaign_contacts')
-          .update({ status: 'done', outcome })
+          .update({ status: 'done', outcome: campaignOutcome })
           .eq('id', campaignContact.id)
         if (contactUpdateError) console.error('Failed to mark campaign contact done:', contactUpdateError)
 

@@ -1,4 +1,4 @@
-export type CallCategory = 'booked' | 'rebooked' | 'linked' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+export type CallCategory = 'booked' | 'rebooked' | 'linked' | 'declined' | 'enquiry' | 'transferred' | 'missed' | 'errored'
 
 const ERROR_REASONS = new Set([
   'exceeded-max-duration',
@@ -38,8 +38,19 @@ const ERROR_REASONS = new Set([
  * alongside 'booked'/'rebooked' in every booking-conversion metric — see
  * `src/app/(dashboard)/page.tsx` and `AnalyticsCharts.tsx` — since sending
  * the link is the full extent of what Ellie can do for these businesses.
+ *
+ * `hasDeclined` exists only for outbound campaign calls (a caller who
+ * answered, was asked something — feedback, a re-booking offer, a
+ * promotion — and said no) — the webhook only passes it true when it has
+ * a campaign contact to correlate against, so an ordinary inbound call can
+ * never be classified 'declined'. Without it, a declined offer and a real
+ * inbound question about something else were indistinguishable — both
+ * just fell through to 'enquiry', which reads as "customer asked
+ * something" rather than "customer said no." Ranked below every positive
+ * signal but above the generic 'enquiry' catch-all, same priority tier as
+ * 'linked'.
  */
-export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean, hasBookingLink?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
+export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean, hasBookingLink?: boolean, hasDeclined?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
   if (hasReschedule) {
     return { category: 'rebooked', label: 'Rebooked', color: 'var(--violet)', bg: 'var(--violet-soft)' }
   }
@@ -64,6 +75,9 @@ export function classifyCall(endedReason?: string, hasBooking?: boolean, hasResc
   if (hasBookingLink) {
     return { category: 'linked', label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' }
   }
+  if (hasDeclined) {
+    return { category: 'declined', label: 'Declined', color: 'var(--ink-3)', bg: 'var(--paper)' }
+  }
   return { category: 'enquiry', label: 'Enquiry', color: 'var(--violet)', bg: 'var(--violet-soft)' }
 }
 
@@ -71,6 +85,7 @@ const CATEGORY_STYLES: Record<CallCategory, { label: string; color: string; bg: 
   booked:      { label: 'Booked',            color: 'var(--signal)', bg: 'var(--signal-soft)' },
   rebooked:    { label: 'Rebooked',          color: 'var(--violet)', bg: 'var(--violet-soft)' },
   linked:      { label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' },
+  declined:    { label: 'Declined',          color: 'var(--ink-3)',  bg: 'var(--paper)' },
   enquiry:     { label: 'Enquiry',           color: 'var(--violet)', bg: 'var(--violet-soft)' },
   transferred: { label: 'Transferred',       color: 'var(--amber)',  bg: 'var(--amber-soft)' },
   missed:      { label: 'No answer',         color: 'var(--coral)',  bg: 'var(--coral-soft)' },
