@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { liveStructuredData, resolveStructuredData } from '@/lib/briefing'
 import { mapSectionRow } from '@/lib/promptSections'
+import { getAssistant } from '@/lib/vapi'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminDocumentEditor from '@/components/AdminDocumentEditor'
 
@@ -31,6 +32,20 @@ export default async function AdminPromptPage({
   const draftStructured = resolveStructuredData(biz, services ?? [], staff ?? [])
   const sections = (sectionRows ?? []).map(mapSectionRow)
 
+  // Fetched fresh (no-store) on every load so a prompt edited directly in
+  // Vapi's own dashboard — bypassing prompt_sections entirely — is visible
+  // here too, not just what this app last pushed.
+  let liveVapiPrompt: string | null = null
+  let liveVapiError: string | null = null
+  if (biz.vapi_assistant_id) {
+    try {
+      const assistant = await getAssistant(biz.vapi_assistant_id)
+      liveVapiPrompt = assistant.model?.messages?.find(m => m.role === 'system')?.content ?? null
+    } catch (err) {
+      liveVapiError = err instanceof Error ? err.message : 'Failed to fetch the live assistant from Vapi'
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
       <div className="max-w-[1220px] mx-auto flex flex-col gap-4">
@@ -57,6 +72,8 @@ export default async function AdminPromptPage({
             draftStructured={draftStructured}
             hasDraft={!!biz.draft_briefing}
             expectedBriefingUpdatedAt={biz.briefing_updated_at}
+            liveVapiPrompt={liveVapiPrompt}
+            liveVapiError={liveVapiError}
           />
         )}
       </div>

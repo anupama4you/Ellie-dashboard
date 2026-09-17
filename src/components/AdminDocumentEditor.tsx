@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { Plus, Trash2, ChevronUp, ChevronDown, Send } from 'lucide-react'
+import { Plus, Trash2, ChevronUp, ChevronDown, Send, ChevronRight, PhoneCall } from 'lucide-react'
 import type { PromptSection, SectionKind } from '@/lib/promptSections'
 import type { StructuredDraft } from '@/lib/briefing'
 import {
@@ -18,6 +18,8 @@ type Props = {
   draftStructured: StructuredDraft
   hasDraft: boolean
   expectedBriefingUpdatedAt: string | null
+  liveVapiPrompt: string | null
+  liveVapiError: string | null
 }
 
 const KIND_LABEL: Record<SectionKind, string> = {
@@ -49,7 +51,53 @@ function SectionDiff({ section }: { section: PromptSection }) {
   )
 }
 
-export default function AdminDocumentEditor({ businessId, sections: initialSections, liveStructured, draftStructured, hasDraft, expectedBriefingUpdatedAt }: Props) {
+/**
+ * Read-only view of whatever is actually on the assistant on Vapi right
+ * now — fetched fresh from Vapi's API on every page load, independent of
+ * prompt_sections. Lets an admin see a prompt someone edited directly in
+ * Vapi's own dashboard, which this app has no way to pull back into
+ * sections automatically (it's just one opaque string to us).
+ */
+function LiveVapiPromptPanel({ prompt, error }: { prompt: string | null; error: string | null }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+      <button onClick={() => setOpen(v => !v)} className="w-full flex items-center justify-between px-5 py-3">
+        <div className="flex items-center gap-2">
+          <PhoneCall size={13} style={{ color: 'var(--t4)' }} />
+          <b className="text-sm" style={{ color: 'var(--text)' }}>Live on Vapi right now</b>
+          <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg2)', color: 'var(--t4)' }}>
+            fetched directly from the assistant
+          </span>
+        </div>
+        <ChevronRight size={14} style={{ color: 'var(--t3)', transform: open ? 'rotate(90deg)' : undefined }} />
+      </button>
+      {open && (
+        <div className="px-5 pb-5">
+          {error && (
+            <p className="text-xs" style={{ color: 'var(--coral)' }}>Couldn&apos;t fetch the live assistant from Vapi: {error}</p>
+          )}
+          {!error && prompt === null && (
+            <p className="text-xs" style={{ color: 'var(--t3)' }}>The assistant has no system message on Vapi.</p>
+          )}
+          {!error && prompt !== null && (
+            <>
+              <p className="text-xs mb-2" style={{ color: 'var(--t3)' }}>
+                This is the assistant&apos;s actual system prompt on Vapi, independent of the sections below — if it was edited directly in Vapi&apos;s dashboard, that shows up here even before anyone applies changes from this app.
+              </p>
+              <pre className="whitespace-pre-wrap text-xs rounded-xl px-3.5 py-2.5 overflow-x-auto"
+                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'inherit' }}>
+                {prompt}
+              </pre>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function AdminDocumentEditor({ businessId, sections: initialSections, liveStructured, draftStructured, hasDraft, expectedBriefingUpdatedAt, liveVapiPrompt, liveVapiError }: Props) {
   const [sections, setSections] = useState(initialSections)
   const [drafts, setDrafts] = useState<Record<string, string>>(Object.fromEntries(initialSections.map(s => [s.id, s.content ?? ''])))
   const [isPending, startTransition] = useTransition()
@@ -88,6 +136,8 @@ export default function AdminDocumentEditor({ businessId, sections: initialSecti
 
   return (
     <div className="flex flex-col gap-4">
+      <LiveVapiPromptPanel prompt={liveVapiPrompt} error={liveVapiError} />
+
       {(changedSections.length > 0 || structuredChanged) && (
         <div className="rounded-2xl p-5 flex flex-col gap-3" style={{ background: 'rgba(217,138,11,0.06)', border: '1px solid rgba(217,138,11,0.25)' }}>
           <h3 className="text-sm font-bold" style={{ color: 'var(--amber)' }}>Pending client changes</h3>
