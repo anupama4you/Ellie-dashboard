@@ -1,6 +1,9 @@
+'use client'
+
+import { useState } from 'react'
 import Link from 'next/link'
 import {
-  Phone, Clock, CheckCircle2, XCircle, Mic, FileText,
+  Phone, Clock, CheckCircle2, XCircle, Mic, FileText, Copy, Check,
   PhoneIncoming, PhoneOutgoing, Globe, Megaphone, ArrowRight,
 } from 'lucide-react'
 import WaveformPlayer from './WaveformPlayer'
@@ -34,6 +37,62 @@ function parseTranscript(raw: string): Msg[] {
     }
   }
   return msgs
+}
+
+/**
+ * The whole call as one markdown document — a header of the same facts
+ * shown in the stats grid above, then the transcript as speaker-labelled
+ * paragraphs (or the raw text verbatim if it couldn't be split into turns).
+ * Pure/exported so it's unit-testable without mounting the component.
+ */
+export function transcriptToMarkdown(call: CallDetailData, msgs: Msg[], timeZone: string): string {
+  const title = call.customerName?.trim() || call.customerNumber || 'Unknown caller'
+  const dt = call.startedAtIso ? new Date(call.startedAtIso) : null
+
+  const lines = [`# Call with ${title}`, '']
+  if (dt) lines.push(`- **Date:** ${formatInZone(dt, timeZone, { dateStyle: 'long', timeStyle: 'short' })}`)
+  if (call.customerNumber) lines.push(`- **Number:** ${call.customerNumber}`)
+  if (call.durationSecs > 0) lines.push(`- **Duration:** ${fmtDuration(call.durationSecs)}`)
+  if (call.status) lines.push(`- **Status:** ${call.status.charAt(0).toUpperCase() + call.status.slice(1)}`)
+  if (call.successEvaluation === 'true') lines.push('- **Outcome:** Successful')
+  else if (call.successEvaluation === 'false') lines.push('- **Outcome:** Unsuccessful')
+  if (call.summary) lines.push('', '## AI Summary', '', call.summary)
+
+  lines.push('', '## Transcript', '')
+  if (msgs.length > 0) {
+    for (const msg of msgs) lines.push(`**${msg.role === 'user' ? 'Caller' : 'Ellie'}:** ${msg.text}`, '')
+  } else if (call.transcript) {
+    lines.push(call.transcript)
+  } else {
+    lines.push('_No transcript captured for this call._')
+  }
+
+  return lines.join('\n').trim() + '\n'
+}
+
+function CopyTranscriptButton({ markdown }: { markdown: string }) {
+  const [copied, setCopied] = useState(false)
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(markdown)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // clipboard API unavailable — silently ignore, not critical
+    }
+  }
+
+  return (
+    <button
+      onClick={copy}
+      className="ml-auto flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors"
+      style={{ color: copied ? 'var(--signal)' : 'var(--violet)', background: copied ? 'rgba(15,163,122,0.1)' : 'var(--violet-soft)' }}
+    >
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+      {copied ? 'Copied!' : 'Copy as Markdown'}
+    </button>
+  )
 }
 
 function CallTypeLabel({ type }: { type?: string }) {
@@ -70,7 +129,15 @@ export type CallDetailData = {
   campaignLink?: CampaignCallLink | null
 }
 
-export default function CallDetailPanel({ call, timeZone }: { call: CallDetailData; timeZone: string }) {
+export default function CallDetailPanel({
+  call, timeZone,
+  campaignHref = link => `/campaigns/${link.campaignId}?highlight=${link.contactId}`,
+}: {
+  call: CallDetailData
+  timeZone: string
+  /** Overridden by the admin panel — the client-side campaign detail route this defaults to only exists inside the client dashboard. */
+  campaignHref?: (link: CampaignCallLink) => string
+}) {
   const dt = call.startedAtIso ? new Date(call.startedAtIso) : null
   const msgs = call.transcript ? parseTranscript(call.transcript) : []
   const endedLabel = call.endedReason
@@ -141,7 +208,7 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
       {/* Campaign link — this call was placed by an outbound campaign */}
       {call.campaignLink && (
         <Link
-          href={`/campaigns/${call.campaignLink.campaignId}?highlight=${call.campaignLink.contactId}`}
+          href={campaignHref(call.campaignLink)}
           className="rounded-xl p-3 sm:p-4 flex items-center justify-between gap-2 transition-opacity hover:opacity-80"
           style={{ background: 'var(--violet-soft)' }}
         >
@@ -180,8 +247,9 @@ export default function CallDetailPanel({ call, timeZone }: { call: CallDetailDa
             <FileText size={13} style={{ color: 'var(--violet)' }} />
             <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Transcript</h3>
             {msgs.length > 0 && (
-              <span className="text-xs ml-auto" style={{ color: 'var(--ink-3)' }}>{msgs.length} messages</span>
+              <span className="text-xs" style={{ color: 'var(--ink-3)' }}>{msgs.length} messages</span>
             )}
+            <CopyTranscriptButton markdown={transcriptToMarkdown(call, msgs, timeZone)} />
           </div>
 
           {msgs.length > 0 ? (

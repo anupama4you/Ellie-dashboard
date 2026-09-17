@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { zonedTimeToUtc } from '@/lib/timezone'
 
@@ -27,9 +28,9 @@ export type LocalCall = {
 
 export async function getLocalCalls(
   businessId: string,
-  opts: { limit?: number; dateRange?: { from?: string; to?: string; timeZone?: string } } = {},
+  opts: { limit?: number; dateRange?: { from?: string; to?: string; timeZone?: string }; client?: SupabaseClient } = {},
 ): Promise<LocalCall[]> {
-  const supabase = await createClient()
+  const supabase = opts.client ?? await createClient()
   let query = supabase
     .from('calls')
     .select('*')
@@ -70,12 +71,18 @@ export type LocalCallListItem = Pick<LocalCall,
  * `summary` is included (see `callSummaryPreview`) since it's what the list
  * row shows beneath each caller — it's Vapi's own one/two-sentence analysis
  * output, never large like a transcript.
+ *
+ * `opts.client` lets a caller that already has its own Supabase client pass
+ * it in instead — the admin panel's per-client Calls tab, in particular,
+ * needs `createAdminClient()` (service role) since it reads a business the
+ * signed-in user (an admin, not that business's owner) has no RLS access
+ * to. Defaults to the session-scoped client for every existing caller.
  */
 export async function getLocalCallsList(
   businessId: string,
-  opts: { limit?: number; dateRange?: { from?: string; to?: string; timeZone?: string } } = {},
+  opts: { limit?: number; dateRange?: { from?: string; to?: string; timeZone?: string }; client?: SupabaseClient } = {},
 ): Promise<LocalCallListItem[]> {
-  const supabase = await createClient()
+  const supabase = opts.client ?? await createClient()
   let query = supabase
     .from('calls')
     .select('id, call_type, status, caller_name, caller_phone, assistant_phone, started_at, ended_at, duration_seconds, ended_reason, outcome, summary')
@@ -99,8 +106,8 @@ export async function getLocalCallsList(
   return data ?? []
 }
 
-export async function getLocalCall(businessId: string, id: string): Promise<LocalCall | null> {
-  const supabase = await createClient()
+export async function getLocalCall(businessId: string, id: string, client?: SupabaseClient): Promise<LocalCall | null> {
+  const supabase = client ?? await createClient()
   const { data } = await supabase
     .from('calls')
     .select('*')
@@ -118,10 +125,12 @@ export type CampaignCallLink = { campaignId: string; contactId: string; campaign
  * row it belongs to — lets the call detail view link back to "the row that
  * was called" instead of showing an outbound call as a dead end. RLS on
  * both tables already scopes this to businesses the current user owns, so
- * no explicit business_id check is needed here. */
-export async function getCampaignLinkForCall(vapiCallId: string | null): Promise<CampaignCallLink | null> {
+ * no explicit business_id check is needed here for the session-client case.
+ * An explicit `client` (e.g. an admin's service-role client, which has no
+ * RLS to rely on) is trusted as-is — same as every other admin query. */
+export async function getCampaignLinkForCall(vapiCallId: string | null, client?: SupabaseClient): Promise<CampaignCallLink | null> {
   if (!vapiCallId) return null
-  const supabase = await createClient()
+  const supabase = client ?? await createClient()
 
   const { data: contact } = await supabase
     .from('outbound_campaign_contacts')

@@ -18,16 +18,18 @@ function bubbleTimeLabel(iso: string | null, timeZone: string): string {
 }
 
 export default function SmsThreadPane({
-  selected, composingNew, timeZone, onClose, onSend,
+  selected, composingNew, timeZone, onClose, onSend, readOnly,
 }: {
   /** Already includes any not-yet-confirmed sent messages — merged in by the parent, see SmsInbox's effectiveThreads. */
   selected: ThreadListItem | null
-  /** True when there's no existing thread yet and the user is starting a brand-new conversation. */
+  /** True when there's no existing thread yet and the user is starting a brand-new conversation. Always false when readOnly. */
   composingNew: boolean
   timeZone: string
   onClose: () => void
-  /** `rawTo` is only meaningful while composingNew; for a reply the parent already knows the recipient. */
-  onSend: (rawTo: string | null, body: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  /** `rawTo` is only meaningful while composingNew; for a reply the parent already knows the recipient. Unused when readOnly. */
+  onSend?: (rawTo: string | null, body: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  /** Admin panel viewing another business's inbox — no compose box, since there's no admin-safe send action wired up (sending would go out under that business's own Twilio number to a real customer). */
+  readOnly?: boolean
 }) {
   const [to, setTo]           = useState('')
   const [draft, setDraft]     = useState('')
@@ -62,6 +64,7 @@ export default function SmsThreadPane({
   const avatar = displayName ? avatarColor(displayName) : null
 
   function send() {
+    if (!onSend) return
     const body = draft.trim()
     if (!body) return
     if (composingNew && !to.trim()) { setError('Enter a phone number to send to.'); return }
@@ -147,28 +150,30 @@ export default function SmsThreadPane({
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-3 sm:p-4 shrink-0" style={{ borderTop: '1px solid var(--line)' }}>
-        {error && <p className="text-xs mb-2" style={{ color: 'var(--coral)' }}>{error}</p>}
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-            placeholder="Write a message…"
-            rows={1}
-            className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm resize-none outline-none"
-            style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}
-          />
-          <button
-            onClick={send}
-            disabled={isPending || !draft.trim()}
-            className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white disabled:opacity-40"
-            style={{ background: 'var(--violet)' }}
-          >
-            <Send size={15} />
-          </button>
+      {!readOnly && (
+        <div className="p-3 sm:p-4 shrink-0" style={{ borderTop: '1px solid var(--line)' }}>
+          {error && <p className="text-xs mb-2" style={{ color: 'var(--coral)' }}>{error}</p>}
+          <div className="flex items-end gap-2">
+            <textarea
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+              placeholder="Write a message…"
+              rows={1}
+              className="flex-1 min-w-0 rounded-xl px-3.5 py-2.5 text-sm resize-none outline-none"
+              style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)' }}
+            />
+            <button
+              onClick={send}
+              disabled={isPending || !draft.trim()}
+              className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-white disabled:opacity-40"
+              style={{ background: 'var(--violet)' }}
+            >
+              <Send size={15} />
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

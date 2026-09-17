@@ -26,6 +26,14 @@ type RawCall = {
   campaignLink: CampaignCallLink | null
 }
 
+// Module-level (not a default parameter's inline arrow) so it's a stable
+// reference across renders — lets the fetch effect below safely depend on
+// `detailUrl` without re-running every render for the common client-side
+// case where the caller never overrides it.
+function defaultDetailUrl(id: string): string {
+  return `/api/client/calls/${id}`
+}
+
 function toDetailData(raw: RawCall): CallDetailData {
   return {
     type: raw.call_type ?? undefined,
@@ -48,10 +56,16 @@ export default function CallDetailPane({
   selected,
   timeZone,
   onClose,
+  detailUrl = defaultDetailUrl,
+  campaignHref,
 }: {
   selected: CallItem | null
   timeZone: string
   onClose: () => void
+  /** Overridden by the admin panel's Calls tab to hit /api/admin/calls/[id] instead, since that view isn't the signed-in business's own session. */
+  detailUrl?: (id: string) => string
+  /** Overridden by the admin panel — the client-side campaign detail route it defaults to only exists inside the client dashboard. */
+  campaignHref?: (link: CampaignCallLink) => string
 }) {
   // Per-session cache so re-selecting a call already viewed doesn't refetch.
   // Only ever read/written from inside the effect below, never during render.
@@ -70,7 +84,7 @@ export default function CallDetailPane({
     const cached = cache.current.get(id)
     const dataPromise = cached
       ? Promise.resolve(cached)
-      : fetch(`/api/client/calls/${id}`)
+      : fetch(detailUrl(id))
           .then(res => {
             if (!res.ok) throw new Error(`Request failed: ${res.status}`)
             return res.json() as Promise<RawCall>
@@ -88,7 +102,7 @@ export default function CallDetailPane({
       })
 
     return () => { cancelled = true }
-  }, [selected])
+  }, [selected, detailUrl])
 
   const outcome   = selected && result?.id === selected.id ? result : null
   const detail    = outcome && 'data' in outcome ? outcome.data : null
@@ -127,7 +141,7 @@ export default function CallDetailPane({
             <p className="text-sm" style={{ color: 'var(--coral)' }}>Couldn&apos;t load this call — please try again.</p>
           </div>
         ) : detail ? (
-          <CallDetailPanel call={detail} timeZone={timeZone} />
+          <CallDetailPanel call={detail} timeZone={timeZone} campaignHref={campaignHref} />
         ) : null}
       </div>
     </div>

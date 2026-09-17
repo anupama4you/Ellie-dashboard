@@ -55,7 +55,7 @@ function isConfirmed(real: ThreadListItem | undefined, pending: ThreadMessage): 
   )
 }
 
-export default function SmsInbox({ threads, timeZone }: { threads: ThreadListItem[]; timeZone: string }) {
+export default function SmsInbox({ threads, timeZone, readOnly }: { threads: ThreadListItem[]; timeZone: string; readOnly?: boolean }) {
   const router = useRouter()
   const [, startTransition] = useTransition()
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null)
@@ -213,14 +213,16 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
             Every text between Ellie and your customers, both ways
           </p>
         </div>
-        <button
-          onClick={startNewMessage}
-          className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90"
-          style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}
-        >
-          <SquarePen size={14} />
-          <span className="hidden sm:inline">New message</span>
-        </button>
+        {!readOnly && (
+          <button
+            onClick={startNewMessage}
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-sm font-bold text-white shrink-0 transition-opacity hover:opacity-90"
+            style={{ background: 'linear-gradient(135deg, var(--violet), var(--rose))' }}
+          >
+            <SquarePen size={14} />
+            <span className="hidden sm:inline">New message</span>
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 px-6 pb-6 max-w-[1220px] w-full mx-auto">
@@ -327,7 +329,8 @@ export default function SmsInbox({ threads, timeZone }: { threads: ThreadListIte
               composingNew={composingNew}
               timeZone={timeZone}
               onClose={closeSelected}
-              onSend={sendMessage}
+              onSend={readOnly ? undefined : sendMessage}
+              readOnly={readOnly}
             />
           </div>
         </div>

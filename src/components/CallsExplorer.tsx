@@ -36,7 +36,31 @@ const DIRECTIONS: { key: Direction; label: string; icon: typeof PhoneIncoming }[
   { key: 'outbound', label: 'Outbound', icon: PhoneOutgoing },
 ]
 
-export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls: CallItem[]; timeZone: string; showOutbound: boolean }) {
+export default function CallsExplorer({
+  calls, timeZone, showOutbound, adminBusinessId,
+}: {
+  calls: CallItem[]
+  timeZone: string
+  showOutbound: boolean
+  /**
+   * Set by the admin panel's Calls tab, which renders this from a Server
+   * Component for a business that isn't the signed-in session's own — a
+   * function prop (the previous shape of this) can't cross that server →
+   * client boundary at all ("Functions cannot be passed directly to Client
+   * Components"), so a plain, serializable id is passed instead and the
+   * actual fetch/link functions are built here, client-side.
+   */
+  adminBusinessId?: string
+}) {
+  const detailUrl = useMemo(
+    () => adminBusinessId ? (id: string) => `/api/admin/calls/${id}?businessId=${adminBusinessId}` : undefined,
+    [adminBusinessId],
+  )
+  const campaignHref = useMemo(
+    () => adminBusinessId ? () => `/admin/clients/${adminBusinessId}/campaigns` : undefined,
+    [adminBusinessId],
+  )
+
   const [draftSearch, setDraftSearch] = useState('')
   const [search, setSearch]           = useState('')
   const [chip, setChip]               = useState<CallItem['category'] | 'all'>('all')
@@ -292,7 +316,7 @@ export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls
         className={`flex-1 h-full min-w-0 ${selectedId ? 'flex' : 'hidden lg:flex'}`}
         style={{ background: 'var(--paper)' }}
       >
-        <CallDetailPane selected={selected} timeZone={timeZone} onClose={() => setSelectedId(null)} />
+        <CallDetailPane selected={selected} timeZone={timeZone} onClose={() => setSelectedId(null)} detailUrl={detailUrl} campaignHref={campaignHref} />
       </div>
     </div>
   )
