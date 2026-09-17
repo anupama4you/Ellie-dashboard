@@ -1032,6 +1032,18 @@ export async function POST(req: Request) {
                 ${reason ? `<p>Reason: ${reason}</p>` : ''}
               `)
 
+            // Ground truth for call classification — same groundTruthColumn
+            // pattern as sendSms's booking/review links above, keyed by call
+            // id so end-of-call-report can OR it in. Without this, every call
+            // to a requestCallback-only business fell through to 'enquiry'.
+            const callId = message.call?.id as string | undefined
+            if (callId) {
+              const { error: cbErr } = await supabase
+                .from('calls')
+                .upsert({ business_id: biz.id, vapi_call_id: callId, callback_requested: true }, { onConflict: 'vapi_call_id', ignoreDuplicates: false })
+              if (cbErr) console.error('Failed to record callback_requested for call', callId, cbErr)
+            }
+
             resultText = "The team has been notified and will call back."
           }
         } catch (err) {
@@ -1360,7 +1372,7 @@ export async function POST(req: Request) {
       // branch above) rather than trusting the analysis alone.
       const { data: existingCallRow } = await supabase
         .from('calls')
-        .select('booking_link_sent, review_requested')
+        .select('booking_link_sent, review_requested, callback_requested')
         .eq('vapi_call_id', callId)
         .maybeSingle()
       const hasBookingLink = !!existingCallRow?.booking_link_sent || !!report.analysis?.structuredData?.bookingLinkSent
@@ -1370,6 +1382,9 @@ export async function POST(req: Request) {
       // conflating them into the same analysis question isn't worth it.
       // Ground truth only, same as `declined`.
       const hasReviewRequested = !!existingCallRow?.review_requested
+      // Same ground-truth-only reasoning — set by the requestCallback tool
+      // handler above, not derived from Vapi's analysis.
+      const hasCallbackRequested = !!existingCallRow?.callback_requested
 
       // Priority: Vapi's own customer metadata (rare for phone calls) > the
       // name confirmed out loud during a booking/reschedule/cancellation on
@@ -1388,7 +1403,7 @@ export async function POST(req: Request) {
       }
       callerName = callerName ?? report.analysis?.structuredData?.callerName ?? null
 
-      const outcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, undefined, hasReviewRequested).category
+      const outcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, undefined, hasReviewRequested, hasCallbackRequested).category
 
       const { error } = await supabase.from('calls').upsert({
         business_id:        biz.id,
@@ -1406,6 +1421,7 @@ export async function POST(req: Request) {
         outcome,
         booking_link_sent:  hasBookingLink,
         review_requested:   hasReviewRequested,
+        callback_requested: hasCallbackRequested,
         summary:            (report.analysis?.summary ?? report.summary ?? null) as string | null,
         success_evaluation: (report.analysis?.successEvaluation ?? null) as string | null,
         transcript:         (report.artifact?.transcript ?? report.transcript ?? null) as string | null,
@@ -1447,7 +1463,7 @@ export async function POST(req: Request) {
         // signal to distinguish it from a real inbound-shaped enquiry —
         // both fell through to the same generic 'enquiry' bucket.
         const hasDeclined = !!report.analysis?.structuredData?.declined
-        const campaignOutcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, hasDeclined, hasReviewRequested).category
+        const campaignOutcome = classifyCall(endedReason, hasBooking, hasReschedule, hasBookingLink, hasDeclined, hasReviewRequested, hasCallbackRequested).category
 
         const { error: contactUpdateError } = await supabase.from('outbound_campaign_contacts')
           .update({ status: 'done', outcome: campaignOutcome })

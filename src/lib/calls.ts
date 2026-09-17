@@ -59,14 +59,17 @@ export async function getLocalCalls(
 
 export type LocalCallListItem = Pick<LocalCall,
   | 'id' | 'call_type' | 'status' | 'caller_name' | 'caller_phone' | 'assistant_phone'
-  | 'started_at' | 'duration_seconds' | 'ended_reason' | 'outcome'
+  | 'started_at' | 'ended_at' | 'duration_seconds' | 'ended_reason' | 'outcome' | 'summary'
 >
 
 /**
  * Lightweight variant of `getLocalCalls` for the Calls list view — leaves out
- * `summary`, `transcript`, `recording_url` and `raw_payload`, which can each
- * be sizeable and are only needed once a specific call is opened (see
+ * `transcript`, `recording_url` and `raw_payload`, which can each be
+ * sizeable and are only needed once a specific call is opened (see
  * `getLocalCall`, fetched on demand via `/api/client/calls/[callId]`).
+ * `summary` is included (see `callSummaryPreview`) since it's what the list
+ * row shows beneath each caller — it's Vapi's own one/two-sentence analysis
+ * output, never large like a transcript.
  */
 export async function getLocalCallsList(
   businessId: string,
@@ -75,7 +78,7 @@ export async function getLocalCallsList(
   const supabase = await createClient()
   let query = supabase
     .from('calls')
-    .select('id, call_type, status, caller_name, caller_phone, assistant_phone, started_at, duration_seconds, ended_reason, outcome')
+    .select('id, call_type, status, caller_name, caller_phone, assistant_phone, started_at, ended_at, duration_seconds, ended_reason, outcome, summary')
     .eq('business_id', businessId)
     .order('started_at', { ascending: false })
     .limit(opts.limit ?? 300)
@@ -162,4 +165,21 @@ export function callSummary(call: LocalCall): { text: string; isReal: boolean } 
   }
 
   return { text: 'No transcript captured for this call', isReal: false }
+}
+
+/**
+ * Same fallback ladder as `callSummary`, minus the transcript-excerpt step —
+ * for the Calls list row, which deliberately doesn't fetch `transcript` (see
+ * `getLocalCallsList`) to keep the list query light across up to a few
+ * hundred rows.
+ */
+export function callSummaryPreview(call: Pick<LocalCall, 'summary' | 'ended_at'>): { text: string; isReal: boolean } {
+  const real = call.summary?.trim()
+  if (real) return { text: real, isReal: true }
+
+  if (call.ended_at && Date.now() - new Date(call.ended_at).getTime() < 2 * 60 * 1000) {
+    return { text: 'Summary is still processing…', isReal: false }
+  }
+
+  return { text: 'No summary captured for this call', isReal: false }
 }

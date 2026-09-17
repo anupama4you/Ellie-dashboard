@@ -34,6 +34,7 @@ const FILTERS: { key: 'all' | RecentCallCategory; label: string }[] = [
   { key: 'booked',      label: 'Booked'      },
   { key: 'rebooked',    label: 'Rebooked'    },
   { key: 'linked',      label: 'Requested'   },
+  { key: 'callbackRequested', label: 'Callback' },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },
@@ -51,7 +52,7 @@ export default function RecentCallsCard({ calls }: { calls: RecentCallItem[] }) 
 
   const counts: Record<'all' | RecentCallCategory, number> = {
     all: calls.length,
-    booked: 0, rebooked: 0, linked: 0, reviewRequested: 0, declined: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
+    booked: 0, rebooked: 0, linked: 0, reviewRequested: 0, callbackRequested: 0, declined: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
   }
   for (const c of calls) {
     counts[c.category]++

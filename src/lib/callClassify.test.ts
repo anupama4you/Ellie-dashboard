@@ -18,6 +18,10 @@ describe('categoryStyle', () => {
     expect(categoryStyle('reviewRequested')).toEqual({ label: 'Review requested', color: 'var(--signal)', bg: 'var(--signal-soft)' })
   })
 
+  it('returns the same label/colors classifyCall uses for a callback-requested call', () => {
+    expect(categoryStyle('callbackRequested')).toEqual({ label: 'Callback requested', color: 'var(--amber)', bg: 'var(--amber-soft)' })
+  })
+
   it('falls back to a neutral style for an unrecognised category', () => {
     expect(categoryStyle('not-a-real-category')).toEqual({ label: 'not-a-real-category', color: 'var(--ink-3)', bg: 'var(--paper)' })
   })
@@ -60,5 +64,27 @@ describe('classifyCall — reviewRequested', () => {
 
   it('a real booking still wins over hasReviewRequested', () => {
     expect(classifyCall(undefined, true, false, false, false, true).category).toBe('booked')
+  })
+})
+
+describe('classifyCall — callbackRequested', () => {
+  it('classifies as callbackRequested when hasCallbackRequested is true and nothing more specific happened', () => {
+    expect(classifyCall(undefined, false, false, false, false, false, true).category).toBe('callbackRequested')
+  })
+
+  it('takes priority over hasDeclined — a call where the team was asked to call back was not declined', () => {
+    expect(classifyCall(undefined, false, false, false, true, false, true).category).toBe('callbackRequested')
+  })
+
+  it('a sent booking link still wins over hasCallbackRequested', () => {
+    expect(classifyCall(undefined, false, false, true, false, false, true).category).toBe('linked')
+  })
+
+  it('a review request still wins over hasCallbackRequested', () => {
+    expect(classifyCall(undefined, false, false, false, false, true, true).category).toBe('reviewRequested')
+  })
+
+  it('a real booking still wins over hasCallbackRequested', () => {
+    expect(classifyCall(undefined, true, false, false, false, false, true).category).toBe('booked')
   })
 })

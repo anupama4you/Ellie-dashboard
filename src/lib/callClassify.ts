@@ -1,4 +1,4 @@
-export type CallCategory = 'booked' | 'rebooked' | 'linked' | 'reviewRequested' | 'declined' | 'enquiry' | 'transferred' | 'missed' | 'errored'
+export type CallCategory = 'booked' | 'rebooked' | 'linked' | 'reviewRequested' | 'callbackRequested' | 'declined' | 'enquiry' | 'transferred' | 'missed' | 'errored'
 
 const ERROR_REASONS = new Set([
   'exceeded-max-duration',
@@ -61,8 +61,18 @@ const ERROR_REASONS = new Set([
  * `hasBookingLink` (a booking signal is more specific/valuable) and above
  * `hasDeclined` (a call that got as far as a review request was clearly
  * not declined).
+ *
+ * `hasCallbackRequested` is the same ground-truth-only pattern again, set
+ * when the `requestCallback` tool actually ran (the caller asked to speak
+ * with a person instead of continuing with Ellie). Businesses that never
+ * book or send a link over the phone (e.g. one that only offers a
+ * callback) had every single call fall through to the generic 'enquiry'
+ * bucket with no way to tell "customer asked something" apart from
+ * "customer asked to be called back" — this is that missing signal.
+ * Ranked below the booking/review link signals (more specific/valuable)
+ * but above `hasDeclined`/the `enquiry` fallback.
  */
-export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean, hasBookingLink?: boolean, hasDeclined?: boolean, hasReviewRequested?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
+export function classifyCall(endedReason?: string, hasBooking?: boolean, hasReschedule?: boolean, hasBookingLink?: boolean, hasDeclined?: boolean, hasReviewRequested?: boolean, hasCallbackRequested?: boolean): { category: CallCategory; label: string; color: string; bg: string } {
   if (hasReschedule) {
     return { category: 'rebooked', label: 'Rebooked', color: 'var(--violet)', bg: 'var(--violet-soft)' }
   }
@@ -90,6 +100,9 @@ export function classifyCall(endedReason?: string, hasBooking?: boolean, hasResc
   if (hasReviewRequested) {
     return { category: 'reviewRequested', label: 'Review requested', color: 'var(--signal)', bg: 'var(--signal-soft)' }
   }
+  if (hasCallbackRequested) {
+    return { category: 'callbackRequested', label: 'Callback requested', color: 'var(--amber)', bg: 'var(--amber-soft)' }
+  }
   if (hasDeclined) {
     return { category: 'declined', label: 'Declined', color: 'var(--ink-3)', bg: 'var(--paper)' }
   }
@@ -101,6 +114,7 @@ const CATEGORY_STYLES: Record<CallCategory, { label: string; color: string; bg: 
   rebooked:    { label: 'Rebooked',          color: 'var(--violet)', bg: 'var(--violet-soft)' },
   linked:      { label: 'Booking requested', color: 'var(--signal)', bg: 'var(--signal-soft)' },
   reviewRequested: { label: 'Review requested', color: 'var(--signal)', bg: 'var(--signal-soft)' },
+  callbackRequested: { label: 'Callback requested', color: 'var(--amber)', bg: 'var(--amber-soft)' },
   declined:    { label: 'Declined',          color: 'var(--ink-3)',  bg: 'var(--paper)' },
   enquiry:     { label: 'Enquiry',           color: 'var(--violet)', bg: 'var(--violet-soft)' },
   transferred: { label: 'Transferred',       color: 'var(--amber)',  bg: 'var(--amber-soft)' },

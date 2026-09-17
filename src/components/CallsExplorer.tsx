@@ -13,6 +13,7 @@ const CHIPS: { key: CallItem['category'] | 'all'; label: string }[] = [
   { key: 'booked',      label: 'Booked'      },
   { key: 'rebooked',    label: 'Rebooked'    },
   { key: 'linked',      label: 'Requested'   },
+  { key: 'callbackRequested', label: 'Callback' },
   { key: 'enquiry',     label: 'Enquiries'   },
   { key: 'transferred', label: 'Transferred' },
   { key: 'missed',      label: 'Missed'      },
@@ -75,7 +76,7 @@ export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls
     // it just never matches a specific filter, only "All".
     const c: Record<string, number> = {
       all: callsInDirection.length,
-      booked: 0, rebooked: 0, linked: 0, reviewRequested: 0, declined: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
+      booked: 0, rebooked: 0, linked: 0, reviewRequested: 0, callbackRequested: 0, declined: 0, enquiry: 0, transferred: 0, missed: 0, errored: 0,
     }
     for (const call of callsInDirection) c[call.category]++
     return c
@@ -127,7 +128,7 @@ export default function CallsExplorer({ calls, timeZone, showOutbound }: { calls
     >
       {/* Left pane — call list. Only ever holds the lightweight fields fetched up front. */}
       <div
-        className={`w-full lg:w-[400px] shrink-0 h-full flex-col ${selectedId ? 'hidden lg:flex' : 'flex'}`}
+        className={`w-full lg:w-[460px] shrink-0 h-full flex-col ${selectedId ? 'hidden lg:flex' : 'flex'}`}
         style={{ borderRight: '1px solid var(--line)' }}
       >
         {/* Inbound / Outbound — two fully separate lists, not a filter on one shared list.

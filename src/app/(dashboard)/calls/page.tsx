@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { getCurrentBusiness } from '@/lib/business'
-import { getLocalCallsList, type LocalCallListItem } from '@/lib/calls'
+import { getLocalCallsList, callSummaryPreview, type LocalCallListItem } from '@/lib/calls'
 import { classifyCall } from '@/lib/callClassify'
 import { formatInZone } from '@/lib/timezone'
 import { isAfterHours } from '@/lib/availability'
@@ -64,8 +64,10 @@ export default async function CallsPage({
       call.outcome === 'linked',
       call.outcome === 'declined',
       call.outcome === 'reviewRequested',
+      call.outcome === 'callbackRequested',
     )
     const dt = call.started_at ? fmtTime(call.started_at, timeZone) : null
+    const summaryPreview = category === 'missed' ? 'Missed call' : callSummaryPreview(call).text
     return {
       id: call.id,
       customerNumber: call.caller_phone ?? undefined,
@@ -78,6 +80,7 @@ export default async function CallsPage({
       badgeLabel: label,
       badgeColor: color,
       badgeBg: bg,
+      summaryPreview,
       isAfterHours: call.started_at ? isAfterHours(new Date(call.started_at), bizHours, timeZone) : false,
       isOutbound: call.call_type === 'outboundPhoneCall',
     }
