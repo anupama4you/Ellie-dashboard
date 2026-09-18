@@ -1,7 +1,8 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getStripe, priceIdForPlan } from '@/lib/stripe'
+import { getStripe, customPriceData } from '@/lib/stripe'
+import { TRIAL_DAYS } from '@/lib/planUsage'
 import { siteUrl } from '@/lib/siteUrl'
 import { logAdminAction } from '@/lib/adminAudit'
 import { assertAdmin } from '@/lib/adminAuth'
@@ -76,12 +77,19 @@ export async function generateImpersonationLinkAction(
   return { url: `${await siteUrl()}/auth/callback?next=/&token_hash=${hashedToken}&type=magiclink` }
 }
 
-export async function generatePaymentLinkAction(
+/**
+ * Shared by generatePaymentLinkAction (bill immediately) and
+ * generateTrialSignupLinkAction (bill after a trial) — both just create a
+ * Checkout Session for the same custom per-business price, differing only in
+ * whether subscription_data carries a trial.
+ */
+async function createCustomPriceCheckoutSession(
   bizId: string,
   bizName: string,
-  bizPlan: string,
+  customPriceCents: number,
   clientEmail: string,
   stripeCustomerId: string | null,
+  subscriptionData: { trial_period_days?: number; metadata: { business_id: string } },
 ): Promise<{ url: string } | { error: string }> {
   try {
     await assertAdmin()
@@ -103,18 +111,62 @@ export async function generatePaymentLinkAction(
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
-      line_items: [{ price: priceIdForPlan(bizPlan), quantity: 1 }],
-      subscription_data: { metadata: { business_id: bizId } },
+      line_items: [{ price_data: customPriceData(customPriceCents, bizName), quantity: 1 }],
+      subscription_data: subscriptionData,
+      // Collect the card even though a trial means nothing is charged yet —
+      // without this, Checkout skips payment-method collection for $0-due-now
+      // trial subscriptions, and there'd be nothing on file to auto-charge
+      // once the trial ends.
+      payment_method_collection: 'always',
       metadata: { business_id: bizId },
       success_url: `${appUrl}/?upgraded=1`,
       cancel_url: `${appUrl}/`,
     })
 
     if (!session.url) throw new Error('Stripe did not return a Checkout URL')
-
-    await logAdminAction({ action: 'payment_link_generated', businessId: bizId, metadata: { plan: bizPlan } })
     return { url: session.url }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to create checkout session' }
   }
+}
+
+export async function generatePaymentLinkAction(
+  bizId: string,
+  bizName: string,
+  customPriceCents: number,
+  clientEmail: string,
+  stripeCustomerId: string | null,
+): Promise<{ url: string } | { error: string }> {
+  const result = await createCustomPriceCheckoutSession(
+    bizId, bizName, customPriceCents, clientEmail, stripeCustomerId,
+    { metadata: { business_id: bizId } },
+  )
+  if (!('error' in result)) {
+    await logAdminAction({ action: 'payment_link_generated', businessId: bizId, metadata: { customPriceCents } })
+  }
+  return result
+}
+
+/**
+ * Same as generatePaymentLinkAction but with a trial attached — this is the
+ * new default way to start a client: card collected now, nothing charged
+ * until the trial ends, at which point Stripe auto-invoices the saved card
+ * and api/stripe-webhook's customer.subscription.updated handler flips
+ * plan_status to 'active' on its own. No second manual step required.
+ */
+export async function generateTrialSignupLinkAction(
+  bizId: string,
+  bizName: string,
+  customPriceCents: number,
+  clientEmail: string,
+  stripeCustomerId: string | null,
+): Promise<{ url: string } | { error: string }> {
+  const result = await createCustomPriceCheckoutSession(
+    bizId, bizName, customPriceCents, clientEmail, stripeCustomerId,
+    { trial_period_days: TRIAL_DAYS, metadata: { business_id: bizId } },
+  )
+  if (!('error' in result)) {
+    await logAdminAction({ action: 'trial_signup_link_generated', businessId: bizId, metadata: { customPriceCents } })
+  }
+  return result
 }

@@ -7,6 +7,7 @@ import {
 import { Clock, TrendingUp, AlarmClockOff, ArrowUp, ArrowDown } from 'lucide-react'
 import type { LocalCallListItem } from '@/lib/calls'
 import type { PlanUsage } from '@/lib/planUsage'
+import UsageBar from '@/components/UsageBar'
 import type { Hours } from '@/lib/promptSections'
 import { isAfterHours } from '@/lib/availability'
 import { dateStrInZone, addDaysInZone, dayOfWeekInZone, hourInZone, formatInZone } from '@/lib/timezone'
@@ -361,7 +362,7 @@ export default function AnalyticsCharts({ calls, prevCalls, plan, timeZone, usag
         {usage.isTrial ? (
           <div>
             <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
-              <span>{usage.used} calls used so far</span>
+              <span>{usage.callCount} calls · {usage.minutes.used} min · {usage.sms.used} sms used so far</span>
               <span>Unlimited during trial</span>
             </div>
             <p className="text-xs mt-2" style={{ color: 'var(--violet)' }}>
@@ -371,41 +372,27 @@ export default function AnalyticsCharts({ calls, prevCalls, plan, timeZone, usag
               {' '}Ends {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
             </p>
           </div>
-        ) : usage.isUnlimited ? (
-          <div>
-            <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
-              <span>{usage.used} calls used this cycle</span>
-              <span>No monthly cap</span>
-            </div>
-            <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {([['Call minutes', usage.minutes, 'min', usage.callCount], ['SMS', usage.sms, 'sms', null]] as const).map(([label, m, unit, count]) => (
+              <div key={label}>
+                <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
+                  <span>{count != null && `${count} calls · `}{m.used} {unit} used this cycle</span>
+                  <span>{m.limit == null ? 'No cap' : `${m.limit} ${unit} cap`}</span>
+                </div>
+                {m.limit != null && <UsageBar pct={m.pct} />}
+                {m.pct != null && m.pct >= 80 && (
+                  <p className="text-xs mt-2" style={{ color: 'var(--amber)' }}>
+                    {m.pct >= 100 ? `Over the ${label.toLowerCase()} cap — consider adjusting it.` : m.pct >= 90 ? `Almost at the ${label.toLowerCase()} cap.` : `80% of this cycle's ${label.toLowerCase()} used.`}
+                  </p>
+                )}
+              </div>
+            ))}
+            <p className="text-xs" style={{ color: 'var(--ink-3)' }}>
               Usage renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}
             </p>
           </div>
-        ) : (() => {
-          const pct    = usage.pct ?? 0
-          const barPct = Math.min(pct, 100)
-          const color  = pct >= 90 ? 'var(--coral)' : pct >= 70 ? 'var(--amber)' : 'var(--signal)'
-          return (
-            <div>
-              <div className="flex justify-between text-xs mb-2" style={{ color: 'var(--ink-3)' }}>
-                <span>{usage.used} calls used this cycle</span>
-                <span>{usage.limit} call limit</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--paper)' }}>
-                <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${barPct}%`, background: color }} />
-              </div>
-              {pct >= 80 && (
-                <p className="text-xs mt-2" style={{ color: 'var(--amber)' }}>
-                  {pct >= 100 ? "You're over your plan's included calls — consider upgrading." : pct >= 90 ? 'Almost at your plan limit — consider upgrading.' : '80% of this cycle\'s calls used.'}
-                </p>
-              )}
-              <p className="text-xs mt-2" style={{ color: 'var(--ink-3)' }}>
-                Usage renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}
-              </p>
-            </div>
-          )
-        })()}
+        )}
       </div>
 
     </div>

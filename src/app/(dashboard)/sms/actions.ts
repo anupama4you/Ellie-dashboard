@@ -13,7 +13,7 @@ export async function sendSmsReplyAction(to: string, body: string): Promise<void
   if (!trimmedBody) throw new Error('Message cannot be empty.')
   if (!to.trim()) throw new Error('No recipient.')
 
-  await sendSms(to, trimmedBody, biz.twilio_phone_number)
+  await sendSms(to, trimmedBody, biz.twilio_phone_number, biz.id)
 
   revalidatePath('/sms')
 }

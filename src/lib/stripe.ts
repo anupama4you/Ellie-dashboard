@@ -16,16 +16,34 @@ export function getStripe(): Stripe {
   return _stripe
 }
 
-const PLAN_PRICE_ENV: Record<string, string | undefined> = {
-  starter:      process.env.STRIPE_PRICE_STARTER,
-  core:         process.env.STRIPE_PRICE_CORE,
-  professional: process.env.STRIPE_PRICE_PROFESSIONAL,
-  enterprise:   process.env.STRIPE_PRICE_ENTERPRISE,
-  unlimited:    process.env.STRIPE_PRICE_UNLIMITED,
+/**
+ * Every business now has its own admin-set monthly price (businesses.custom_monthly_price_cents)
+ * rather than picking from a fixed catalog — built inline as Stripe price_data
+ * rather than a pre-created Price object, since there's no shared catalog to
+ * pre-create prices in. Used for Checkout Session line items (starting a
+ * trial, or billing immediately) — Stripe creates a Product behind the
+ * scenes from product_data the first time.
+ */
+export function customPriceData(amountCents: number, businessName: string) {
+  return {
+    currency: 'aud',
+    unit_amount: amountCents,
+    recurring: { interval: 'month' as const },
+    product_data: { name: `${businessName} — Ellie AI Receptionist` },
+  }
 }
 
-export function priceIdForPlan(plan: string): string {
-  const id = PLAN_PRICE_ENV[plan]
-  if (!id) throw new Error(`No Stripe price configured for plan "${plan}" — set STRIPE_PRICE_${plan.toUpperCase()}.`)
-  return id
+/**
+ * Repricing an existing subscription item's price_data requires a real
+ * Product id (no inline product_data option there, unlike Checkout) — reuse
+ * the product already attached to the subscription's current price rather
+ * than creating a new one each time a price changes.
+ */
+export function subscriptionItemPriceData(amountCents: number, productId: string) {
+  return {
+    currency: 'aud',
+    unit_amount: amountCents,
+    recurring: { interval: 'month' as const },
+    product: productId,
+  }
 }

@@ -46,7 +46,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     ? await Promise.all([
         getPlanUsage(
           await createClient(), biz.id,
-          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          {
+            planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at,
+            callMinutesCap: biz.custom_call_minutes_cap, smsCap: biz.custom_sms_cap,
+          },
           timeZone,
         ).catch(() => null),
         getLocalCallsList(biz.id, { dateRange: { from: dateStrInZone(since, timeZone), timeZone } })
@@ -94,11 +97,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
           businesses={switcherBusinesses.map(b => ({ id: b.id, name: b.name }))}
           currentBusinessId={biz?.id ?? ''}
           usage={usage ? {
-            used: usage.used,
-            limit: usage.limit,
-            pct: usage.pct,
+            minutes: usage.minutes,
+            callCount: usage.callCount,
+            sms: usage.sms,
             isTrial: usage.isTrial,
-            isUnlimited: usage.isUnlimited,
             trialDaysLeft: usage.trialDaysLeft,
             renewsLabel: formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'short' }),
           } : null}

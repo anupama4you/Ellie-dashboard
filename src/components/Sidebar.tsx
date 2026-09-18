@@ -8,6 +8,7 @@ import type { FeatureKey } from '@/lib/dashboardFeatures'
 import { createClient } from '@/lib/supabase/client'
 import { setLineActive, selectLocationAction } from '@/app/(dashboard)/actions'
 import BlockableLink from '@/components/BlockableLink'
+import UsageBar from '@/components/UsageBar'
 import { useNavigationBlocker } from '@/lib/navigationBlocker'
 
 const NAV = [
@@ -37,11 +38,10 @@ function initials(name: string) {
 }
 
 type PlanUsageSummary = {
-  used: number
-  limit: number | null
-  pct: number | null
+  minutes: { used: number; limit: number | null; pct: number | null }
+  callCount: number
+  sms: { used: number; limit: number | null; pct: number | null }
   isTrial: boolean
-  isUnlimited: boolean
   trialDaysLeft: number | null
   renewsLabel: string
 }
@@ -352,42 +352,36 @@ export default function Sidebar({
             <>
               <div className="flex items-center justify-between mb-1.5">
                 <b className="text-[0.85rem] text-white font-semibold">Free trial</b>
-                <span className="text-[0.76rem] font-mono" style={{ color: 'var(--amber)' }}>{usage.used} calls</span>
+                <span className="text-[0.76rem] font-mono" style={{ color: 'var(--amber)' }}>{usage.callCount} calls · {usage.minutes.used} min · {usage.sms.used} sms</span>
               </div>
               <p className="text-[0.72rem]" style={{ color: '#736C90' }}>
-                Unlimited calls · {usage.trialDaysLeft != null && usage.trialDaysLeft > 0
+                Unlimited · {usage.trialDaysLeft != null && usage.trialDaysLeft > 0
                   ? `${usage.trialDaysLeft} day${usage.trialDaysLeft !== 1 ? 's' : ''} left`
                   : 'trial ended'}
               </p>
             </>
-          ) : usage.isUnlimited ? (
-            <>
-              <div className="flex items-center justify-between mb-1.5">
-                <b className="text-[0.85rem] text-white font-semibold">Unlimited plan</b>
-                <span className="text-[0.76rem] font-mono" style={{ color: 'var(--signal)' }}>{usage.used} calls</span>
-              </div>
-              <p className="text-[0.72rem]" style={{ color: '#736C90' }}>
-                No monthly cap · Renews {usage.renewsLabel}
-              </p>
-            </>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="flex items-center justify-between mb-1">
                 <b className="text-[0.85rem] text-white font-semibold">Monthly usage</b>
-                <span className="text-[0.76rem] font-mono" style={{ color: '#8B84A6' }}>{usage.used}/{usage.limit}</span>
+                <span className="text-[0.72rem]" style={{ color: '#736C90' }}>Renews {usage.renewsLabel}</span>
               </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                <div
-                  className="h-full rounded-full"
-                  style={{
-                    width: `${Math.min(usage.pct ?? 0, 100)}%`,
-                    background: (usage.pct ?? 0) >= 100 ? 'var(--coral)' : (usage.pct ?? 0) >= 80 ? 'var(--amber)' : 'var(--signal)',
-                  }}
-                />
+              <div className="flex flex-col gap-1.5 mt-1.5">
+                <div>
+                  <div className="flex items-center justify-between text-[0.72rem] mb-1" style={{ color: '#8B84A6' }}>
+                    <span>{usage.callCount} calls · {usage.minutes.used}{usage.minutes.limit != null ? `/${usage.minutes.limit}` : ''} min</span>
+                    {usage.minutes.limit == null && <span>no cap</span>}
+                  </div>
+                  {usage.minutes.limit != null && <UsageBar pct={usage.minutes.pct} height="sm" trackColor="rgba(255,255,255,0.08)" />}
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-[0.72rem] mb-1" style={{ color: '#8B84A6' }}>
+                    <span>{usage.sms.used}{usage.sms.limit != null ? `/${usage.sms.limit}` : ''} sms</span>
+                    {usage.sms.limit == null && <span>no cap</span>}
+                  </div>
+                  {usage.sms.limit != null && <UsageBar pct={usage.sms.pct} height="sm" trackColor="rgba(255,255,255,0.08)" />}
+                </div>
               </div>
-              <p className="text-[0.72rem] mt-1.5" style={{ color: '#736C90' }}>
-                Renews {usage.renewsLabel}
-              </p>
             </>
           )}
         </div>

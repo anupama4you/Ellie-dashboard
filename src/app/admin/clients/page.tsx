@@ -4,6 +4,7 @@ import { Plus, Pencil, Building2, Clock, PhoneCall, Ban, AlertTriangle } from 'l
 import { getPlanUsage, type PlanUsage } from '@/lib/planUsage'
 import { calendarHealthFromRow, hasVisibleHealthIssue } from '@/lib/clientHealth'
 import type { DashboardFeatures } from '@/lib/dashboardFeatures'
+import UsageBar from '@/components/UsageBar'
 
 const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
   starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
@@ -76,34 +77,26 @@ function ClientRow({ biz, usage, email, isLast, hasHealthIssue }: { biz: ClientB
       {usage.isTrial ? (
         <div className="flex flex-col gap-1 pr-2">
           <span className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--violet)' }}>
-            <PhoneCall size={10} /> {usage.used} calls (unlimited)
+            <PhoneCall size={10} /> {usage.callCount}c · {usage.minutes.used}min · {usage.sms.used}sms (unlimited)
           </span>
           <span className="text-xs" style={{ color: 'var(--t4)' }}>
             {usage.trialDaysLeft != null && usage.trialDaysLeft > 0 ? `${usage.trialDaysLeft}d left` : 'Trial ended'}
           </span>
         </div>
-      ) : usage.isUnlimited ? (
-        <div className="flex flex-col gap-1 pr-2">
-          <span className="text-xs font-semibold flex items-center gap-1" style={{ color: 'var(--signal)' }}>
-            <PhoneCall size={10} /> {usage.used} calls (no cap)
-          </span>
-          <span className="text-xs" style={{ color: 'var(--t4)' }}>Unlimited plan</span>
-        </div>
       ) : (
-        <div className="flex flex-col gap-1 pr-2" title={`${usage.used} of ${usage.limit} calls used this cycle`}>
-          <div className="flex items-center justify-between text-xs" style={{ color: 'var(--t3)' }}>
-            <span className="flex items-center gap-1 font-semibold" style={{ color: (usage.pct ?? 0) >= 100 ? 'var(--coral)' : (usage.pct ?? 0) >= 80 ? 'var(--amber)' : 'var(--t2)' }}>
-              <PhoneCall size={10} /> {usage.used}/{usage.limit}
-            </span>
-            <span>{usage.pct}%</span>
-          </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--b4)' }}>
-            <div className="h-full rounded-full"
-              style={{
-                width: `${Math.min(usage.pct ?? 0, 100)}%`,
-                background: (usage.pct ?? 0) >= 100 ? 'var(--coral)' : (usage.pct ?? 0) >= 80 ? 'var(--amber)' : 'var(--signal)',
-              }} />
-          </div>
+        <div className="flex flex-col gap-1.5 pr-2"
+          title={`${usage.callCount} calls · ${usage.minutes.used}${usage.minutes.limit != null ? ` of ${usage.minutes.limit}` : ''} min · ${usage.sms.used}${usage.sms.limit != null ? ` of ${usage.sms.limit}` : ''} sms used this cycle`}>
+          {([['min', usage.minutes, usage.callCount], ['sms', usage.sms, null]] as const).map(([unit, m, count]) => (
+            <div key={unit}>
+              <div className="flex items-center justify-between text-[11px]" style={{ color: 'var(--t3)' }}>
+                <span className="flex items-center gap-1 font-semibold" style={{ color: (m.pct ?? 0) >= 100 ? 'var(--coral)' : (m.pct ?? 0) >= 90 ? 'var(--amber)' : 'var(--t2)' }}>
+                  <PhoneCall size={9} /> {count != null && `${count}c · `}{m.used}{m.limit != null ? `/${m.limit}` : ''} {unit}
+                </span>
+                {m.pct != null && <span>{m.pct}%</span>}
+              </div>
+              {m.limit != null && <UsageBar pct={m.pct} height="sm" trackColor="var(--b4)" />}
+            </div>
+          ))}
         </div>
       )}
       <span className="text-xs font-semibold flex items-center gap-1.5"
@@ -153,7 +146,10 @@ export default async function ClientsPage() {
       biz.id,
       await getPlanUsage(
         admin, biz.id,
-        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+        {
+          planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at,
+          callMinutesCap: biz.custom_call_minutes_cap, smsCap: biz.custom_sms_cap,
+        },
         biz.timezone ?? 'Australia/Adelaide',
       ),
     ]))

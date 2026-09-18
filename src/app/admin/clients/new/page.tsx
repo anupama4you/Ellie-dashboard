@@ -10,14 +10,7 @@ import { assertAdmin } from '@/lib/adminAuth'
 import { AU_TIMEZONES } from '@/lib/timezone'
 import { getAssistant } from '@/lib/vapi'
 import { splitPromptIntoSections } from '@/lib/promptSections'
-
-const PLANS = [
-  { value: 'starter',      label: 'Starter — 50 calls/mo'       },
-  { value: 'core',         label: 'Core — 120 calls/mo'         },
-  { value: 'professional', label: 'Professional — 250 calls/mo' },
-  { value: 'enterprise',   label: 'Enterprise — 500 calls/mo'   },
-  { value: 'unlimited',    label: 'Unlimited — $199/mo'         },
-]
+import { generateTrialSignupLinkAction } from '../[id]/actions'
 
 export default async function NewClientPage({
   searchParams,
@@ -63,7 +56,12 @@ export default async function NewClientPage({
     }
 
     const startTrial = formData.get('start_trial') === 'on'
-    const now = new Date().toISOString()
+    const priceStr = (formData.get('monthly_price') as string).trim()
+    const customPriceCents = priceStr ? Math.round(parseFloat(priceStr) * 100) : null
+    const minutesCapStr = (formData.get('call_minutes_cap') as string).trim()
+    const customCallMinutesCap = minutesCapStr ? Math.round(parseFloat(minutesCapStr)) : null
+    const smsCapStr = (formData.get('sms_cap') as string).trim()
+    const customSmsCap = smsCapStr ? Math.round(parseFloat(smsCapStr)) : null
     const assistantId = (formData.get('assistant_id') as string).trim() || null
 
     // If this business is being pointed at a Vapi assistant that already
@@ -89,12 +87,12 @@ export default async function NewClientPage({
       user_id:           user.id,
       name:              businessName,
       phone:             (formData.get('phone') as string).trim() || null,
-      plan:              formData.get('plan') as string,
+      plan:              'custom',
+      custom_monthly_price_cents: customPriceCents,
+      custom_call_minutes_cap: customCallMinutesCap,
+      custom_sms_cap: customSmsCap,
       vapi_assistant_id: assistantId,
       timezone:          (formData.get('timezone') as string) || 'Australia/Adelaide',
-      plan_status:       startTrial ? 'trial' : 'active',
-      trial_started_at:  startTrial ? now : null,
-      plan_started_at:   now,
       greeting_script:   liveFirstMessage,
     }).select('id').single()
 
@@ -144,6 +142,25 @@ export default async function NewClientPage({
       console.error('Failed to seed starter prompt_sections:', sectionsErr)
     }
 
+    // Trial signup (card collection) is a separate Stripe Checkout flow from
+    // the Supabase invite above — only attempted when both a price is set
+    // and the trial checkbox is on. plan_status/trial_started_at are
+    // deliberately not set here even on success: same "webhook is the source
+    // of truth" rule as everywhere else in this file's family of actions —
+    // the trial only really starts once the client completes Checkout and
+    // api/stripe-webhook confirms it. A failure here is non-fatal: the admin
+    // can send the link later from the client's own Details tab, which is
+    // why the price field itself isn't required at creation.
+    let trialLinkUrl: string | null = null
+    if (startTrial && customPriceCents) {
+      const trialLinkResult = await generateTrialSignupLinkAction(biz.id, businessName, customPriceCents, email, null)
+      if ('error' in trialLinkResult) {
+        console.error('Failed to create trial signup link at client creation:', trialLinkResult.error)
+      } else {
+        trialLinkUrl = trialLinkResult.url
+      }
+    }
+
     const inviteUrl = `${await siteUrl()}/auth/callback?next=/auth/set-password&token_hash=${hashedToken}&type=invite`
     let emailWarning = false
     try {
@@ -152,6 +169,11 @@ export default async function NewClientPage({
         <p>You've been invited to manage <strong>${businessName}</strong>'s Ellie dashboard.</p>
         <p><a href="${inviteUrl}">Click here to set your password and get started</a></p>
         <p>If the link doesn't work, copy and paste this URL into your browser:<br>${inviteUrl}</p>
+        ${trialLinkUrl ? `
+        <p>You can also start your ${TRIAL_DAYS}-day free trial now — we just need your card on file, you won't be
+        charged until the trial ends.</p>
+        <p><a href="${trialLinkUrl}">Start your free trial</a></p>
+        ` : ''}
       `)
     } catch (emailErr) {
       // The account and business record are already created — don't throw
@@ -231,14 +253,30 @@ export default async function NewClientPage({
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Plan *</label>
-              <select name="plan" defaultValue="core" className="admin-input admin-select">
-                {PLANS.map(p => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Monthly price ($)</label>
+              <input type="number" name="monthly_price" step="0.01" min="0"
+                placeholder="149.00"
+                className="admin-input" />
               <p className="text-xs" style={{ color: 'var(--t6)' }}>
-                Which plan this converts to once the trial ends (if starting one below) — call limits don&apos;t apply until then.
+                What this client is charged once their trial ends. Can be left blank and set later from the client&apos;s
+                Details tab — required for the trial signup email below to actually be sent.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Call minutes cap (per month)</label>
+              <input type="number" name="call_minutes_cap" step="1" min="0"
+                placeholder="No cap"
+                className="admin-input" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>SMS cap (per month)</label>
+              <input type="number" name="sms_cap" step="1" min="0"
+                placeholder="No cap"
+                className="admin-input" />
+              <p className="text-xs" style={{ color: 'var(--t6)' }}>
+                Both caps are purely for the client&apos;s usage dashboard, leave blank for uncapped. Unlimited during any trial regardless.
               </p>
             </div>
 
@@ -263,7 +301,8 @@ export default async function NewClientPage({
                   Start {TRIAL_DAYS}-day free trial
                 </span>
                 <span className="text-xs" style={{ color: 'var(--t5)' }}>
-                  Unlimited calls during the trial (still counted on the dashboard). Payments are handled separately — convert or cancel from the client&apos;s Details tab once they decide.
+                  Unlimited calls during the trial (still counted on the dashboard). The invite email includes a link to
+                  collect their card and start the trial — nothing is charged until it ends. Requires a monthly price above.
                 </span>
               </span>
             </label>

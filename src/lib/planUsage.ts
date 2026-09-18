@@ -1,55 +1,71 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { addDaysInZone, startOfBillingCycleInZone, startOfNextBillingCycleInZone } from '@/lib/timezone'
 
-/**
- * Calls included per month, by plan. Single source of truth — used for both
- * display and usage tracking. `null` = no cap (e.g. the unlimited plan) —
- * distinct from an unrecognized plan string, which falls back to `core`.
- */
-export const PLAN_LIMITS: Record<string, number | null> = {
-  starter: 50, core: 120, professional: 250, enterprise: 500,
-  unlimited: null,
-}
-
 export const TRIAL_DAYS = 7
 
-export function planLimit(plan: string): number | null {
-  // `??` would treat a real `null` (unlimited) the same as a missing key
-  // (unrecognized plan) and wrongly fall back to core — check membership instead.
-  return plan in PLAN_LIMITS ? PLAN_LIMITS[plan] : PLAN_LIMITS.core
+export type UsageMetric = {
+  used: number
+  /** null = uncapped (admin hasn't set a cap for this business, or it's on trial). */
+  limit: number | null
+  /** null whenever limit is null — there's no limit to be a percentage of. */
+  pct: number | null
+}
+
+function metric(used: number, limit: number | null): UsageMetric {
+  if (limit === null) return { used, limit: null, pct: null }
+  return { used, limit, pct: Math.min(Math.round((used / limit) * 100), 999) }
 }
 
 export type PlanUsage = {
-  used: number
-  /** null while on trial — unlimited calls, no plan limit applies yet. */
-  limit: number | null
-  /** null while on trial — there's no limit to be a percentage of. */
-  pct: number | null
+  /** Call minutes, summed from calls.duration_seconds — the natural unit for a voice AI product. */
+  minutes: UsageMetric
+  /** How many calls made up `minutes.used` — display only, not a capped metric (minutes is the cap unit). */
+  callCount: number
+  /** Raw SMS messages sent (not Twilio segments/credits). */
+  sms: UsageMetric
   /** Trial: when the 7-day trial ends. Otherwise: start of the next monthly billing cycle. */
   renewsAt: Date
   isTrial: boolean
-  /** True for a paid plan with no call cap (e.g. the $199/mo unlimited plan) — distinct from `isTrial`, which is also uncapped but time-limited. */
-  isUnlimited: boolean
   /** Days left in the trial (can be 0 or negative once it's run out but the admin hasn't converted/cancelled yet). null when not on trial. */
   trialDaysLeft: number | null
 }
 
 export type BusinessPlanFields = {
-  plan: string
   planStatus: string | null
   trialStartedAt: string | null
   planStartedAt: string | null
+  /** Admin-set custom caps (businesses.custom_call_minutes_cap / custom_sms_cap) — null means uncapped. */
+  callMinutesCap: number | null
+  smsCap: number | null
+}
+
+async function sumCallMinutes(supabase: SupabaseClient, businessId: string, since: Date): Promise<{ minutes: number; count: number }> {
+  const { data } = await supabase
+    .from('calls')
+    .select('duration_seconds')
+    .eq('business_id', businessId)
+    .gte('started_at', since.toISOString())
+  const rows = data ?? []
+  const totalSeconds = rows.reduce((sum: number, row: { duration_seconds: number | null }) => sum + (row.duration_seconds ?? 0), 0)
+  return { minutes: Math.round(totalSeconds / 60), count: rows.length }
+}
+
+async function countSms(supabase: SupabaseClient, businessId: string, since: Date): Promise<number> {
+  const { count } = await supabase
+    .from('sms_log')
+    .select('id', { count: 'exact', head: true })
+    .eq('business_id', businessId)
+    .gte('sent_at', since.toISOString())
+  return count ?? 0
 }
 
 /**
- * Real count of calls against the business's plan — trial businesses get an
- * unlimited-but-counted total since their trial began; everyone else is
- * counted against their plan's included limit for the current monthly
- * billing cycle, anchored to `planStartedAt`'s calendar day (not the 1st of
- * the month — a plan that started on the 14th renews on the 14th). There's
- * no billing/subscription system behind "plan" — it's just a label an admin
- * sets — so this is purely for visibility (usage bars, admin alerts), never
- * used to block calls.
+ * Real usage against the business's admin-set custom caps — trial businesses
+ * get unlimited-but-counted usage since their trial began; everyone else is
+ * counted for the current monthly billing cycle, anchored to `planStartedAt`'s
+ * calendar day (not the 1st of the month — a plan that started on the 14th
+ * renews on the 14th). Caps are purely for visibility (usage bars, admin
+ * alerts), never used to block a call or SMS.
  */
 export async function getPlanUsage(
   supabase: SupabaseClient,
@@ -62,78 +78,84 @@ export async function getPlanUsage(
   if (fields.planStatus === 'trial' && fields.trialStartedAt) {
     const trialStart = new Date(fields.trialStartedAt)
     const trialEnd = addDaysInZone(trialStart, TRIAL_DAYS, timeZone)
-
-    const { count } = await supabase
-      .from('calls')
-      .select('id', { count: 'exact', head: true })
-      .eq('business_id', businessId)
-      .gte('started_at', trialStart.toISOString())
-
     const trialDaysLeft = Math.ceil((trialEnd.getTime() - now.getTime()) / (24 * 60 * 60_000))
-    return { used: count ?? 0, limit: null, pct: null, renewsAt: trialEnd, isTrial: true, isUnlimited: false, trialDaysLeft }
+
+    const [{ minutes: minutesUsed, count: callCount }, smsUsed] = await Promise.all([
+      sumCallMinutes(supabase, businessId, trialStart),
+      countSms(supabase, businessId, trialStart),
+    ])
+
+    return {
+      minutes: { used: minutesUsed, limit: null, pct: null },
+      callCount,
+      sms: { used: smsUsed, limit: null, pct: null },
+      renewsAt: trialEnd,
+      isTrial: true,
+      trialDaysLeft,
+    }
   }
 
-  const limit  = planLimit(fields.plan)
   const anchor = fields.planStartedAt ? new Date(fields.planStartedAt) : now
   const cycleStart = startOfBillingCycleInZone(anchor, now, timeZone)
   const renewsAt    = startOfNextBillingCycleInZone(anchor, now, timeZone)
 
   // Cycle boundaries are calendar-day granular (see startOfBillingCycleInZone)
   // so the very first cycle after a trial→paid conversion can otherwise reach
-  // back to midnight on the conversion day — sweeping up calls made earlier
-  // that same day while still on the trial's unlimited plan into the brand
-  // new paid-plan count. Never count from earlier than the actual anchor
-  // instant; every cycle after the first is already later than the anchor,
-  // so this is a no-op for them.
+  // back to midnight on the conversion day — sweeping up calls/SMS made
+  // earlier that same day while still on the trial's unlimited plan into the
+  // brand new paid-plan count. Never count from earlier than the actual
+  // anchor instant; every cycle after the first is already later than the
+  // anchor, so this is a no-op for them.
   const countFrom = cycleStart.getTime() > anchor.getTime() ? cycleStart : anchor
 
-  const { count } = await supabase
-    .from('calls')
-    .select('id', { count: 'exact', head: true })
-    .eq('business_id', businessId)
-    .gte('started_at', countFrom.toISOString())
-
-  const used = count ?? 0
-
-  if (limit === null) {
-    return { used, limit: null, pct: null, renewsAt, isTrial: false, isUnlimited: true, trialDaysLeft: null }
-  }
+  const [{ minutes: minutesUsed, count: callCount }, smsUsed] = await Promise.all([
+    sumCallMinutes(supabase, businessId, countFrom),
+    countSms(supabase, businessId, countFrom),
+  ])
 
   return {
-    used,
-    limit,
-    pct: Math.min(Math.round((used / limit) * 100), 999),
+    minutes: metric(minutesUsed, fields.callMinutesCap),
+    callCount,
+    sms: metric(smsUsed, fields.smsCap),
     renewsAt,
     isTrial: false,
-    isUnlimited: false,
     trialDaysLeft: null,
   }
 }
 
 /**
- * Businesses at or above `thresholdPct` of their plan's monthly call limit —
- * feeds the admin nav badge and clients-list pills. Trial businesses (no
- * limit yet) never trigger this. One count query per business; fine at this
- * scale, worth a grouped SQL query if the client list ever grows large.
+ * Businesses at or above `thresholdPct` on either cap — feeds the admin nav
+ * badge and clients-list pills. Trial businesses (no caps yet) never trigger
+ * this. One pair of queries per business; fine at this scale, worth a
+ * grouped SQL query if the client list ever grows large.
  */
 export async function getBusinessesOverUsageThreshold(
   supabase: SupabaseClient,
   thresholdPct = 80,
-): Promise<{ id: string; name: string; plan: string; usage: PlanUsage }[]> {
-  const { data: businesses } = await supabase.from('businesses').select('id, name, plan, plan_status, trial_started_at, plan_started_at, timezone')
+): Promise<{ id: string; name: string; usage: PlanUsage }[]> {
+  const { data: businesses } = await supabase
+    .from('businesses')
+    .select('id, name, plan_status, trial_started_at, plan_started_at, timezone, custom_call_minutes_cap, custom_sms_cap')
   if (!businesses) return []
 
   const results = await Promise.all(businesses.map(async b => ({
     id: b.id,
     name: b.name,
-    plan: b.plan,
     usage: await getPlanUsage(
       supabase,
       b.id,
-      { plan: b.plan, planStatus: b.plan_status, trialStartedAt: b.trial_started_at, planStartedAt: b.plan_started_at },
+      {
+        planStatus: b.plan_status,
+        trialStartedAt: b.trial_started_at,
+        planStartedAt: b.plan_started_at,
+        callMinutesCap: b.custom_call_minutes_cap,
+        smsCap: b.custom_sms_cap,
+      },
       b.timezone ?? 'Australia/Adelaide',
     ),
   })))
 
-  return results.filter(r => r.usage.pct != null && r.usage.pct >= thresholdPct)
+  return results.filter(r =>
+    (r.usage.minutes.pct != null && r.usage.minutes.pct >= thresholdPct) ||
+    (r.usage.sms.pct != null && r.usage.sms.pct >= thresholdPct))
 }

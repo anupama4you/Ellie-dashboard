@@ -28,7 +28,14 @@ export default async function AnalyticsPage({
   const prevPeriodStart = addDaysInZone(now, -days * 2, timeZone)
   const prevPeriodEndStr = dateStrInZone(addDaysInZone(now, -days, timeZone), timeZone)
 
-  const defaultUsage: PlanUsage = { used: 0, limit: 120, pct: 0, renewsAt: new Date(), isTrial: false, isUnlimited: false, trialDaysLeft: null }
+  const defaultUsage: PlanUsage = {
+    minutes: { used: 0, limit: null, pct: null },
+    callCount: 0,
+    sms: { used: 0, limit: null, pct: null },
+    renewsAt: new Date(),
+    isTrial: false,
+    trialDaysLeft: null,
+  }
   let calls: LocalCallListItem[] = []
   let prevCalls: LocalCallListItem[] = []
   let usage = defaultUsage
@@ -49,7 +56,10 @@ export default async function AnalyticsPage({
       createClient()
         .then(supabase => getPlanUsage(
           supabase, biz.id,
-          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          {
+            planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at,
+            callMinutesCap: biz.custom_call_minutes_cap, smsCap: biz.custom_sms_cap,
+          },
           timeZone,
         ))
         .catch(err => { console.error('Failed to compute plan usage:', err); return defaultUsage }),

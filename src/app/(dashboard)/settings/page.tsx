@@ -22,8 +22,18 @@ const FIELD_ICONS: Record<string, { icon: React.ReactNode; bg: string; border: s
     bg:     'var(--signal-soft)',
     border: 'rgba(15,163,122,0.2)',
   },
-  'Calls used this month': {
+  'Calls this month': {
     icon:   <PhoneCall size={13} style={{ color: 'var(--amber)' }} />,
+    bg:     'var(--amber-soft)',
+    border: 'rgba(217,138,11,0.2)',
+  },
+  'Call minutes used': {
+    icon:   <PhoneCall size={13} style={{ color: 'var(--amber)' }} />,
+    bg:     'var(--amber-soft)',
+    border: 'rgba(217,138,11,0.2)',
+  },
+  'SMS used': {
+    icon:   <MessageSquare size={13} style={{ color: 'var(--amber)' }} />,
     bg:     'var(--amber-soft)',
     border: 'rgba(217,138,11,0.2)',
   },
@@ -57,7 +67,10 @@ export default async function SettingsPage() {
   const usage = biz
     ? await getPlanUsage(
         supabase, biz.id,
-        { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+        {
+          planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at,
+          callMinutesCap: biz.custom_call_minutes_cap, smsCap: biz.custom_sms_cap,
+        },
         timeZone,
       ).catch(() => null)
     : null
@@ -70,11 +83,23 @@ export default async function SettingsPage() {
     { label: 'Timezone',         value: biz ? timeZoneLabel : undefined },
     { label: 'Plan',             value: usage?.isTrial ? 'Free trial' : biz?.plan },
     {
-      label: 'Calls used this month',
+      label: 'Calls this month',
+      value: usage ? `${usage.callCount}${usage.isTrial ? ' (unlimited during trial)' : ''}` : undefined,
+    },
+    {
+      label: 'Call minutes used',
       value: usage
-        ? usage.isTrial ? `${usage.used} (unlimited during trial)`
-        : usage.isUnlimited ? `${usage.used} (unlimited plan)`
-        : `${usage.used} / ${usage.limit} (${usage.pct}%)`
+        ? usage.isTrial ? `${usage.minutes.used} min (unlimited during trial)`
+        : usage.minutes.limit == null ? `${usage.minutes.used} min (no cap)`
+        : `${usage.minutes.used} / ${usage.minutes.limit} min (${usage.minutes.pct}%)`
+        : undefined,
+    },
+    {
+      label: 'SMS used',
+      value: usage
+        ? usage.isTrial ? `${usage.sms.used} (unlimited during trial)`
+        : usage.sms.limit == null ? `${usage.sms.used} (no cap)`
+        : `${usage.sms.used} / ${usage.sms.limit} (${usage.sms.pct}%)`
         : undefined,
     },
     {

@@ -87,7 +87,7 @@ export async function createManualAppointment(input: ManualAppointmentInput): Pr
         durationMinutes: durationMins,
         mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
       }, biz.sms_template_booking)
-      await sendSms(customerPhone, smsBody, biz.twilio_phone_number)
+      await sendSms(customerPhone, smsBody, biz.twilio_phone_number, biz.id)
       await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)
     } catch (err) {
       // Appointment already saved — a text delivery hiccup shouldn't undo it, same as the AI-booking path.
@@ -161,7 +161,7 @@ export async function rescheduleAppointmentAction(input: RescheduleAppointmentIn
         durationMinutes: durationMins,
         mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
       }, biz.sms_template_reschedule)
-      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
+      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number, biz.id)
       await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
     } catch (err) {
       console.error('Failed to send reschedule confirmation SMS:', err)
@@ -226,7 +226,7 @@ export async function cancelAppointmentAction(appointmentId: string): Promise<{ 
         businessName: biz.name,
         dateTimeLabel: formatInZone(new Date(existing.scheduled_at), timeZone, { weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit' }),
       }, biz.sms_template_cancellation)
-      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number)
+      await sendSms(existing.customer_phone, smsBody, biz.twilio_phone_number, biz.id)
     } catch (err) {
       console.error('Failed to send cancellation SMS:', err)
       smsWarning = err instanceof Error ? err.message : 'Failed to send cancellation SMS.'

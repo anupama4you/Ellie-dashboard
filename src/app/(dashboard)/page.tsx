@@ -120,7 +120,10 @@ export default async function TodayPage() {
     biz
       ? getPlanUsage(
           supabase, biz.id,
-          { plan: biz.plan, planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at },
+          {
+            planStatus: biz.plan_status, trialStartedAt: biz.trial_started_at, planStartedAt: biz.plan_started_at,
+            callMinutesCap: biz.custom_call_minutes_cap, smsCap: biz.custom_sms_cap,
+          },
           timeZone,
         ).catch(() => null)
       : Promise.resolve(null),
@@ -272,7 +275,7 @@ export default async function TodayPage() {
             style={{ background: 'var(--violet-soft)', border: '1px solid rgba(109,74,255,0.2)', color: 'var(--violet)' }}>
             <AlertTriangle size={15} className="shrink-0" />
             <span>
-              You&apos;re on a free trial — unlimited calls, {usage.used} so far.
+              You&apos;re on a free trial — unlimited usage, {usage.callCount} calls ({usage.minutes.used} min) and {usage.sms.used} sms so far.
               {' '}{usage.trialDaysLeft != null && usage.trialDaysLeft > 0
                 ? `${usage.trialDaysLeft} day${usage.trialDaysLeft !== 1 ? 's' : ''} left.`
                 : 'Your trial has ended.'}
@@ -280,36 +283,27 @@ export default async function TodayPage() {
           </div>
         )}
 
-        {/* Unlimited plan status */}
-        {usage?.isUnlimited && (
-          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
-            style={{ background: 'var(--signal-soft)', border: '1px solid rgba(15,163,122,0.2)', color: 'var(--signal)' }}>
-            <CheckCircle2 size={15} className="shrink-0" />
-            <span>
-              You&apos;re on the Unlimited plan — {usage.used} call{usage.used !== 1 ? 's' : ''} this billing cycle, no monthly cap.
-              {' '}Renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
-            </span>
-          </div>
-        )}
-
-        {/* Plan usage warning */}
-        {usage && usage.pct != null && usage.pct >= 80 && (
-          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+        {/* Plan usage warning — fires if either cap is at/over 80% */}
+        {usage && !usage.isTrial && [
+          { label: 'call minutes', metric: usage.minutes, unit: 'min' },
+          { label: 'SMS', metric: usage.sms, unit: 'sms' },
+        ].filter(({ metric }) => metric.pct != null && metric.pct >= 80).map(({ label, metric, unit }) => (
+          <div key={label} className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
             style={{
-              background: usage.pct >= 100 ? 'var(--coral-soft)' : 'var(--amber-soft)',
-              border: `1px solid ${usage.pct >= 100 ? 'rgba(221,81,64,0.25)' : 'rgba(217,138,11,0.25)'}`,
-              color: usage.pct >= 100 ? 'var(--coral)' : 'var(--amber)',
+              background: metric.pct! >= 100 ? 'var(--coral-soft)' : 'var(--amber-soft)',
+              border: `1px solid ${metric.pct! >= 100 ? 'rgba(221,81,64,0.25)' : 'rgba(217,138,11,0.25)'}`,
+              color: metric.pct! >= 100 ? 'var(--coral)' : 'var(--amber)',
             }}>
             <AlertTriangle size={15} className="shrink-0" />
             <span>
-              {usage.pct >= 100
-                ? `You're over your plan's included calls this month (${usage.used} of ${usage.limit}).`
-                : `You've used ${usage.used} of ${usage.limit} calls included in your plan this month (${usage.pct}%).`}
+              {metric.pct! >= 100
+                ? `You're over your ${label} cap this month (${metric.used} ${unit} of ${metric.limit}).`
+                : `You've used ${metric.used} of ${metric.limit} ${unit} included in your ${label} cap this month (${metric.pct}%).`}
               {' '}Usage renews {formatInZone(usage.renewsAt, timeZone, { day: 'numeric', month: 'long' })}.
-              {' '}Reach out to your Ellie account manager if you would like to upgrade.
+              {' '}Reach out to your Ellie account manager if you would like to raise it.
             </span>
           </div>
-        )}
+        ))}
 
         {/* KPI cards — this week, vs the 7 days before */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">

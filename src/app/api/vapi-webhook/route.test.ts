@@ -157,7 +157,7 @@ describe('bookAppointment', () => {
     const json = await res.json()
 
     expect(json.results[0].result).toMatch(/^Booked Manicure for Jane Doe on/)
-    expect(sendSms).toHaveBeenCalledWith('0400111222', expect.stringContaining('Manicure'), '+61400000000')
+    expect(sendSms).toHaveBeenCalledWith('0400111222', expect.stringContaining('Manicure'), '+61400000000', 'biz-book-1')
 
     const rows = fakeSupabase.rows('appointments').filter(r => r.business_id === 'biz-book-1')
     expect(rows).toHaveLength(1)
@@ -547,7 +547,7 @@ describe('rescheduleAppointment', () => {
     const json = await res.json()
 
     expect(json.results[0].result).toMatch(/^Rescheduled Pedicure for John Smith to/)
-    expect(sendSms).toHaveBeenCalledWith('0400333444', expect.stringContaining('moved'), '+61400000000')
+    expect(sendSms).toHaveBeenCalledWith('0400333444', expect.stringContaining('moved'), '+61400000000', 'biz-resch-1')
 
     const row = fakeSupabase.rows('appointments').find(r => r.id === 'apt-resch-1')
     expect(row).toMatchObject({ status: 'rescheduled', scheduled_at: newTime })
@@ -595,7 +595,7 @@ describe('cancelAppointment', () => {
     const json = await res.json()
 
     expect(json.results[0].result).toBe('Cancelled the Haircut appointment for Amy Lee.')
-    expect(sendSms).toHaveBeenCalledWith('0400555666', expect.stringContaining('cancelled'), '+61400000000')
+    expect(sendSms).toHaveBeenCalledWith('0400555666', expect.stringContaining('cancelled'), '+61400000000', 'biz-cancel-1')
 
     const row = fakeSupabase.rows('appointments').find(r => r.id === 'apt-cancel-1')
     expect(row).toMatchObject({ status: 'cancelled' })

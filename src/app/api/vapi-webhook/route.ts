@@ -719,7 +719,7 @@ export async function POST(req: Request) {
                         mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
                       }, biz.sms_template_reschedule)
 
-                      await sendSms(phone, smsBody, biz.twilio_phone_number)
+                      await sendSms(phone, smsBody, biz.twilio_phone_number, biz.id)
                       await supabase.from('appointments').update({ sms_sent: true }).eq('id', existing.id)
                     } catch (smsError) {
                       console.error('Failed to send reschedule confirmation SMS:', smsError)
@@ -800,7 +800,7 @@ export async function POST(req: Request) {
                       dateTimeLabel: fmtDate(existing.scheduled_at, biz.timezone),
                     }, biz.sms_template_cancellation)
 
-                    await sendSms(phone, smsBody, biz.twilio_phone_number)
+                    await sendSms(phone, smsBody, biz.twilio_phone_number, biz.id)
                   } catch (smsError) {
                     console.error('Failed to send cancellation SMS:', smsError)
                     // Cancellation already succeeded — don't fail the tool call over a text delivery issue.
@@ -879,7 +879,15 @@ export async function POST(req: Request) {
           } else if (!from) {
             resultText = "Couldn't determine which number to text from — let the caller know you'll follow up another way."
           } else {
-            await sendSms(phone, body, from)
+            // getBiz() is memoized (bizPromise) — this doesn't add a real
+            // extra query on the branch below that already calls it for
+            // groundTruthColumn, and on branches that don't, it's the only
+            // way to attribute this send to sms_log for the SMS usage cap.
+            // Still fine for a demo assistant with no business row: getBiz()
+            // just resolves to null, and sendSms's businessId param is
+            // optional.
+            const biz = await getBiz()
+            await sendSms(phone, body, from, biz?.id)
             resultText = "Text message sent."
 
             // Vapi's own end-of-call structured-data analysis (the only
@@ -894,7 +902,6 @@ export async function POST(req: Request) {
             const groundTruthColumn = linkType === 'booking' ? 'booking_link_sent' : linkType === 'review' ? 'review_requested' : null
             if (groundTruthColumn) {
               const callId = message.call?.id as string | undefined
-              const biz = await getBiz()
               if (biz && callId) {
                 const { error: linkErr } = await supabase
                   .from('calls')
@@ -942,7 +949,7 @@ export async function POST(req: Request) {
               businessName: biz.name,
               bookingLink,
             }, biz.sms_template_booking_link)
-            await sendSms(phone, smsBody, biz.twilio_phone_number)
+            await sendSms(phone, smsBody, biz.twilio_phone_number, biz.id)
             resultText = "Text message sent."
 
             await sendNotificationEmail(biz, 'bookingLinkSent', () => getBizNotifyEmailFor(biz.user_id),
@@ -979,7 +986,7 @@ export async function POST(req: Request) {
           } else if (!biz.website) {
             resultText = "No website is on file for this business — let the caller know you'll follow up with the details another way."
           } else {
-            await sendSms(phone, `Hi, here's the ${biz.name} website: ${biz.website}`, biz.twilio_phone_number)
+            await sendSms(phone, `Hi, here's the ${biz.name} website: ${biz.website}`, biz.twilio_phone_number, biz.id)
             resultText = "Text message sent."
           }
         } catch (err) {
@@ -1017,7 +1024,7 @@ export async function POST(req: Request) {
             if (biz.phone && biz.phone !== biz.twilio_phone_number) {
               try {
                 const smsBody = `Callback requested: a caller wants to speak with the team. Their number: ${customerPhone}.${reason ? ` Reason: ${reason}.` : ''}`
-                await sendSms(biz.phone, smsBody, biz.twilio_phone_number)
+                await sendSms(biz.phone, smsBody, biz.twilio_phone_number, biz.id)
               } catch (smsErr) {
                 captureError(smsErr, { handler: 'requestCallback(sms)' })
               }
@@ -1283,7 +1290,7 @@ export async function POST(req: Request) {
                   mapsLink: await shortMapsLink(supabase, biz, APP_BASE_URL),
                 }, biz.sms_template_booking)
 
-                await sendSms(phone, smsBody, biz.twilio_phone_number)
+                await sendSms(phone, smsBody, biz.twilio_phone_number, biz.id)
                 await supabase.from('appointments').update({ sms_sent: true }).eq('id', inserted!.id)
               } catch (smsError) {
                 console.error('Failed to send confirmation SMS:', smsError)

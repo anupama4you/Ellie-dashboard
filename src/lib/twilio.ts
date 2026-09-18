@@ -1,3 +1,5 @@
+import { createAdminClient } from '@/lib/supabase/admin'
+
 // GSM 03.38 default + extension alphabets — the only characters Twilio (and
 // carriers generally) bill at 160 chars/segment (153 for a multi-part
 // message). A SINGLE character outside this set forces the ENTIRE message
@@ -46,8 +48,14 @@ export function toGsm7Safe(text: string): string {
  * business with no number configured is a real setup problem, not something
  * to paper over by silently texting from an unrelated business's number, so
  * this throws instead.
+ *
+ * `businessId` is optional (not every call site can resolve one, e.g. the
+ * sendText tool call for a demo assistant with no business row) — when
+ * given, the send is logged to sms_log for that business's SMS usage cap.
+ * Logging is best-effort: a failure here must never take down an otherwise
+ * successful send.
  */
-export async function sendSms(to: string, body: string, from: string | null | undefined): Promise<void> {
+export async function sendSms(to: string, body: string, from: string | null | undefined, businessId?: string | null): Promise<void> {
   const sid = process.env.TWILIO_ACCOUNT_SID
   const token = process.env.TWILIO_AUTH_TOKEN
   if (!sid || !token) {
@@ -70,6 +78,20 @@ export async function sendSms(to: string, body: string, from: string | null | un
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
     throw new Error(`Twilio send failed: ${res.status} ${detail}`)
+  }
+
+  if (businessId) {
+    try {
+      // sms_log.twilio_sid is unique (nullable) — recording it here keeps
+      // this in sync with scripts/backfill-sms-log.mjs's own onConflict
+      // dedup key, so a business's historical Twilio messages can be
+      // backfilled later without ever double-counting one this function
+      // already logged live.
+      const messageSid = (await res.json().catch(() => null))?.sid as string | undefined
+      await createAdminClient().from('sms_log').insert({ business_id: businessId, twilio_sid: messageSid ?? null })
+    } catch (err) {
+      console.error('Failed to log sms_log row (SMS itself sent successfully):', err)
+    }
   }
 }
 

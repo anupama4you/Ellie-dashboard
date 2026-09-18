@@ -1,7 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import Link from 'next/link'
 import { Building2, Zap, Plus, Sparkles, AlertTriangle } from 'lucide-react'
-import { PLAN_LIMITS } from '@/lib/planUsage'
 
 /**
  * Global (not per-client) env-var health checks — both have concrete,
@@ -19,26 +18,11 @@ function envIssues(): string[] {
   return issues
 }
 
-const PLANS = ['starter', 'core', 'professional', 'enterprise', 'unlimited'] as const
-
-const PLAN_STYLE: Record<string, { color: string; bg: string; border: string }> = {
-  starter:      { color: 'var(--t3)', bg: 'rgba(139,133,160,0.07)', border: 'rgba(139,133,160,0.15)' },
-  core:         { color: 'var(--violet)', bg: 'rgba(109,74,255,0.1)',  border: 'rgba(109,74,255,0.2)'  },
-  professional: { color: 'var(--rose)', bg: 'rgba(158,123,255,0.1)',  border: 'rgba(158,123,255,0.2)'  },
-  enterprise:   { color: 'var(--amber)', bg: 'rgba(217,138,11,0.1)',   border: 'rgba(217,138,11,0.2)'   },
-  unlimited:    { color: 'var(--signal)', bg: 'rgba(15,163,122,0.1)',  border: 'rgba(15,163,122,0.2)'   },
-}
-
 export default async function AdminPage() {
   const admin = createAdminClient()
   const { data: businesses } = await admin.from('businesses').select('*')
   const list = businesses ?? []
   const issues = envIssues()
-
-  const planCounts = PLANS.reduce((acc, p) => {
-    acc[p] = list.filter(b => b.plan === p).length
-    return acc
-  }, {} as Record<string, number>)
 
   return (
     <div className="h-full overflow-y-auto p-4 sm:p-6">
@@ -92,35 +76,6 @@ export default async function AdminPage() {
               </div>
             </div>
           ))}
-        </div>
-
-        {/* Plan breakdown */}
-        <div className="rounded-2xl overflow-hidden"
-          style={{ background: 'var(--bg3)', border: '1px solid var(--border)' }}>
-          <div className="px-5 py-4 flex items-center justify-between"
-            style={{ borderBottom: '1px solid var(--b3)' }}>
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Plan Distribution</h2>
-            <Link href="/admin/clients" className="text-xs transition-colors hover:text-violet-400"
-              style={{ color: 'var(--t7)' }}>
-              View all clients →
-            </Link>
-          </div>
-          <div className="p-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {PLANS.map(plan => {
-              const s = PLAN_STYLE[plan]
-              const limit = PLAN_LIMITS[plan]
-              return (
-                <div key={plan} className="rounded-xl p-4 flex flex-col gap-1.5"
-                  style={{ background: s.bg, border: `1px solid ${s.border}` }}>
-                  <div className="text-2xl font-bold" style={{ color: s.color }}>{planCounts[plan]}</div>
-                  <div className="text-xs font-semibold capitalize" style={{ color: s.color }}>{plan}</div>
-                  <div className="text-xs" style={{ color: `${s.color}88` }}>
-                    {limit == null ? 'Unlimited' : `${limit} calls/mo`}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         </div>
 
       </div>

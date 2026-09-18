@@ -1,28 +1,20 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getStripe, priceIdForPlan } from '@/lib/stripe'
-import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle, Plus } from 'lucide-react'
+import { getStripe, subscriptionItemPriceData } from '@/lib/stripe'
+import { Mail, Trash2, CheckCircle2, Sparkles, Send, Ban, ExternalLink, AlertTriangle, Plus, Zap } from 'lucide-react'
 import { TRIAL_DAYS } from '@/lib/planUsage'
 import { addDaysInZone, formatInZone, AU_TIMEZONES } from '@/lib/timezone'
 import AdminClientHeader from '@/components/AdminClientHeader'
 import AdminSubmitButton from '@/components/AdminSubmitButton'
 import CopyLinkButton from '@/components/CopyLinkButton'
-import { generateInviteLinkAction, generatePaymentLinkAction, generateImpersonationLinkAction } from './actions'
+import { generateInviteLinkAction, generatePaymentLinkAction, generateTrialSignupLinkAction, generateImpersonationLinkAction } from './actions'
 import { logAdminAction } from '@/lib/adminAudit'
 import { assertAdmin } from '@/lib/adminAuth'
 import { sendEmail } from '@/lib/resend'
 import { siteUrl } from '@/lib/siteUrl'
 import { FEATURE_REGISTRY, resolveDashboardFeatures } from '@/lib/dashboardFeatures'
 import { SMS_TEMPLATE_DEFAULTS } from '@/lib/smsTemplates'
-
-const PLANS = [
-  { value: 'starter',      label: 'Starter — 50 calls/mo'       },
-  { value: 'core',         label: 'Core — 120 calls/mo'         },
-  { value: 'professional', label: 'Professional — 250 calls/mo' },
-  { value: 'enterprise',   label: 'Enterprise — 500 calls/mo'   },
-  { value: 'unlimited',    label: 'Unlimited — $199/mo'         },
-]
 
 
 export default async function EditClientPage({
@@ -46,7 +38,9 @@ export default async function EditClientPage({
   const bizId                    = biz.id
   const userId                   = biz.user_id
   const bizName                  = biz.name as string
-  const bizPlan                  = biz.plan as string
+  const bizCustomMonthlyPriceCents = biz.custom_monthly_price_cents as number | null
+  const bizCallMinutesCap        = biz.custom_call_minutes_cap as number | null
+  const bizSmsCap                = biz.custom_sms_cap as number | null
   const bizStripeCustomerId      = biz.stripe_customer_id as string | null
   const bizStripeSubscriptionId  = biz.stripe_subscription_id as string | null
   const bizAccountDisabled       = biz.account_disabled as boolean
@@ -81,8 +75,14 @@ export default async function EditClientPage({
       await admin.auth.admin.updateUserById(userId, { email: newEmail })
     }
 
-    const newPlan = formData.get('plan') as string
-    const planChanged = newPlan !== bizPlan
+    const priceStr = (formData.get('monthly_price') as string).trim()
+    const newPriceCents = priceStr ? Math.round(parseFloat(priceStr) * 100) : null
+    const priceChanged = newPriceCents !== bizCustomMonthlyPriceCents
+
+    const minutesCapStr = (formData.get('call_minutes_cap') as string).trim()
+    const newCallMinutesCap = minutesCapStr ? Math.round(parseFloat(minutesCapStr)) : null
+    const smsCapStr = (formData.get('sms_cap') as string).trim()
+    const newSmsCap = smsCapStr ? Math.round(parseFloat(smsCapStr)) : null
 
     // Empty string -> null (not configured), rather than 0 -> a fabricated
     // $0 estimate would be indistinguishable from a deliberately-set $0.
@@ -91,30 +91,31 @@ export default async function EditClientPage({
     const conversionRateStr = (formData.get('conversion_rate') as string).trim()
     const enquiryConversionRate = conversionRateStr ? Math.round(parseFloat(conversionRateStr)) : null
 
-    // A plan change for an already-paying client has to reprice their live
-    // Stripe subscription too — otherwise the dashboard immediately shows
-    // the new plan's call limit while Stripe keeps billing (and the
-    // subscription itself stays priced for) the old one, and the two
-    // silently drift apart with nothing surfacing the mismatch. Trial and
-    // cancelled businesses have no live subscription to touch. Stripe's
-    // default proration behaviour applies — same as changing a plan directly
-    // in the Stripe dashboard would do.
+    // A price change for a client with a live Stripe subscription has to
+    // reprice it too — otherwise the dashboard shows the new price while
+    // Stripe keeps billing (or, once the trial ends, will auto-charge) the
+    // old one. Trial businesses have a live subscription from day one now
+    // (card collected up front, see generateTrialSignupLinkAction) — not
+    // just active ones — so both need repricing. Only a cancelled business
+    // (or one that never had a subscription) has nothing to touch. Stripe's
+    // default proration behaviour applies for an already-active subscription.
     let stripeSyncFailed = false
-    if (planChanged && bizStripeSubscriptionId && biz.plan_status === 'active') {
+    if (priceChanged && newPriceCents != null && bizStripeSubscriptionId && (biz.plan_status === 'active' || biz.plan_status === 'trial')) {
       try {
         const stripe = getStripe()
         const subscription = await stripe.subscriptions.retrieve(bizStripeSubscriptionId)
-        const itemId = subscription.items.data[0]?.id
-        if (!itemId) throw new Error('Subscription has no line item to reprice')
+        const item = subscription.items.data[0]
+        if (!item) throw new Error('Subscription has no line item to reprice')
+        const productId = typeof item.price.product === 'string' ? item.price.product : item.price.product.id
         await stripe.subscriptions.update(bizStripeSubscriptionId, {
-          items: [{ id: itemId, price: priceIdForPlan(newPlan) }],
+          items: [{ id: item.id, price_data: subscriptionItemPriceData(newPriceCents, productId) }],
         })
       } catch (err) {
-        // The local plan field still gets updated below — the client's
-        // dashboard limit shouldn't stay silently wrong just because the
+        // The local price field still gets updated below — the client's
+        // dashboard price shouldn't stay silently wrong just because the
         // Stripe sync failed. Surfaced to the admin via the redirect so they
         // know to fix the subscription's price by hand in Stripe.
-        console.error('Failed to reprice Stripe subscription for plan change:', err)
+        console.error('Failed to reprice Stripe subscription for price change:', err)
         stripeSyncFailed = true
       }
     }
@@ -122,24 +123,20 @@ export default async function EditClientPage({
     await admin.from('businesses').update({
       name:                (formData.get('name') as string).trim(),
       phone:               (formData.get('phone') as string).trim() || null,
-      plan:                newPlan,
+      custom_monthly_price_cents: newPriceCents,
+      custom_call_minutes_cap: newCallMinutesCap,
+      custom_sms_cap: newSmsCap,
       vapi_assistant_id:   (formData.get('assistant_id') as string).trim() || null,
       twilio_phone_number: (formData.get('twilio_phone_number') as string).trim() || null,
       timezone:            formData.get('timezone') as string,
       avg_customer_value_cents: avgCustomerValueCents,
       enquiry_conversion_rate:  enquiryConversionRate,
-      // Changing plans here is itself "starting" the new plan — reset the
-      // billing-cycle anchor to now, same as a real Stripe conversion would
-      // (checkout.session.completed in api/stripe-webhook). Otherwise the
-      // anchor silently stays wherever it was (e.g. still the trial-start
-      // moment), and renewal dates shown to the client stop making sense.
-      ...(planChanged ? { plan_started_at: new Date().toISOString() } : {}),
     }).eq('id', bizId)
 
     await logAdminAction({
       action: 'client_details_updated',
       businessId: bizId,
-      metadata: { planChanged, emailChanged: !!newEmail && newEmail !== clientEmail, stripeSyncFailed },
+      metadata: { priceChanged, emailChanged: !!newEmail && newEmail !== clientEmail, stripeSyncFailed },
     })
 
     redirect(`/admin/clients/${bizId}?saved=1${stripeSyncFailed ? '&stripeSyncWarning=1' : ''}`)
@@ -236,33 +233,78 @@ export default async function EditClientPage({
     redirect('/admin/clients')
   }
 
-  /** Starts (or restarts, e.g. after a cancellation) a fresh trial — resets the billing anchor to now. */
-  async function startTrialAction() {
+  /**
+   * plan_status never flips locally here — same "webhook is the source of
+   * truth" rule as before, just now applied to trial-start too (previously
+   * this button set plan_status='trial' immediately with no Stripe
+   * involvement at all; now the trial only really starts once the client
+   * completes Checkout and api/stripe-webhook's checkout.session.completed
+   * handler confirms it). Requires a monthly price to be set first — that's
+   * both the trial's eventual charge amount and Checkout's price_data.
+   */
+  async function sendTrialSignupLinkAction() {
     'use server'
     await assertAdmin()
-    const admin = createAdminClient()
-    const now = new Date().toISOString()
-    await admin.from('businesses').update({ plan_status: 'trial', trial_started_at: now, plan_started_at: now }).eq('id', bizId)
-    await logAdminAction({ action: 'trial_started', businessId: bizId })
+    if (!clientEmail) redirect(`/admin/clients/${bizId}?paymentLink=error`)
+    if (!bizCustomMonthlyPriceCents) redirect(`/admin/clients/${bizId}?paymentLink=noprice`)
+
+    const result = await generateTrialSignupLinkAction(bizId, bizName, bizCustomMonthlyPriceCents, clientEmail, bizStripeCustomerId)
+    if ('error' in result) {
+      console.error('Failed to create trial signup link:', result.error)
+      redirect(`/admin/clients/${bizId}?paymentLink=error`)
+    }
+
+    try {
+      await sendEmail(clientEmail, `Start your free trial of Ellie for ${bizName}`, `
+        <p>Hi,</p>
+        <p>Click the link below to start your ${TRIAL_DAYS}-day free trial of Ellie for ${bizName}. We just need your card on
+        file — you won't be charged until the trial ends, and you can cancel any time before then.</p>
+        <p><a href="${result.url}">Start your free trial</a></p>
+        <p>If the link doesn't work, copy and paste this URL into your browser:<br>${result.url}</p>
+      `)
+    } catch (err) {
+      console.error('Failed to send trial signup link:', err)
+      redirect(`/admin/clients/${bizId}?paymentLink=error`)
+    }
+
+    redirect(`/admin/clients/${bizId}?paymentLink=sent`)
+  }
+
+  /**
+   * Skip the remaining trial days and charge the card already on file right
+   * now — Stripe ends the trial and immediately invoices, same as it would
+   * automatically do on day 7. api/stripe-webhook's customer.subscription.updated
+   * handler picks up the resulting trialing -> active transition and flips
+   * plan_status/plan_started_at, same as the automatic case.
+   */
+  async function endTrialNowAction() {
+    'use server'
+    await assertAdmin()
+    if (!bizStripeSubscriptionId) redirect(`/admin/clients/${bizId}?saved=1`)
+
+    try {
+      await getStripe().subscriptions.update(bizStripeSubscriptionId, { trial_end: 'now' })
+    } catch (err) {
+      console.error('Failed to end trial early:', err)
+      redirect(`/admin/clients/${bizId}?stripeSyncWarning=1`)
+    }
+
+    await logAdminAction({ action: 'trial_ended_early', businessId: bizId, metadata: { stripeSubscriptionId: bizStripeSubscriptionId } })
     redirect(`/admin/clients/${bizId}?saved=1`)
   }
 
   /**
-   * Trial → paid never flips plan_status itself — that only happens once
-   * Stripe confirms the subscription was actually created, via
-   * api/stripe-webhook's `checkout.session.completed` handler. This just
-   * creates the Checkout Session the client needs to complete themselves
-   * (via the shared generatePaymentLinkAction, same one CopyLinkButton
-   * uses) and emails it to them; success/cancel redirect to their own
-   * dashboard, not the admin panel, since it's their browser that ends up
-   * there.
+   * The manual "bill immediately, no trial" escape hatch — e.g. a client who
+   * doesn't want a trial, or converting a legacy locally-tracked trial that
+   * predates this Stripe-backed flow and has no real subscription yet.
    */
   async function sendPaymentLinkAction() {
     'use server'
     await assertAdmin()
     if (!clientEmail) redirect(`/admin/clients/${bizId}?paymentLink=error`)
+    if (!bizCustomMonthlyPriceCents) redirect(`/admin/clients/${bizId}?paymentLink=noprice`)
 
-    const result = await generatePaymentLinkAction(bizId, bizName, bizPlan, clientEmail, bizStripeCustomerId)
+    const result = await generatePaymentLinkAction(bizId, bizName, bizCustomMonthlyPriceCents, clientEmail, bizStripeCustomerId)
     if ('error' in result) {
       console.error('Failed to create payment link:', result.error)
       redirect(`/admin/clients/${bizId}?paymentLink=error`)
@@ -271,7 +313,7 @@ export default async function EditClientPage({
     try {
       await sendEmail(clientEmail, `Set up payment for ${bizName} on Ellie`, `
         <p>Hi,</p>
-        <p>Click the link below to set up payment for your ${bizPlan} plan on Ellie.</p>
+        <p>Click the link below to set up payment for Ellie.</p>
         <p><a href="${result.url}">Set up payment</a></p>
         <p>If the link doesn't work, copy and paste this URL into your browser:<br>${result.url}</p>
       `)
@@ -360,19 +402,13 @@ export default async function EditClientPage({
     await assertAdmin()
     const admin = createAdminClient()
 
-    const startTrial = formData.get('start_trial') === 'on'
-    const now = new Date().toISOString()
-
     const { data: newBiz, error } = await admin.from('businesses').insert({
       user_id:           userId,
       name:              (formData.get('name') as string).trim(),
       phone:             (formData.get('phone') as string).trim() || null,
-      plan:              formData.get('plan') as string,
+      plan:              'custom',
       vapi_assistant_id: (formData.get('assistant_id') as string).trim() || null,
       timezone:          (formData.get('timezone') as string) || 'Australia/Adelaide',
-      plan_status:       startTrial ? 'trial' : 'active',
-      trial_started_at:  startTrial ? now : null,
-      plan_started_at:   now,
     }).select('id').single()
 
     if (error || !newBiz) {
@@ -437,7 +473,14 @@ export default async function EditClientPage({
           <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
             style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
             <AlertTriangle size={15} className="shrink-0" />
-            Couldn&apos;t send the payment link — check the server logs, or use &quot;Copy Payment Link&quot; instead.
+            Couldn&apos;t send the link — check the server logs, or use the &quot;Copy&quot; button instead.
+          </div>
+        )}
+        {paymentLink === 'noprice' && (
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+            style={{ background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)', color: 'var(--coral)' }}>
+            <AlertTriangle size={15} className="shrink-0" />
+            Set a monthly price for this client first (in Client details, below).
           </div>
         )}
         {deleteError === '1' && (
@@ -478,12 +521,33 @@ export default async function EditClientPage({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Plan</label>
-                <select name="plan" defaultValue={biz.plan} className="admin-input admin-select">
-                  {PLANS.map(p => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Monthly price ($)</label>
+                <input type="number" name="monthly_price" step="0.01" min="0"
+                  defaultValue={bizCustomMonthlyPriceCents != null ? (bizCustomMonthlyPriceCents / 100).toFixed(2) : ''}
+                  placeholder="149.00"
+                  className="admin-input" />
+                <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                  What this client is charged once their trial ends (or immediately, if billed without a trial). Required before a trial/payment link can be sent.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Call minutes cap (per month)</label>
+                <input type="number" name="call_minutes_cap" step="1" min="0"
+                  defaultValue={bizCallMinutesCap ?? ''}
+                  placeholder="No cap"
+                  className="admin-input" />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>SMS cap (per month)</label>
+                <input type="number" name="sms_cap" step="1" min="0"
+                  defaultValue={bizSmsCap ?? ''}
+                  placeholder="No cap"
+                  className="admin-input" />
+                <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                  Both caps are purely for the client&apos;s usage dashboard — leaving either blank means uncapped. Unlimited during any trial regardless of these.
+                </p>
               </div>
 
               <div className="flex flex-col gap-1.5" style={{ gridColumn: '1 / -1' }}>
@@ -556,14 +620,21 @@ export default async function EditClientPage({
                 <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Plan &amp; Trial</h2>
                 <span className="text-xs font-bold px-2 py-0.5 rounded-full capitalize"
                   style={{
-                    color: biz.plan_status === 'trial' ? 'var(--violet)' : biz.plan_status === 'cancelled' ? 'var(--coral)' : 'var(--signal)',
-                    background: biz.plan_status === 'trial' ? 'rgba(109,74,255,0.12)' : biz.plan_status === 'cancelled' ? 'rgba(221,81,64,0.1)' : 'rgba(15,163,122,0.1)',
+                    color: !bizStripeSubscriptionId ? 'var(--t4)' : biz.plan_status === 'trial' ? 'var(--violet)' : biz.plan_status === 'cancelled' ? 'var(--coral)' : 'var(--signal)',
+                    background: !bizStripeSubscriptionId ? 'rgba(139,133,160,0.1)' : biz.plan_status === 'trial' ? 'rgba(109,74,255,0.12)' : biz.plan_status === 'cancelled' ? 'rgba(221,81,64,0.1)' : 'rgba(15,163,122,0.1)',
                   }}>
-                  {biz.plan_status ?? 'active'}
+                  {!bizStripeSubscriptionId ? 'not started' : (biz.plan_status ?? 'active')}
                 </span>
               </div>
               <div className="p-5 flex flex-col gap-3">
-                {biz.plan_status === 'trial' && biz.trial_started_at ? (() => {
+                {!bizStripeSubscriptionId ? (
+                  <p className="text-xs leading-relaxed" style={{ color: 'var(--t3)' }}>
+                    No subscription yet.{' '}
+                    {bizCustomMonthlyPriceCents
+                      ? `Send a trial signup link to collect their card and start the ${TRIAL_DAYS}-day free trial — nothing is charged until it ends.`
+                      : 'Set a monthly price above first.'}
+                  </p>
+                ) : biz.plan_status === 'trial' && biz.trial_started_at ? (() => {
                   const timeZone   = biz.timezone ?? 'Australia/Adelaide'
                   const trialStart = new Date(biz.trial_started_at)
                   const trialEnd   = addDaysInZone(trialStart, TRIAL_DAYS, timeZone)
@@ -573,6 +644,8 @@ export default async function EditClientPage({
                       Started {formatInZone(trialStart, timeZone, { day: 'numeric', month: 'short' })} — ends{' '}
                       {formatInZone(trialEnd, timeZone, { day: 'numeric', month: 'short' })}
                       {' '}({daysLeft > 0 ? `${daysLeft} day${daysLeft !== 1 ? 's' : ''} left` : 'ended'}).
+                      Card on file — Stripe will automatically charge
+                      {bizCustomMonthlyPriceCents ? ` $${(bizCustomMonthlyPriceCents / 100).toFixed(2)}/mo` : ''} when the trial ends.
                       Unlimited calls during the trial, still counted on their dashboard.
                     </p>
                   )
@@ -580,7 +653,7 @@ export default async function EditClientPage({
                   <p className="text-xs leading-relaxed" style={{ color: 'var(--t3)' }}>
                     {biz.plan_status === 'cancelled'
                       ? 'This client is cancelled — no active plan.'
-                      : `On the ${biz.plan} plan since ${formatInZone(new Date(biz.plan_started_at ?? biz.created_at), biz.timezone ?? 'Australia/Adelaide', { day: 'numeric', month: 'short', year: 'numeric' })}.`}
+                      : `Paying ${bizCustomMonthlyPriceCents ? `$${(bizCustomMonthlyPriceCents / 100).toFixed(2)}/mo` : 'a custom price'} since ${formatInZone(new Date(biz.plan_started_at ?? biz.created_at), biz.timezone ?? 'Australia/Adelaide', { day: 'numeric', month: 'short', year: 'numeric' })}.`}
                   </p>
                 )}
 
@@ -595,20 +668,43 @@ export default async function EditClientPage({
                 )}
 
                 <div className="flex flex-col gap-2">
-                  {biz.plan_status === 'trial' ? (
+                  {!bizStripeSubscriptionId ? (
+                    bizCustomMonthlyPriceCents ? (
+                      <>
+                        <form action={sendTrialSignupLinkAction}>
+                          <AdminSubmitButton
+                            pendingLabel="Sending…"
+                            icon={<Sparkles size={13} />}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                            style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
+                            Send {TRIAL_DAYS}-day Trial Signup Link
+                          </AdminSubmitButton>
+                        </form>
+                        <CopyLinkButton
+                          action={generateTrialSignupLinkAction.bind(null, bizId, bizName, bizCustomMonthlyPriceCents, clientEmail, bizStripeCustomerId)}
+                          label="Copy Trial Signup Link" />
+                        <form action={sendPaymentLinkAction}>
+                          <AdminSubmitButton
+                            pendingLabel="Sending…"
+                            icon={<Send size={13} />}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                            style={{ color: 'var(--signal)', background: 'rgba(15,163,122,0.08)', border: '1px solid rgba(15,163,122,0.2)' }}>
+                            Send Payment Link (no trial)
+                          </AdminSubmitButton>
+                        </form>
+                      </>
+                    ) : null
+                  ) : biz.plan_status === 'trial' ? (
                     <>
-                      <form action={sendPaymentLinkAction}>
+                      <form action={endTrialNowAction}>
                         <AdminSubmitButton
-                          pendingLabel="Sending…"
-                          icon={<Send size={13} />}
+                          pendingLabel="Charging…"
+                          icon={<Zap size={13} />}
                           className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                           style={{ color: 'var(--signal)', background: 'rgba(15,163,122,0.08)', border: '1px solid rgba(15,163,122,0.2)' }}>
-                          Send Payment Link ({biz.plan})
+                          End Trial Now &amp; Charge
                         </AdminSubmitButton>
                       </form>
-                      <CopyLinkButton
-                        action={generatePaymentLinkAction.bind(null, bizId, bizName, bizPlan, clientEmail, bizStripeCustomerId)}
-                        label="Copy Payment Link" />
                       <form action={cancelPlanAction}>
                         <AdminSubmitButton
                           pendingLabel="Cancelling…"
@@ -619,17 +715,17 @@ export default async function EditClientPage({
                         </AdminSubmitButton>
                       </form>
                     </>
-                  ) : (
-                    <form action={startTrialAction}>
+                  ) : biz.plan_status !== 'cancelled' ? (
+                    <form action={cancelPlanAction}>
                       <AdminSubmitButton
-                        pendingLabel="Starting trial…"
-                        icon={<Sparkles size={13} />}
+                        pendingLabel="Cancelling…"
+                        icon={<Ban size={13} />}
                         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                        style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
-                        Start {TRIAL_DAYS}-day Trial
+                        style={{ color: 'var(--coral)', background: 'rgba(221,81,64,0.07)', border: '1px solid rgba(221,81,64,0.2)' }}>
+                        Cancel Subscription
                       </AdminSubmitButton>
                     </form>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -751,14 +847,6 @@ export default async function EditClientPage({
                       <input type="tel" name="phone" className="admin-input" />
                     </div>
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Plan *</label>
-                      <select name="plan" defaultValue="core" className="admin-input admin-select">
-                        {PLANS.map(p => (
-                          <option key={p.value} value={p.value}>{p.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Timezone *</label>
                       <select name="timezone" defaultValue="Australia/Adelaide" className="admin-input admin-select">
                         {AU_TIMEZONES.map(t => (
@@ -769,13 +857,9 @@ export default async function EditClientPage({
                         Set this to where the location actually is — it defaults to Adelaide, not wherever {bizName} itself is.
                       </p>
                     </div>
-                    <label className="flex items-start gap-2.5 px-3 py-2.5 rounded-xl cursor-pointer"
-                      style={{ background: 'rgba(109,74,255,0.06)', border: '1px solid rgba(109,74,255,0.18)' }}>
-                      <input type="checkbox" name="start_trial" defaultChecked className="mt-0.5" style={{ accentColor: 'var(--violet)' }} />
-                      <span className="text-xs font-semibold" style={{ color: 'var(--text)' }}>
-                        Start {TRIAL_DAYS}-day free trial
-                      </span>
-                    </label>
+                    <p className="text-xs" style={{ color: 'var(--t5)' }}>
+                      Set a monthly price and send a trial signup link from this location&apos;s own Details tab once it&apos;s created.
+                    </p>
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-medium" style={{ color: 'var(--t3)' }}>Vapi Assistant ID</label>
                       <input type="text" name="assistant_id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className="admin-input" />
