@@ -668,7 +668,14 @@ export default async function EditClientPage({
                 )}
 
                 <div className="flex flex-col gap-2">
-                  {!bizStripeSubscriptionId ? (
+                  {/* Cancelling never clears stripe_subscription_id (kept around so
+                     "View subscription in Stripe" still points at the record) — so
+                     a cancelled client must be offered these same signup links again,
+                     not just a client who never had a subscription at all. Checkout
+                     always starts a brand-new subscription here regardless of the
+                     old cancelled one, and the webhook overwrites stripe_subscription_id
+                     with it on completion. */}
+                  {(!bizStripeSubscriptionId || biz.plan_status === 'cancelled') ? (
                     bizCustomMonthlyPriceCents ? (
                       <>
                         <form action={sendTrialSignupLinkAction}>
@@ -677,7 +684,7 @@ export default async function EditClientPage({
                             icon={<Sparkles size={13} />}
                             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
                             style={{ color: 'var(--violet)', background: 'rgba(109,74,255,0.07)', border: '1px solid rgba(109,74,255,0.18)' }}>
-                            Send {TRIAL_DAYS}-day Trial Signup Link
+                            {bizStripeSubscriptionId ? 'Send New' : `Send ${TRIAL_DAYS}-day`} Trial Signup Link
                           </AdminSubmitButton>
                         </form>
                         <CopyLinkButton
