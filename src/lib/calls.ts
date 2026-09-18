@@ -119,6 +119,54 @@ export async function getLocalCall(businessId: string, id: string, client?: Supa
 
 export { recordingProxyUrl } from './recordingUrl'
 
+export type CallToolCall = {
+  id: string
+  name: string
+  /** Vapi sends this as a JSON-encoded string (the model's raw function-call arguments), not an object. */
+  arguments: string
+  result: string | null
+  secondsFromStart: number | null
+}
+
+/**
+ * Vapi's raw_payload.artifact.messages interleaves transcript turns with
+ * `tool_calls` (the model invoking e.g. bookAppointment/checkAvailability)
+ * and `tool_call_result` entries — matching what Vapi's own dashboard shows
+ * per call. Nothing in this codebase parsed this before (raw_payload was
+ * only ever stored, never read back) — shape confirmed against a real stored
+ * row, not from Vapi's docs alone, since neither this repo nor its
+ * `EndOfCallReport` type described it.
+ */
+export function extractToolCalls(rawPayload: unknown): CallToolCall[] {
+  const messages = (rawPayload as { artifact?: { messages?: unknown[] } } | null)?.artifact?.messages
+  if (!Array.isArray(messages)) return []
+
+  const results = new Map<string, string>()
+  for (const m of messages) {
+    const msg = m as { role?: string; toolCallId?: string; result?: string }
+    if (msg?.role === 'tool_call_result' && msg.toolCallId) {
+      results.set(msg.toolCallId, msg.result ?? '')
+    }
+  }
+
+  const calls: CallToolCall[] = []
+  for (const m of messages) {
+    const msg = m as { role?: string; secondsFromStart?: number; toolCalls?: { id: string; function?: { name: string; arguments: string } }[] }
+    if (msg?.role !== 'tool_calls' || !Array.isArray(msg.toolCalls)) continue
+    for (const tc of msg.toolCalls) {
+      if (!tc?.function?.name) continue
+      calls.push({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: tc.function.arguments ?? '',
+        result: results.get(tc.id) ?? null,
+        secondsFromStart: msg.secondsFromStart ?? null,
+      })
+    }
+  }
+  return calls
+}
+
 export type CampaignCallLink = { campaignId: string; contactId: string; campaignName: string }
 
 /** If this call was placed by an outbound campaign, the campaign + contact

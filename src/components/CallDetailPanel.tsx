@@ -4,12 +4,22 @@ import { useState } from 'react'
 import Link from 'next/link'
 import {
   Phone, Clock, CheckCircle2, XCircle, Mic, FileText, Copy, Check,
-  PhoneIncoming, PhoneOutgoing, Globe, Megaphone, ArrowRight,
+  PhoneIncoming, PhoneOutgoing, Globe, Megaphone, ArrowRight, Wrench,
 } from 'lucide-react'
 import WaveformPlayer from './WaveformPlayer'
 import CopyButton from './CopyButton'
 import { formatInZone } from '@/lib/timezone'
-import type { CampaignCallLink } from '@/lib/calls'
+import type { CampaignCallLink, CallToolCall } from '@/lib/calls'
+
+/** Vapi sends `arguments` as a JSON-encoded string — pretty-print if it parses, otherwise show it verbatim rather than hiding a malformed value. */
+function formatToolArguments(raw: string): string {
+  if (!raw.trim()) return '{}'
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2)
+  } catch {
+    return raw
+  }
+}
 
 function fmtDuration(secs: number) {
   if (!secs || !isFinite(secs) || secs <= 0) return '—'
@@ -127,6 +137,8 @@ export type CallDetailData = {
   transcript?: string
   vapiCallId?: string
   campaignLink?: CampaignCallLink | null
+  /** Admin-only — the client-facing route never includes this, so the section below simply doesn't render there. */
+  toolCalls?: CallToolCall[]
 }
 
 export default function CallDetailPanel({
@@ -226,6 +238,40 @@ export default function CallDetailPanel({
         <div className="rounded-xl p-3 sm:p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
           <h3 className="text-sm font-semibold mb-2" style={{ color: 'var(--ink)' }}>AI Summary</h3>
           <p className="text-sm leading-relaxed" style={{ color: 'var(--ink-2)' }}>{call.summary}</p>
+        </div>
+      )}
+
+      {/* Tool calls — admin only, matches what Vapi's own dashboard shows for a call */}
+      {call.toolCalls && call.toolCalls.length > 0 && (
+        <div className="rounded-xl p-3 sm:p-4" style={{ background: 'var(--card)', border: '1px solid var(--line)' }}>
+          <div className="flex items-center gap-2 mb-3">
+            <Wrench size={13} style={{ color: 'var(--violet)' }} />
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--ink)' }}>Tool Calls</h3>
+            <span className="text-xs" style={{ color: 'var(--ink-3)' }}>{call.toolCalls.length}</span>
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {call.toolCalls.map((tc, i) => (
+              <div key={tc.id ?? i} className="rounded-lg p-3" style={{ background: 'var(--paper)', border: '1px solid var(--line)' }}>
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-mono font-semibold px-2 py-0.5 rounded" style={{ color: 'var(--violet)', background: 'var(--violet-soft)' }}>
+                    {tc.name}
+                  </span>
+                  {tc.secondsFromStart != null && (
+                    <span className="text-xs" style={{ color: 'var(--ink-3)' }}>{fmtDuration(Math.round(tc.secondsFromStart))} in</span>
+                  )}
+                </div>
+                <pre className="text-xs font-mono whitespace-pre-wrap mt-2 leading-relaxed" style={{ color: 'var(--ink-2)' }}>
+                  {formatToolArguments(tc.arguments)}
+                </pre>
+                {tc.result != null && (
+                  <div className="mt-2 pt-2" style={{ borderTop: '1px solid var(--line)' }}>
+                    <div className="text-xs font-semibold mb-1" style={{ color: 'var(--ink-3)' }}>Result</div>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-2)' }}>{tc.result}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

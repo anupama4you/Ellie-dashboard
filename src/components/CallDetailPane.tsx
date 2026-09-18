@@ -5,11 +5,12 @@ import { ArrowLeft, PhoneIncoming } from 'lucide-react'
 import CallDetailPanel, { type CallDetailData } from './CallDetailPanel'
 import CallDetailSkeleton from './CallDetailSkeleton'
 import { recordingProxyUrl } from '@/lib/recordingUrl'
-import type { CampaignCallLink } from '@/lib/calls'
+import type { CampaignCallLink, CallToolCall } from '@/lib/calls'
 import type { CallItem } from './CallsExplorer'
 
-// Shape returned by GET /api/client/calls/[callId] — the raw `calls` row
-// plus the campaign link the route joins in.
+// Shape returned by GET /api/client/calls/[callId] (or /api/admin/calls/[callId],
+// which additionally includes toolCalls — absent/undefined from the client
+// route, so CallDetailPanel's tool-calls section simply doesn't render there).
 type RawCall = {
   call_type: string | null
   caller_phone: string | null
@@ -24,6 +25,7 @@ type RawCall = {
   transcript: string | null
   vapi_call_id: string
   campaignLink: CampaignCallLink | null
+  toolCalls?: CallToolCall[]
 }
 
 // Module-level (not a default parameter's inline arrow) so it's a stable
@@ -49,6 +51,7 @@ function toDetailData(raw: RawCall): CallDetailData {
     transcript: raw.transcript ?? undefined,
     vapiCallId: raw.vapi_call_id ?? undefined,
     campaignLink: raw.campaignLink ?? undefined,
+    toolCalls: raw.toolCalls,
   }
 }
 

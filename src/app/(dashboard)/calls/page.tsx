@@ -7,6 +7,7 @@ import { isAfterHours } from '@/lib/availability'
 import { isFeatureEnabled } from '@/lib/dashboardFeatures'
 import { PhoneOff, Search } from 'lucide-react'
 import CallsExplorer, { type CallItem } from '@/components/CallsExplorer'
+import RefreshButton from '@/components/RefreshButton'
 import type { Hours } from '@/lib/promptSections'
 
 function fmtTime(iso: string, timeZone: string) {
@@ -99,47 +100,50 @@ export default async function CallsPage({
             </p>
           </div>
 
-          {/* Date range filter — plain GET form, no client JS needed. Labels
-             are aria-only on small screens so the row stays compact. */}
-          <form
-            className="flex items-center gap-1.5 flex-wrap"
-            action="/calls"
-          >
-            <input
-              type="date"
-              name="from"
-              aria-label="From date"
-              defaultValue={from ?? ''}
-              className="text-sm rounded-lg px-2 py-1.5 min-w-0 w-[132px]"
-              style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
-            />
-            <span className="text-xs shrink-0" style={{ color: 'var(--ink-3)' }}>to</span>
-            <input
-              type="date"
-              name="to"
-              aria-label="To date"
-              defaultValue={to ?? ''}
-              className="text-sm rounded-lg px-2 py-1.5 min-w-0 w-[132px]"
-              style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
-            />
-            <button
-              type="submit"
-              aria-label="Search"
-              className="flex items-center gap-1.5 text-sm font-semibold px-2.5 sm:px-3.5 py-1.5 rounded-lg text-white shrink-0"
-              style={{ background: 'var(--violet)' }}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Date range filter — plain GET form, no client JS needed. Labels
+               are aria-only on small screens so the row stays compact. */}
+            <form
+              className="flex items-center gap-1.5 flex-wrap"
+              action="/calls"
             >
-              <Search size={13} /> <span className="hidden sm:inline">Search</span>
-            </button>
-            {hasDateFilter && (
-              <Link
-                href="/calls"
-                className="text-sm font-semibold px-2.5 sm:px-3.5 py-1.5 rounded-lg shrink-0"
-                style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+              <input
+                type="date"
+                name="from"
+                aria-label="From date"
+                defaultValue={from ?? ''}
+                className="text-sm rounded-lg px-2 py-1.5 min-w-0 w-[132px]"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
+              />
+              <span className="text-xs shrink-0" style={{ color: 'var(--ink-3)' }}>to</span>
+              <input
+                type="date"
+                name="to"
+                aria-label="To date"
+                defaultValue={to ?? ''}
+                className="text-sm rounded-lg px-2 py-1.5 min-w-0 w-[132px]"
+                style={{ border: '1px solid var(--line)', color: 'var(--ink)', background: 'var(--card)' }}
+              />
+              <button
+                type="submit"
+                aria-label="Search"
+                className="flex items-center gap-1.5 text-sm font-semibold px-2.5 sm:px-3.5 py-1.5 rounded-lg text-white shrink-0"
+                style={{ background: 'var(--violet)' }}
               >
-                Clear
-              </Link>
-            )}
-          </form>
+                <Search size={13} /> <span className="hidden sm:inline">Search</span>
+              </button>
+              {hasDateFilter && (
+                <Link
+                  href="/calls"
+                  className="text-sm font-semibold px-2.5 sm:px-3.5 py-1.5 rounded-lg shrink-0"
+                  style={{ border: '1px solid var(--line)', color: 'var(--ink-2)' }}
+                >
+                  Clear
+                </Link>
+              )}
+            </form>
+            <RefreshButton />
+          </div>
         </div>
       </div>
 
